@@ -107,9 +107,57 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.6 2017/05/12 12:18:37 skrll Exp $"
 
 #include <uvm/uvm.h>
 
+
+#define MULT_CTASSERT(a,b)	__CTASSERT((a) < (b) || ((a) % (b) == 0))
+
+__CTASSERT(sizeof(pmap_pvpage_t) % NBPG == 0);
+__CTASSERT(sizeof(pmap_ptpage_t) == NBPG);
+
+#if defined(PMAP_HWPAGEWALKER)
+#ifdef _LP64
+MULT_CTASSERT(PMAP_PDETABSIZE, NPDEPG);
+MULT_CTASSERT(NPDEPG, PMAP_PDETABSIZE);
+MULT_CTASSERT(PMAP_PDETABSIZE, NPDEPG);
+#endif
+MULT_CTASSERT(sizeof(pmap_pdetab_t *), sizeof(pd_entry_t));
+MULT_CTASSERT(sizeof(pd_entry_t), sizeof(pmap_pdetab_t));
+
+#ifdef _LP64
+static const bool separate_pdetab_root_p = NPDEPG != PMAP_PDETABSIZE;
+#else
+static const bool separate_pdetab_root_p = true;
+#endif
+
+typedef struct {
+	pmap_pdetab_t *free_pdetab0;	/* free list kept locally */
+	pmap_pdetab_t *free_pdetab;	/* free list kept locally */
+#ifdef DEBUG
+	uint32_t nget;
+	uint32_t nput;
+	uint32_t npage;
+#define	PDETAB_ADD(n, v)	(pmap_segtab_info.pdealloc.n += (v))
+#else
+#define	PDETAB_ADD(n, v)	((void) 0)
+#endif
+} pmap_pdetab_alloc_t;
+#endif
+
+#if !defined(PMAP_HWPAGEWALKER) || !defined(PMAP_MAP_POOLPAGE)
+#ifdef _LP64
+__CTASSERT(NSEGPG >= PMAP_SEGTABSIZE);
+__CTASSERT(NSEGPG % PMAP_SEGTABSIZE == 0);
+#endif
 CTASSERT(NBPG >= sizeof(pmap_segtab_t));
 
-struct pmap_segtab_info {
+#ifdef _LP64
+static const bool separate_segtab_root_p = NSEGPG > PMAP_SEGTABSIZE;
+#else
+static const bool separate_segtab_root_p = true;
+#endif
+
+
+typedef struct  {
+	pmap_segtab_t *free_segtab0;	/* free list kept locally */
 	pmap_segtab_t *free_segtab;	/* free list kept locally */
 #ifdef DEBUG
 	uint32_t nget_segtab;
@@ -121,6 +169,16 @@ struct pmap_segtab_info {
 #endif
 #ifdef PMAP_PTP_CACHE
 	struct pgflist ptp_pgflist;	/* Keep a list of idle page tables. */
+#endif
+} pmap_segtab_alloc_t;
+#endif /* !PMAP_HWPAGEWALKER || !PMAP_MAP_POOLPAGE */
+
+struct pmap_segtab_info {
+#if defined(PMAP_HWPAGEWALKER)
+	pmap_pdetab_alloc_t pdealloc;
+#endif
+#if !defined(PMAP_HWPAGEWALKER) || !defined(PMAP_MAP_POOLPAGE)
+	pmap_segtab_alloc_t segalloc;
 #endif
 } pmap_segtab_info = {
 #ifdef PMAP_PTP_CACHE
@@ -163,6 +221,103 @@ pmap_pte_pagealloc(void)
 
 	return pg;
 }
+
+#if defined(PMAP_HWPAGEWALKER) && defined(PMAP_MAP_POOLPAGE)
+static vaddr_t
+pmap_pde_to_va(pd_entry_t pde)
+{
+	if (!pte_pde_valid_p(pde))
+		return 0;
+
+	paddr_t pa = pte_pde_to_paddr(pde);
+	return pmap_md_direct_map_paddr(pa);
+}
+
+static pmap_pdetab_t *
+pmap_pde_to_pdetab(pd_entry_t pde)
+{
+	return (pmap_pdetab_t *) pmap_pde_to_va(pde);
+}
+
+static pmap_ptpage_t *
+pmap_pde_to_ptpage(pd_entry_t pde)
+{
+	return (pmap_ptpage_t *) pmap_pde_to_va(pde);
+}
+#endif
+
+#ifdef _LP64
+__CTASSERT((XSEGSHIFT - SEGSHIFT) % (PGSHIFT-3) == 0);
+#endif
+
+static inline pmap_ptpage_t *
+pmap_ptpage(struct pmap *pmap, vaddr_t va)
+{
+#if defined(PMAP_HWPAGEWALKER) && defined(PMAP_MAP_POOLPAGE)
+	vaddr_t pdetab_mask = PMAP_PDETABSIZE - 1;
+	pmap_pdetab_t *ptb = pmap->pm_pdetab;
+
+	KASSERT(pmap != pmap_kernel() || !pmap_md_direct_mapped_vaddr_p(va));
+
+#ifdef _LP64
+	for (size_t segshift = XSEGSHIFT;
+	     segshift > SEGSHIFT;
+	     segshift -= PGSHIFT - 3, pdetab_mask = NSEGPG - 1) {
+		ptb = pmap_pde_to_pdetab(ptb->pde_pde[(va >> segshift) & pdetab_mask]);
+		if (ptb == NULL);
+			return NULL;
+	}
+#endif
+	return pmap_pde_to_ptpage(ptb->pde_pde[(va >> SEGSHIFT) & pdetab_mask]);
+#else
+	vaddr_t segtab_mask = PMAP_SEGTABSIZE - 1;
+	pmap_segtab_t *stb = pmap->pm_segtab;
+
+	KASSERT(pmap != pmap_kernel() || !pmap_md_direct_mapped_vaddr_p(va));
+
+#ifdef _LP64
+	for (size_t segshift = XSEGSHIFT;
+	     segshift > SEGSHIFT;
+	     segshift -= PGSHIFT - 3, segtab_mask = NSEGPG - 1) {
+		stb = stb->seg_seg[(va >> segshift) & segtab_mask];
+		if (stb == NULL)
+			return NULL;
+	}
+#endif
+	return stb->seg_tab[(va >> SEGSHIFT) & segtab_mask];
+#endif
+}
+
+#if defined(PMAP_HWPAGEWALKER)
+bool
+pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va)
+{
+	pmap_pdetab_t * const kptb = &pmap_kern_pdetab;
+	pmap_pdetab_t * const uptb = pmap->pm_pdetab;
+	size_t idx = PMAP_PDETABSIZE - 1;
+#if !defined(PMAP_MAP_POOLPAGE)
+	__CTASSERT(PMAP_PDETABSIZE == PMAP_SEGTABSIZE);
+	pmap_segtab_t * const kstb = &pmap_kern_segtab;
+	pmap_segtab_t * const ustb = pmap->pm_segtab;
+#endif
+
+	// Regardless of how many levels deep this page table deep, we only
+	// need to verify the first level PDEs match up.
+#ifdef XSEGSHIFT
+	pde_idx &= va >> XSEGSHIFT;
+#else
+	pde_idx &= va >> SEGSHIFT;
+#endif
+	if (uptb->pde_pde[idx] != kptb->pde_pde[idx]) [
+		pte_pde_set(&uptb->pde_pde[idx], kptb->pde_pde[idx]);
+#if !defined(PMAP_MAP_POOLPAGE)
+		ustb->seg_seg[idx] = kstb->seg_seg[idx]; // copy KVA of PTP
+#endif
+		return true;
+	}
+	return false;
+}
+#endif /* PMAP_HWPAGEWALKER */
 
 static inline pt_entry_t *
 pmap_segmap(struct pmap *pmap, vaddr_t va)

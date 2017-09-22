@@ -94,10 +94,34 @@ UVMHIST_DECL(pmaphist);
 /*
  * Each seg_tab point an array of pt_entry [NPTEPG]
  */
+
+typedef struct {
+	pt_entry_t ptp_ptes[NPTEPG];
+} pmap_ptpage_t;
+
+typedef struct {
+	pv_entry_t pvp_pvs[NPTEPG];
+} pmap_pvpage_t;
+
+//&& defined(PMAP_MAP_POOLPAGE)
+#if defined(PMAP_HWPAGEWALKER)
+typedef union pmap_pdetab {
+	pd_entry_t		pde_pde[PMAP_PDETABSIZE];
+	union pmap_pdetab *	pde_next;
+} pmap_pdetab_t;
+#else
 typedef union pmap_segtab {
+#ifdef _LP64
 	union pmap_segtab *	seg_seg[PMAP_SEGTABSIZE];
+#endif
 	pt_entry_t *		seg_tab[PMAP_SEGTABSIZE];
+#ifdef PMAP_HWPAGEWALKER
+	pd_entry_t		seg_pde[PMAP_PDETABSIZE];
+#endif
+	union pmap_segtab *	seg_next;
 } pmap_segtab_t;
+#endif
+
 
 #ifdef _KERNEL
 struct pmap;
@@ -127,13 +151,20 @@ struct pmap {
 	kcpuset_t		*pm_onproc;	/* pmap is active on ... */
 	volatile u_int		pm_shootdown_pending;
 #endif
+#if defined(PMAP_HWPAGEWALKER)
+	pmap_pdetab_t *		pm_pdetab;	/* pointer to HW PDEs */
+#else
 	pmap_segtab_t *		pm_segtab;	/* pointers to pages of PTEs */
+#endif
 	u_int			pm_count;	/* pmap reference count */
 	u_int			pm_flags;
-#define	PMAP_DEFERRED_ACTIVATE	0x0001
+#define	PMAP_DEFERRED_ACTIVATE	__BIT(0)
 	struct pmap_statistics	pm_stats;	/* pmap statistics */
 	vaddr_t			pm_minaddr;
 	vaddr_t			pm_maxaddr;
+#ifdef __HAVE_PMAP_MD
+	struct pmap_md		pm_md;
+#endif
 	struct pmap_asid_info	pm_pai[1];
 };
 
@@ -157,11 +188,11 @@ struct pmap_limits {
  */
 #ifdef MULTIPROCESSOR
 #define PMAP_SIZE	offsetof(struct pmap, pm_pai[PMAP_TLB_MAX])
-#else       
+#else
 #define PMAP_SIZE	sizeof(struct pmap)
-#endif      
+#endif
 
-/* 
+/*
  * The pools from which pmap structures and sub-structures are allocated.
  */
 extern struct pool pmap_pmap_pool;
@@ -173,7 +204,11 @@ extern struct pmap_limits pmap_limits;
 
 extern u_int pmap_page_colormask;
 
+#if defined(PMAP_HWPAGEWALKER)
+extern pmap_pdetab_t pmap_kern_pdetab;
+#else
 extern pmap_segtab_t pmap_kern_segtab;
+#endif
 
 #define	pmap_wired_count(pmap) 	((pmap)->pm_stats.wired_count)
 #define pmap_resident_count(pmap) ((pmap)->pm_stats.resident_count)

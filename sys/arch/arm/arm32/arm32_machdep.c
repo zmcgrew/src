@@ -568,7 +568,7 @@ parse_mi_bootargs(char *args)
 #ifdef PMAP_DEBUG
 	if (get_bootconf_option(args, "pmapdebug", BOOTOPT_TYPE_INT, &integer)) {
 		pmap_debug_level = integer;
-		pmap_debug(pmap_debug_level);
+		//pmap_debug(pmap_debug_level);
 	}
 #endif	/* PMAP_DEBUG */
 
@@ -770,6 +770,8 @@ mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)
 bool
 mm_md_page_color(paddr_t pa, int *colorp)
 {
+#ifdef __HAVE_MM_MD_CACHE_ALIASING
+#endif
 #if (ARM_MMU_V6 + ARM_MMU_V7) != 0
 	*colorp = atop(pa & arm_cache_prefer_mask);
 

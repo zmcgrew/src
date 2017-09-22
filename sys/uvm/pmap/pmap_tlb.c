@@ -721,7 +721,6 @@ pmap_tlb_shootdown_bystanders(pmap_t pm)
 }
 #endif /* MULTIPROCESSOR && PMAP_TLB_NEED_SHOOTDOWN */
 
-#ifndef PMAP_HWPAGEWALKER
 int
 pmap_tlb_update_addr(pmap_t pm, vaddr_t va, pt_entry_t pte, u_int flags)
 {
@@ -762,7 +761,6 @@ pmap_tlb_update_addr(pmap_t pm, vaddr_t va, pt_entry_t pte, u_int flags)
 
 	return rv;
 }
-#endif /* !PMAP_HWPAGEWALKER */
 
 void
 pmap_tlb_invalidate_addr(pmap_t pm, vaddr_t va)

@@ -669,7 +669,11 @@ arm32_kernel_vm_init(vaddr_t kernel_vm_base, vaddr_t vectors, vaddr_t iovbase,
 	}
 
 	/* update the top of the kernel VM */
+#ifdef ARM_MMU_EXTENDED
+	pmap_limits.virtual_end =
+#else
 	pmap_curmaxkvaddr =
+#endif
 	    kernel_vm_base + (KERNEL_L2PT_VMDATA_NUM * L2_S_SEGSIZE);
 
 #ifdef VERBOSE_INIT_ARM

@@ -68,48 +68,21 @@
 #ifndef	_ARM32_PMAP_H_
 #define	_ARM32_PMAP_H_
 
-#ifdef _KERNEL
+#if defined(_KERNEL_OPT)
+#include "opt_arm32_pmap.h"
+#include "opt_cpuoptions.h"
+#include "opt_multiprocessor.h"
+#endif
 
+#ifdef _KERNEL
 #include <arm/cpuconf.h>
 #include <arm/arm32/pte.h>
 #ifndef _LOCORE
-#if defined(_KERNEL_OPT)
-#include "opt_arm32_pmap.h"
-#include "opt_multiprocessor.h"
-#endif
 #include <arm/cpufunc.h>
 #include <arm/locore.h>
 #include <uvm/uvm_object.h>
 #include <uvm/pmap/pmap_pvt.h>
 #endif
-
-#ifdef ARM_MMU_EXTENDED
-#define PMAP_HWPAGEWALKER		1
-#define PMAP_TLB_MAX			1
-#if PMAP_TLB_MAX > 1
-#define PMAP_TLB_NEED_SHOOTDOWN		1
-#endif
-#define PMAP_TLB_FLUSH_ASID_ON_RESET	(arm_has_tlbiasid_p)
-#define PMAP_TLB_NUM_PIDS		256
-#define cpu_set_tlb_info(ci, ti)        ((void)((ci)->ci_tlb_info = (ti)))
-#if PMAP_TLB_MAX > 1
-#define cpu_tlb_info(ci)		((ci)->ci_tlb_info)
-#else
-#define cpu_tlb_info(ci)		(&pmap_tlb0_info)
-#endif
-#define pmap_md_tlb_asid_max()		(PMAP_TLB_NUM_PIDS - 1)
-#include <uvm/pmap/tlb.h>
-#include <uvm/pmap/pmap_tlb.h>
-
-/*
- * If we have an EXTENDED MMU and the address space is split evenly between
- * user and kernel, we can use the TTBR0/TTBR1 to have separate L1 tables for
- * user and kernel address spaces.
- */
-#if (KERNEL_BASE & 0x80000000) == 0
-#error ARMv6 or later systems must have a KERNEL_BASE >= 0x80000000
-#endif
-#endif  /* ARM_MMU_EXTENDED */
 
 /*
  * a pmap describes a processes' 4GB virtual address space.  this
@@ -165,41 +138,8 @@
 #define PMAP_CACHE_VIVT
 #endif
 
+
 #ifndef _LOCORE
-
-#ifndef ARM_MMU_EXTENDED
-struct l1_ttable;
-struct l2_dtable;
-
-/*
- * Track cache/tlb occupancy using the following structure
- */
-union pmap_cache_state {
-	struct {
-		union {
-			uint8_t csu_cache_b[2];
-			uint16_t csu_cache;
-		} cs_cache_u;
-
-		union {
-			uint8_t csu_tlb_b[2];
-			uint16_t csu_tlb;
-		} cs_tlb_u;
-	} cs_s;
-	uint32_t cs_all;
-};
-#define	cs_cache_id	cs_s.cs_cache_u.csu_cache_b[0]
-#define	cs_cache_d	cs_s.cs_cache_u.csu_cache_b[1]
-#define	cs_cache	cs_s.cs_cache_u.csu_cache
-#define	cs_tlb_id	cs_s.cs_tlb_u.csu_tlb_b[0]
-#define	cs_tlb_d	cs_s.cs_tlb_u.csu_tlb_b[1]
-#define	cs_tlb		cs_s.cs_tlb_u.csu_tlb
-
-/*
- * Assigned to cs_all to force cacheops to work for a particular pmap
- */
-#define	PMAP_CACHE_STATE_ALL	0xffffffffu
-#endif /* !ARM_MMU_EXTENDED */
 
 /*
  * This structure is used by machine-dependent code to describe
@@ -213,44 +153,8 @@ struct pmap_devmap {
 	int		pd_cache;	/* cache attributes */
 };
 
-/*
- * The pmap structure itself
- */
-struct pmap {
-	struct uvm_object	pm_obj;
-	kmutex_t		pm_obj_lock;
-#define	pm_lock pm_obj.vmobjlock
-#ifndef ARM_HAS_VBAR
-	pd_entry_t		*pm_pl1vec;
-	pd_entry_t		pm_l1vec;
-#endif
-	struct l2_dtable	*pm_l2[L2_SIZE];
-	struct pmap_statistics	pm_stats;
-	LIST_ENTRY(pmap)	pm_list;
-#ifdef ARM_MMU_EXTENDED
-	pd_entry_t		*pm_l1;
-	paddr_t			pm_l1_pa;
-	bool			pm_remove_all;
-#ifdef MULTIPROCESSOR
-	kcpuset_t		*pm_onproc;
-	kcpuset_t		*pm_active;
-#if PMAP_TLB_MAX > 1
-	u_int			pm_shootdown_pending;
-#endif
-#endif
-	struct pmap_asid_info	pm_pai[PMAP_TLB_MAX];
-#else
-	struct l1_ttable	*pm_l1;
-	union pmap_cache_state	pm_cstate;
-	uint8_t			pm_domain;
-	bool			pm_activated;
-	bool			pm_remove_all;
-#endif
-};
 
-struct pmap_kernel {
-	struct pmap		kernel_pmap;
-};
+
 
 /*
  * Physical / virtual address structure. In a number of places (particularly
@@ -277,10 +181,6 @@ extern pv_addr_t idlestack;
 extern pv_addr_t systempage;
 extern pv_addr_t kernel_l1pt;
 
-#ifdef ARM_MMU_EXTENDED
-extern bool arm_has_tlbiasid_p;	/* also in <arm/locore.h> */
-#endif
-
 /*
  * Determine various modes for PTEs (user vs. kernel, cacheable
  * vs. non-cacheable).
@@ -292,58 +192,11 @@ extern bool arm_has_tlbiasid_p;	/* also in <arm/locore.h> */
 #define	PTE_PAGETABLE	2
 
 /*
- * Flags that indicate attributes of pages or mappings of pages.
- *
- * The PVF_MOD and PVF_REF flags are stored in the mdpage for each
- * page.  PVF_WIRED, PVF_WRITE, and PVF_NC are kept in individual
- * pv_entry's for each page.  They live in the same "namespace" so
- * that we can clear multiple attributes at a time.
- *
- * Note the "non-cacheable" flag generally means the page has
- * multiple mappings in a given address space.
- */
-#define	PVF_MOD		0x01		/* page is modified */
-#define	PVF_REF		0x02		/* page is referenced */
-#define	PVF_WIRED	0x04		/* mapping is wired */
-#define	PVF_WRITE	0x08		/* mapping is writable */
-#define	PVF_EXEC	0x10		/* mapping is executable */
-#ifdef PMAP_CACHE_VIVT
-#define	PVF_UNC		0x20		/* mapping is 'user' non-cacheable */
-#define	PVF_KNC		0x40		/* mapping is 'kernel' non-cacheable */
-#define	PVF_NC		(PVF_UNC|PVF_KNC)
-#endif
-#ifdef PMAP_CACHE_VIPT
-#define	PVF_NC		0x20		/* mapping is 'kernel' non-cacheable */
-#define	PVF_MULTCLR	0x40		/* mapping is multi-colored */
-#endif
-#define	PVF_COLORED	0x80		/* page has or had a color */
-#define	PVF_KENTRY	0x0100		/* page entered via pmap_kenter_pa */
-#define	PVF_KMPAGE	0x0200		/* page is used for kmem */
-#define	PVF_DIRTY	0x0400		/* page may have dirty cache lines */
-#define	PVF_KMOD	0x0800		/* unmanaged page is modified  */
-#define	PVF_KWRITE	(PVF_KENTRY|PVF_WRITE)
-#define	PVF_DMOD	(PVF_MOD|PVF_KMOD|PVF_KMPAGE)
-
-/*
  * Commonly referenced structures
  */
 extern int		pmap_debug_level; /* Only exists if PMAP_DEBUG */
 extern int		arm_poolpage_vmfreelist;
 
-/*
- * Macros that we need to export
- */
-#define	pmap_resident_count(pmap)	((pmap)->pm_stats.resident_count)
-#define	pmap_wired_count(pmap)		((pmap)->pm_stats.wired_count)
-
-#define	pmap_is_modified(pg)	\
-	(((pg)->mdpage.pvh_attrs & PVF_MOD) != 0)
-#define	pmap_is_referenced(pg)	\
-	(((pg)->mdpage.pvh_attrs & PVF_REF) != 0)
-#define	pmap_is_page_colored_p(md)	\
-	(((md)->pvh_attrs & PVF_COLORED) != 0)
-
-#define	pmap_copy(dp, sp, da, l, sa)	/* nothing */
 
 #define pmap_phys_address(ppn)		(arm_ptob((ppn)))
 u_int arm32_mmap_flags(paddr_t);
@@ -352,24 +205,6 @@ u_int arm32_mmap_flags(paddr_t);
 #define pmap_mmap_flags(ppn)		arm32_mmap_flags(ppn)
 
 #define	PMAP_PTE			0x10000000 /* kenter_pa */
-
-/*
- * Functions that we need to export
- */
-void	pmap_procwr(struct proc *, vaddr_t, int);
-void	pmap_remove_all(pmap_t);
-bool	pmap_extract(pmap_t, vaddr_t, paddr_t *);
-
-#define	PMAP_NEED_PROCWR
-#define PMAP_GROWKERNEL		/* turn on pmap_growkernel interface */
-#define	PMAP_ENABLE_PMAP_KMPAGE	/* enable the PMAP_KMPAGE flag */
-
-#if (ARM_MMU_V6 + ARM_MMU_V7) > 0
-#define	PMAP_PREFER(hint, vap, sz, td)	pmap_prefer((hint), (vap), (td))
-void	pmap_prefer(vaddr_t, vaddr_t *, int);
-#endif
-
-void	pmap_icache_sync_range(pmap_t, vaddr_t, vaddr_t);
 
 /* Functions we use internally. */
 #ifdef PMAP_STEAL_MEMORY
@@ -386,6 +221,8 @@ bool	pmap_get_pde_pte(pmap_t, vaddr_t, pd_entry_t **, pt_entry_t **);
 bool	pmap_get_pde(pmap_t, vaddr_t, pd_entry_t **);
 struct pcb;
 void	pmap_set_pcb_pagedir(pmap_t, struct pcb *);
+
+void	pmap_icache_sync_range(pmap_t, vaddr_t, vaddr_t);
 
 void	pmap_debug(int);
 void	pmap_postinit(void);
@@ -434,6 +271,43 @@ extern vaddr_t	pmap_curmaxkvaddr;
 extern vaddr_t pmap_directlimit;
 #endif
 
+
+
+
+
+#if 0
+
+
+/* XXXNH maybe these can live in pmap_common only - xscale stuff can go there */
+
+/*
+ * pmap copy/zero page
+ */
+extern pt_entry_t *csrc_pte, *cdst_pte;
+extern vaddr_t csrcp, cdstp;
+#ifdef MULTIPROCESSOR
+extern size_t cnptes;
+#define	cpu_csrc_pte(o)	(csrc_pte + cnptes * cpu_number() + ((o) >> L2_S_SHIFT))
+#define	cpu_cdst_pte(o)	(cdst_pte + cnptes * cpu_number() + ((o) >> L2_S_SHIFT))
+#define	cpu_csrcp(o)	(csrcp + L2_S_SIZE * cnptes * cpu_number() + (o))
+#define	cpu_cdstp(o)	(cdstp + L2_S_SIZE * cnptes * cpu_number() + (o))
+#else
+#define	cpu_csrc_pte(o)	(csrc_pte + ((o) >> L2_S_SHIFT))
+#define	cpu_cdst_pte(o)	(cdst_pte + ((o) >> L2_S_SHIFT))
+#define	cpu_csrcp(o)	(csrcp + (o))
+#define	cpu_cdstp(o)	(cdstp + (o))
+#endif
+#endif
+
+
+
+
+
+
+
+#if 0
+// XXXNH move to pmap_v4.h
+
 /*
  * Useful macros and constants
  */
@@ -465,6 +339,7 @@ vtophys(vaddr_t va)
 
 	return (pa);
 }
+#endif
 
 /*
  * The new pmap ensures that page-tables are always mapping Write-Thru.
@@ -1080,15 +955,17 @@ extern void (*pmap_zero_page_func)(paddr_t);
 #define	L2_L_MAPPABLE_P(va, pa, size)					\
 	((((va) | (pa)) & L2_L_OFFSET) == 0 && (size) >= L2_L_SIZE)
 
+extern paddr_t physical_start, physical_end;
+
+#if !defined(ARM_MMU_EXTENDED)
 #ifndef _LOCORE
 /*
  * Hooks for the pool allocator.
  */
 #define	POOL_VTOPHYS(va)	vtophys((vaddr_t) (va))
-extern paddr_t physical_start, physical_end;
 #ifdef PMAP_NEED_ALLOC_POOLPAGE
-struct vm_page *arm_pmap_alloc_poolpage(int);
-#define	PMAP_ALLOC_POOLPAGE	arm_pmap_alloc_poolpage
+struct vm_page *pmap_md_alloc_poolpage(int);
+#define	PMAP_ALLOC_POOLPAGE	pmap_md_alloc_poolpage
 #endif
 #if defined(PMAP_NEED_ALLOC_POOLPAGE) || defined(__HAVE_MM_MD_DIRECT_MAPPED_PHYS)
 vaddr_t	pmap_map_poolpage(paddr_t);
@@ -1096,10 +973,11 @@ paddr_t	pmap_unmap_poolpage(vaddr_t);
 #define	PMAP_MAP_POOLPAGE(pa)	pmap_map_poolpage(pa)
 #define PMAP_UNMAP_POOLPAGE(va)	pmap_unmap_poolpage(va)
 #endif
-
-#define __HAVE_PMAP_PV_TRACK	1
+#endif
 
 void pmap_pv_protect(paddr_t, vm_prot_t);
+
+#define PVLIST_EMPTY(md)	SLIST_EMPTY(&md->pvh_list)
 
 struct pmap_page {
 	SLIST_HEAD(,pv_entry) pvh_list;		/* pv_entry list */
@@ -1148,8 +1026,62 @@ do {									\
 	(pg)->mdpage.urw_mappings = 0;					\
 	(pg)->mdpage.k_mappings = 0;					\
 } while (/*CONSTCOND*/0)
+#endif
+
+#ifdef ARM_MMU_EXTENDED
+#include <arm/arm32/pmap_v6n.h>
+#else
+#include <arm/arm32/pmap_v4.h>
+#endif  /* ARM_MMU_EXTENDED */
 
 #endif /* !_LOCORE */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#if 0
+typedef uint32_t	pmap_pdetab_t;	/* L1 table entry */
+#endif
+
+#ifndef __BSD_PTENTRY_T__
+#define __BSD_PTENTRY_T__
+typedef uint32_t pt_entry_t;
+#define PRIxPTE		PRIx32
+#endif
+
+
+
+bool pmap_is_page_ro_p(struct pmap *pmap, vaddr_t, uint32_t);
+
+#if 0
+#define	pte_to_paddr(pte)	MIPS3_PTE_TO_PADDR((pte))
+
+#define	PAGE_IS_RDONLY(pte, va)	MIPS3_PAGE_IS_RDONLY((pte), (va))
+#endif
+
+static __inline paddr_t
+pte_to_paddr(pt_entry_t pte)
+{
+	return l2pte_pa(pte);
+}
+
+#if defined(_KERNEL)
+
+static inline bool
+pte_valid_p(pt_entry_t pte)
+{
+	return l2pte_valid_p(pte);
+}
 
 #endif /* _KERNEL */
 

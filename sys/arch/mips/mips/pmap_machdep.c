@@ -649,7 +649,7 @@ pmap_copy_page(paddr_t src_pa, paddr_t dst_pa)
 	const register_t src_va = pmap_md_map_ephemeral_page(src_pg, false,
 	    VM_PROT_READ, &src_pte);
 
-	KASSERT(VM_PAGE_TO_MD(dst_pg)->mdpg_first.pv_pmap == NULL);
+	KASSERT(VM_PAGEMD_PVLIST_EMPTY_P(VM_PAGE_TO_MD(dst_pg)));
 	KASSERT(!VM_PAGEMD_EXECPAGE_P(VM_PAGE_TO_MD(dst_pg)));
 	const register_t dst_va = pmap_md_map_ephemeral_page(dst_pg, false,
 	    VM_PROT_READ|VM_PROT_WRITE, &dst_pte);
@@ -732,9 +732,9 @@ pmap_md_map_poolpage(paddr_t pa, size_t len)
 		vaddr_t last_va = trunc_page(pv->pv_va);
 
 		KASSERT(len == PAGE_SIZE || last_va == pa);
-		KASSERT(pv->pv_pmap == NULL);
-		KASSERT(pv->pv_next == NULL);
+		KASSERT(VM_PAGEMD_PVLIST_EMPTY_P(mdpg));
 		KASSERT(!VM_PAGEMD_EXECPAGE_P(mdpg));
+		KASSERT(pv->pv_next == NULL);
 
 		/*
 		 * If this page was last mapped with an address that
@@ -767,10 +767,10 @@ pmap_md_unmap_poolpage(vaddr_t va, size_t len)
 
 	pv_entry_t pv = &mdpg->mdpg_first;
 
+	KASSERT(VM_PAGEMD_PVLIST_EMPTY_P(mdpg));
 	/* Note last mapped address for future color check */
 	pv->pv_va = va;
 
-	KASSERT(pv->pv_pmap == NULL);
 	KASSERT(pv->pv_next == NULL);
 
 	return pa;

@@ -189,9 +189,11 @@ PMAP_COUNTER(page_protect, "page_protects");
 #define PMAP_ASID_RESERVED 0
 CTASSERT(PMAP_ASID_RESERVED == 0);
 
+#if !defined(PMAP_HWPAGEWALKER) || !defined(POOL_PHYSTOV)
 #ifndef PMAP_SEGTAB_ALIGN
 #define PMAP_SEGTAB_ALIGN	/* nothing */
 #endif
+
 #ifdef _LP64
 pmap_segtab_t	pmap_kstart_segtab PMAP_SEGTAB_ALIGN; /* first mid-level segtab for kernel */
 #endif
@@ -200,11 +202,18 @@ pmap_segtab_t	pmap_kern_segtab PMAP_SEGTAB_ALIGN = { /* top level segtab for ker
 	.seg_seg[(VM_MIN_KERNEL_ADDRESS & XSEGOFSET) >> SEGSHIFT] = &pmap_kstart_segtab,
 #endif
 };
+#endif
 
 struct pmap_kernel kernel_pmap_store = {
 	.kernel_pmap = {
 		.pm_count = 1,
-		.pm_segtab = &pmap_kern_segtab,
+#ifdef PMAP_HWPAGEWALKER
+		.pm_pdetab = PMAP_INVALID_PDETAB_ADDRESS,
+#endif
+#if !defined(PMAP_HWPAGEWALKER) || !defined(POOL_PHYSTOV)
+		.pm_segtab = PMAP_INVALID_SEGTAB_ADDRESS,
+		//.pm_segtab = &pmap_kern_segtab,
+#endif
 		.pm_minaddr = VM_MIN_KERNEL_ADDRESS,
 		.pm_maxaddr = VM_MAX_KERNEL_ADDRESS,
 	},
@@ -819,9 +828,11 @@ pmap_deactivate(struct lwp *l)
 	kpreempt_disable();
 	KASSERT(l == curlwp || l->l_cpu == curlwp->l_cpu);
 	pmap_md_tlb_miss_lock_enter();
+#if !defined(PMAP_HWPAGEWALKER) || !defined(POOL_VTOPHYS)
 	curcpu()->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
 #ifdef _LP64
 	curcpu()->ci_pmap_user_seg0tab = NULL;
+#endif
 #endif
 	pmap_tlb_asid_deactivate(pmap);
 	pmap_md_tlb_miss_lock_exit();

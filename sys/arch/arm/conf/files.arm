@@ -208,7 +208,7 @@ file	arch/arm/arm32/cpuswitch.S		arm32
 file	arch/arm/arm32/exception.S		arm32
 file	arch/arm/arm32/fault.c			arm32
 file	arch/arm/arm32/kobj_machdep.c		arm32 & modular
-file	arch/arm/arm32/pmap.c			arm32
+file	arch/arm/arm32/pmap_common.c		arm32
 file	arch/arm/arm32/setcpsr.S		arm32
 file	arch/arm/arm32/setstack.S		arm32
 file	arch/arm/arm32/stubs.c			arm32
@@ -218,8 +218,12 @@ file	arch/arm/arm32/vm_machdep.c		arm32
 # files less common to arm32 implementations...
 file	kern/kern_cctr.c			arm11
 file	arch/arm/arm32/arm11_pmc.c		arm11_pmc
-file	arch/arm/arm32/cortex_pmc.c		cortex_pmc
 file	arch/arm/arm32/arm32_tlb.c		(cpu_armv7 | cpu_arm11) & (!arm11_compat_mmu & !cpu_pre_armv6)
+file	arch/arm/arm32/cortex_pmc.c		cortex_pmc
+file	arch/arm/arm32/pmap.c			(!cpu_armv7 & !cpu_arm11) | (arm11_compat_mmu | cpu_pre_armv6)
+file	arch/arm/arm32/pmap_machdep.c		(cpu_armv7 | cpu_arm11) & (!arm11_compat_mmu & !cpu_pre_armv6)
+file	uvm/pmap/pmap.c				(cpu_armv7 | cpu_arm11) & (!arm11_compat_mmu & !cpu_pre_armv6)
+file	uvm/pmap/pmap_segtab.c			(cpu_armv7 | cpu_arm11) & (!arm11_compat_mmu & !cpu_pre_armv6)
 file	uvm/pmap/pmap_tlb.c			(cpu_armv7 | cpu_arm11) & (!arm11_compat_mmu & !cpu_pre_armv6)
 
 # generic pmap files for arm32 implementations

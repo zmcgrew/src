@@ -144,6 +144,7 @@ pmap_md_cache_prefer_mask(void)
 
 struct tlbmask {
 	vaddr_t	tlb_hi;
+/* XXX register_t */
 #ifdef __mips_o32
 	uint32_t tlb_lo0;
 	uint32_t tlb_lo1;
