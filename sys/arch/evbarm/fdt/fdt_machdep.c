@@ -454,7 +454,7 @@ initarm(void *arg)
 
 #ifdef PMAP_NEED_ALLOC_POOLPAGE
 	bp_lowgig.bp_start = memory_addr / NBPG;
-	if (atop(ram_size) > bp_lowgig.bp_pages) {
+	if (atop(memory_size) > bp_lowgig.bp_pages) {
 		arm_poolpage_vmfreelist = bp_lowgig.bp_freelist;
 		return initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE,
 		    &bp_lowgig, 1);
