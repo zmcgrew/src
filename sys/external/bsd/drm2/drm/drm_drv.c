@@ -1,4 +1,4 @@
-/*	$NetBSD: drm_drv.c,v 1.18 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: drm_drv.c,v 1.20 2017/12/05 19:13:52 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.18 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_drv.c,v 1.20 2017/12/05 19:13:52 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -238,6 +238,7 @@ const struct cdevsw drm_cdevsw = {
 };
 
 static const struct fileops drm_fileops = {
+	.fo_name = "drm",
 	.fo_read = drm_read,
 	.fo_write = fbadop_write,
 	.fo_ioctl = drm_ioctl,
@@ -585,7 +586,7 @@ drm_stat(struct file *fp, struct stat *st)
 	struct drm_file *const file = fp->f_data;
 	struct drm_minor *const dminor = file->minor;
 	const dev_t devno = makedev(cdevsw_lookup_major(&drm_cdevsw),
-	    64*dminor->index + dminor->type);
+	    64*dminor->type + dminor->index);
 
 	(void)memset(st, 0, sizeof(*st));
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.544 2017/11/22 02:36:52 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.549 2017/12/08 05:22:23 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.544 2017/11/22 02:36:52 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.549 2017/12/08 05:22:23 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -1853,7 +1853,13 @@ wm_attach(device_t parent, device_t self, void *aux)
 
 	/* Allocation settings */
 	max_type = PCI_INTR_TYPE_MSIX;
-	counts[PCI_INTR_TYPE_MSIX] = sc->sc_nqueues + 1;
+	/*
+	 * 82583 has a MSI-X capability in the PCI configuration space but
+	 * it doesn't support it. At least the document doesn't say anything
+	 * about MSI-X.
+	 */
+	counts[PCI_INTR_TYPE_MSIX]
+	    = (sc->sc_type == WM_T_82583) ? 0 : sc->sc_nqueues + 1;
 	counts[PCI_INTR_TYPE_MSI] = 1;
 	counts[PCI_INTR_TYPE_INTX] = 1;
 	/* overridden by disable flags */
@@ -2670,11 +2676,12 @@ alloc_retry:
 	case WM_T_82571:
 	case WM_T_82572:
 	case WM_T_82574:
+	case WM_T_82583:
 	case WM_T_82575:
 	case WM_T_82576:
 	case WM_T_82580:
 	case WM_T_I350:
-	case WM_T_I354: /* XXXX ok? */
+	case WM_T_I354:
 	case WM_T_I210:
 	case WM_T_I211:
 	case WM_T_80003:
@@ -2692,7 +2699,6 @@ alloc_retry:
 		break;
 	case WM_T_82542_2_0:
 	case WM_T_82542_2_1:
-	case WM_T_82583:
 	case WM_T_ICH8:
 		/* No support for jumbo frame */
 		break;
@@ -5808,6 +5814,14 @@ wm_init_locked(struct ifnet *ifp)
 		break;
 	}
 
+	/*
+	 * Set the receive filter.
+	 *
+	 * For 82575 and 82576, the RX descriptors must be initialized after
+	 * the setting of RCTL.EN in wm_set_filter()
+	 */
+	wm_set_filter(sc);
+
 	/* On 575 and later set RDT only if RX enabled */
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 		int qidx;
@@ -5821,9 +5835,6 @@ wm_init_locked(struct ifnet *ifp)
 			}
 		}
 	}
-
-	/* Set the receive filter. */
-	wm_set_filter(sc);
 
 	wm_unset_stopping_flags(sc);
 
@@ -6682,13 +6693,13 @@ wm_init_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 				return ENOMEM;
 			}
 		} else {
-			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
-				wm_init_rxdesc(rxq, i);
 			/*
-			 * For 82575 and newer device, the RX descriptors
-			 * must be initialized after the setting of RCTL.EN in
+			 * For 82575 and 82576, the RX descriptors must be
+			 * initialized after the setting of RCTL.EN in
 			 * wm_set_filter()
 			 */
+			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
+				wm_init_rxdesc(rxq, i);
 		}
 	}
 	rxq->rxq_ptr = 0;

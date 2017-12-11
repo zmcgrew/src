@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.46 2017/04/03 05:06:28 kamil Exp $
+# $NetBSD: Makefile,v 1.50 2017/12/10 15:37:54 christos Exp $
 
 NOMAN=		# defined
 
@@ -15,14 +15,22 @@ TESTS_C+=	t_sysv
 TESTS_C+=	t_subr_prf
 TESTS_C+=	t_kauth_pr_47598
 TESTS_C+=	t_sysctl
+TESTS_C+=	t_timeleft
 
 TESTS_SH=	t_umount
 TESTS_SH+=	t_umountstress
 TESTS_SH+=	t_ps_strings
+TESTS_SH+=	t_trapsignal
+TESTS_SH+=	t_interp
+TESTS_SH+=	t_procpath
 
 BINDIR=		${TESTSDIR}
 PROGS=		h_ps_strings1
 PROGS+=		h_ps_strings2
+PROGS+=		h_segv
+PROGS+=		h_getprocpath
+PROGS+=		h_interpreter
+SRCS.h_interpreter += h_interpreter.sh
 
 LDADD.t_mqueue+= -lrt
 
@@ -38,6 +46,7 @@ LDADD.t_extattrctl+= -lrump -lpthread
 LDADD.t_filedesc+=  ${LDADD.t_rnd}
 LDADD.t_rnd+=  -lrumpvfs -lrumpdev_rnd -lrumpdev -lrump -lrumpuser
 LDADD.t_rnd+=  -lrump -lpthread
+LDADD.t_timeleft+=	-lpthread
 
 .endif
 

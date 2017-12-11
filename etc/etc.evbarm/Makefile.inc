@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.inc,v 1.90 2017/08/20 15:35:31 christos Exp $
+#	$NetBSD: Makefile.inc,v 1.92 2017/12/11 11:38:14 jmcneill Exp $
 #
 #	etc.evbarm/Makefile.inc -- evbarm-specific etc Makefile targets
 #
@@ -24,12 +24,8 @@ EVBARM_BOARDS.armv7+=		BCM5301X
 EVBARM_BOARDS.armv7hf+=		BCM5301X
 #EVBARM_BOARDS.armv7+=		BCM56340
 #EVBARM_BOARDS.armv7hf+= 	BCM56340
-EVBARM_BOARDS.armv7+=		BPI
-EVBARM_BOARDS.armv7hf+=		BPI
-EVBARM_BOARDS.armv7+=		CUBIEBOARD
-EVBARM_BOARDS.armv7hf+=		CUBIEBOARD
-EVBARM_BOARDS.armv7+=		CUBIETRUCK
-EVBARM_BOARDS.armv7hf+=		CUBIETRUCK
+KERNEL_SETS.armv7+=		SUNXI
+KERNEL_SETS.armv7hf+=		SUNXI
 .else
 IMAGEENDIAN=	le
 # little endian boards
@@ -90,12 +86,6 @@ EVBARM_BOARDS.armv7+=		BEAGLEBOARDXM
 EVBARM_BOARDS.armv7hf+= 	BEAGLEBOARDXM
 EVBARM_BOARDS.armv7+=		BEAGLEBONE
 EVBARM_BOARDS.armv7hf+= 	BEAGLEBONE
-EVBARM_BOARDS.armv7+=		BPI
-EVBARM_BOARDS.armv7hf+= 	BPI
-EVBARM_BOARDS.armv7+=		CUBIEBOARD
-EVBARM_BOARDS.armv7hf+= 	CUBIEBOARD
-EVBARM_BOARDS.armv7+=		CUBIETRUCK
-EVBARM_BOARDS.armv7hf+= 	CUBIETRUCK
 EVBARM_BOARDS.armv7+=		CUBOX
 EVBARM_BOARDS.armv7hf+= 	CUBOX
 EVBARM_BOARDS.armv7+=		CUBOX-I
@@ -185,19 +175,19 @@ SNAP_MD_POST_DEPS+=	smp_armv7
 .if !empty(KERNEL_SETS:MRPI)
 smp_rpi: __mkimage
 .if empty(ALL_KERNELS) || !empty(ALL_KERNELS:MRPI)
-MKI_OPTS.smp_rpi=	-K ${IMAGE.kern}/netbsd-RPI.bin.gz
+MKI_OPTS.smp_rpi=	-K ${IMAGE.kern}/netbsd-RPI.img.gz
 SNAP_MD_POST_DEPS+=	smp_rpi
 .endif
-smp_rpi_inst: ${IMAGE.instk}/netbsd-RPI_INSTALL.bin.gz __mkimage
+smp_rpi_inst: ${IMAGE.instk}/netbsd-RPI_INSTALL.img.gz __mkimage
 .if empty(ALL_KERNELS) || !empty(ALL_KERNELS:MRPI_INSTALL)
-MKI_OPTS.smp_rpi_inst=	-b -K ${IMAGE.instk}/netbsd-RPI_INSTALL.bin.gz
+MKI_OPTS.smp_rpi_inst=	-b -K ${IMAGE.instk}/netbsd-RPI_INSTALL.img.gz
 SNAP_MD_POST_DEPS+=	smp_rpi_inst
 .endif
 .endif
 
 snap_md_post: check_DESTDIR check_RELEASEDIR snap_post .WAIT ${SNAP_MD_POST_DEPS}
 
-KERNEL_SUFFIXES=	bin srec ub
+KERNEL_SUFFIXES=	bin img srec ub
 
 INSTALLATION_DIRS+=	binary/gzimg		\
 			installation/instkernel

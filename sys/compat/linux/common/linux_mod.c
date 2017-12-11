@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_mod.c,v 1.7 2017/09/29 17:08:00 maxv Exp $	*/
+/*	$NetBSD: linux_mod.c,v 1.10 2017/12/10 00:43:05 kre Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_mod.c,v 1.7 2017/09/29 17:08:00 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_mod.c,v 1.10 2017/12/10 00:43:05 kre Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_execfmt.h"
@@ -119,7 +119,7 @@ static struct execsw linux_execsw[] = {
 #endif
 };
 
-int linux_enabled = 0;
+int linux_enabled = 1;
 
 int
 linux_sysctl_enable(SYSCTLFN_ARGS)
@@ -136,13 +136,16 @@ linux_sysctl_enable(SYSCTLFN_ARGS)
 	if (error != 0 || newp == NULL)
 		return error;
 
-	if (val == 1) {
+	if (val == *(int *)rnode->sysctl_data)
+		return 0;
+
+	if (val == 1)
 		error = exec_add(linux_execsw, __arraycount(linux_execsw));
-	} else if (val == 0) {
+	else if (val == 0)
 		error = exec_remove(linux_execsw, __arraycount(linux_execsw));
-	} else {
+	else 
 		error = EINVAL;
-	}
+
 	if (error)
 		return error;
 
@@ -158,10 +161,12 @@ compat_linux_modcmd(modcmd_t cmd, void *arg)
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		linux_enabled = 0;
 		linux_futex_init();
 		linux_sysctl_init();
-		return 0;
+		error = exec_add(linux_execsw, __arraycount(linux_execsw));
+		if (error != 0) 	 
+			linux_sysctl_fini();
+		return error;
 
 	case MODULE_CMD_FINI:
 		error = exec_remove(linux_execsw, __arraycount(linux_execsw));

@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.308 2017/10/10 19:29:44 christos Exp $
+#	$NetBSD: bsd.prog.mk,v 1.310 2017/12/11 13:08:47 christos Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG
@@ -431,7 +431,8 @@ _CCLINK.${_P}=	${CXX} ${_CCLINKFLAGS}
 BINDIR.${_P}?=		${BINDIR}
 PROGNAME.${_P}?=	${_P}
 
-.if ${MKDEBUG:Uno} != "no" && !defined(NODEBUG) && !commands(${_P})
+.if ${MKDEBUG:Uno} != "no" && !defined(NODEBUG) && !commands(${_P}) && \
+    empty(SRCS.${_P}:M*.sh)
 _PROGDEBUG.${_P}:=	${PROGNAME.${_P}}.debug
 .endif
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: linux32_mod.c,v 1.8 2017/09/29 17:47:29 maxv Exp $	*/
+/*	$NetBSD: linux32_mod.c,v 1.11 2017/12/10 00:43:05 kre Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux32_mod.c,v 1.8 2017/09/29 17:47:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux32_mod.c,v 1.11 2017/12/10 00:43:05 kre Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_execfmt.h"
@@ -78,7 +78,7 @@ static struct execsw linux32_execsw[] = {
 #endif
 };
 
-int linux32_enabled = 0;
+int linux32_enabled = 1;
 
 int
 linux32_sysctl_enable(SYSCTLFN_ARGS)
@@ -95,13 +95,17 @@ linux32_sysctl_enable(SYSCTLFN_ARGS)
 	if (error != 0 || newp == NULL)
 		return error;
 
-	if (val == 1) {
+	if (val == *(int *)rnode->sysctl_data)
+		return 0;
+
+	if (val == 1)
 		error = exec_add(linux32_execsw, __arraycount(linux32_execsw));
-	} else if (val == 0) {
-		error = exec_remove(linux32_execsw, __arraycount(linux32_execsw));
-	} else {
+	else if (val == 0)
+		error =
+		    exec_remove(linux32_execsw, __arraycount(linux32_execsw));
+	else
 		error = EINVAL;
-	}
+
 	if (error)
 		return error;
 
@@ -117,12 +121,15 @@ compat_linux32_modcmd(modcmd_t cmd, void *arg)
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		linux32_enabled = 0;
 		linux32_sysctl_init();
-		return 0;
+		error = exec_add(linux32_execsw, __arraycount(linux32_execsw));
+		if (error != 0) 	 
+			linux32_sysctl_fini(); 	 
+		return error;
 
 	case MODULE_CMD_FINI:
-		error = exec_remove(linux32_execsw, __arraycount(linux32_execsw));
+		error =
+		    exec_remove(linux32_execsw, __arraycount(linux32_execsw));
 		if (error)
 			return error;
 		linux32_sysctl_fini();

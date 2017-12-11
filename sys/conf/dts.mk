@@ -1,8 +1,16 @@
-# $NetBSD: dts.mk,v 1.3 2017/09/07 21:22:19 jmcneill Exp $
+# $NetBSD: dts.mk,v 1.8 2017/12/10 14:29:47 christos Exp $
 
 DTSARCH?=${MACHINE_CPU}
 DTSGNUARCH?=${DTSARCH}
 DTSPADDING?=1024
+
+.if !make(obj) && !make(clean) && !make(cleandir)
+.BEGIN::
+	-@mkdir -p dts
+.for _arch in ${DTSGNUARCH}
+	-@ln -sf ${S:S@^../@../../@}/external/gpl2/dts/dist/arch/${_arch}/boot/dts dts/${_arch}
+.endfor
+.endif
 
 DTSINC?=$S/external/gpl2/dts/dist/include
 .for _arch in ${DTSARCH}
@@ -17,7 +25,7 @@ DTSDIR+=$S/external/gpl2/dts/dist/arch/${_arch}/boot/dts/${_dir}
 .endfor
 .endfor
 
-DTSPATH=${DTSINC} ${DTSDIR}
+DTSPATH=${DTSINC} ${DTSDIR} dts
 
 .SUFFIXES: .dtd .dtb .dts
 

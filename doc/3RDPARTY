@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1485 2017/11/17 16:21:44 rin Exp $
+#	$NetBSD: 3RDPARTY,v 1.1489 2017/12/06 10:37:08 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -334,8 +334,8 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.0.0-rc3
-Current Vers:	7.0.0-rc3
+Version:	7.0.0-rc4
+Current Vers:	7.0.0-rc4
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
@@ -482,7 +482,7 @@ Before importing a new version of external/gpl3/gcc:
 	  into gcc/dist/gcc/doc: cpp.1 cpp.info gcc.1 gcc.info gcov.1
 
 Package:	gdb
-Version:	7.12
+Version:	8.0.1
 Current Vers:	8.0.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
@@ -848,10 +848,10 @@ Uses libc's ohash
 
 Package:	mDNSResponder
 Version:	320.16
-Current Vers:	541
+Current Vers:	878
 Maintainer:	Apple
-Archive Site:	http://www.opensource.apple.com/tarballs/mDNSResponder/
-Home Page:	http://developer.apple.com/opensource/internet/bonjour.html
+Archive Site:	https://www.opensource.apple.com/tarballs/mDNSResponder/
+Home Page:	https://developer.apple.com/bonjour/
 Mailing List:	bonjour-dev@lists.apple.com
 License:	Apache2 (mdnsd), BSD 3-clause (libdns_sd),
 		BSD 3-clause like (dns-sd)
@@ -1717,8 +1717,8 @@ Notes:
 external/gpl2/dtc/dtc2netbsd should be used to create directories to import
 
 Package:	dts
-Version:	4.14-rc6
-Current Vers:	4.14-rc6
+Version:	4.15-rc1
+Current Vers:	4.15-rc1
 Maintainer:	https://www.kernel.org/
 Archive Site:	https://cdn.kernel.org/pub/linux/kernel/v4.x/
 Home Page:	https://www.kernel.org/

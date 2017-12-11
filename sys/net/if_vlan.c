@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.112 2017/11/22 05:17:32 msaitoh Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.119 2017/12/11 03:29:20 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.112 2017/11/22 05:17:32 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.119 2017/12/11 03:29:20 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -255,6 +255,16 @@ vlan_safe_ifpromisc(struct ifnet *ifp, int pswitch)
 	return e;
 }
 
+static inline int
+vlan_safe_ifpromisc_locked(struct ifnet *ifp, int pswitch)
+{
+	int e;
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
+	e = ifpromisc_locked(ifp, pswitch);
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+	return e;
+}
+
 void
 vlanattach(int n)
 {
@@ -387,7 +397,9 @@ vlan_clone_destroy(struct ifnet *ifp)
 	LIST_REMOVE(ifv, ifv_list);
 	mutex_exit(&ifv_list.lock);
 
+	IFNET_LOCK(ifp);
 	vlan_unconfig(ifp);
+	IFNET_UNLOCK(ifp);
 	if_detach(ifp);
 
 	psref_target_destroy(&ifv->ifv_mib->ifvm_psref, ifvm_psref_class);
@@ -451,7 +463,10 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 		nmib->ifvm_mintu = ETHERMIN;
 
 		if (ec->ec_nvlans++ == 0) {
-			if ((error = ether_enable_vlan_mtu(p)) >= 0) {
+			IFNET_LOCK(p);
+			error = ether_enable_vlan_mtu(p);
+			IFNET_UNLOCK(p);
+			if (error >= 0) {
 				if (error) {
 					ec->ec_nvlans--;
 					goto done;
@@ -548,6 +563,8 @@ vlan_unconfig(struct ifnet *ifp)
 	struct ifvlan_linkmib *nmib = NULL;
 	int error;
 
+	KASSERT(IFNET_LOCKED(ifp));
+
 	nmib = kmem_alloc(sizeof(*nmib), KM_SLEEP);
 
 	mutex_enter(&ifv->ifv_lock);
@@ -566,7 +583,10 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	struct ifvlan_linkmib *omib;
 	int error = 0;
 
+	KASSERT(IFNET_LOCKED(ifp));
 	KASSERT(mutex_owned(&ifv->ifv_lock));
+
+	ifp->if_flags &= ~(IFF_UP|IFF_RUNNING);
 
 	omib = ifv->ifv_mib;
 	p = omib->ifvm_p;
@@ -592,8 +612,11 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	case IFT_ETHER:
 	    {
 		struct ethercom *ec = (void *)p;
-		if (--ec->ec_nvlans == 0)
-			(void)ether_disable_vlan_mtu(p);
+		if (--ec->ec_nvlans == 0) {
+			IFNET_LOCK(p);
+			(void) ether_disable_vlan_mtu(p);
+			IFNET_UNLOCK(p);
+		}
 
 		ether_ifdetach(ifp);
 		/* Restore vlan_ioctl overwritten by ether_ifdetach */
@@ -634,9 +657,8 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 #endif
 
 	if ((ifp->if_flags & IFF_PROMISC) != 0)
-		vlan_safe_ifpromisc(ifp, 0);
-	if_down(ifp);
-	ifp->if_flags &= ~(IFF_UP|IFF_RUNNING);
+		vlan_safe_ifpromisc_locked(ifp, 0);
+	if_down_locked(ifp);
 	ifp->if_capabilities = 0;
 	mutex_enter(&ifv->ifv_lock);
 done:
@@ -805,6 +827,10 @@ vlan_ifdetach(struct ifnet *p)
 
 	i = 0;
 	LIST_FOREACH(ifv, &ifv_list.list, ifv_list) {
+		struct ifnet *ifp = &ifv->ifv_if;
+
+		/* Need IFNET_LOCK that must be held before ifv_lock. */
+		IFNET_LOCK(ifp);
 		mutex_enter(&ifv->ifv_lock);
 		if (ifv->ifv_mib->ifvm_p == p) {
 			KASSERTMSG(i < cnt, "no memory for unconfig, parent=%s",
@@ -817,6 +843,7 @@ vlan_ifdetach(struct ifnet *p)
 
 		}
 		mutex_exit(&ifv->ifv_lock);
+		IFNET_UNLOCK(ifp);
 	}
 
 	mutex_exit(&ifv_list.lock);
@@ -953,10 +980,11 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		if (error != 0) {
 			break;
 		}
-		ifp->if_flags |= IFF_RUNNING;
 
 		/* Update promiscuous mode, if necessary. */
 		vlan_set_promisc(ifp);
+
+		ifp->if_flags |= IFF_RUNNING;
 		break;
 
 	case SIOCGETVLAN:
@@ -1384,6 +1412,14 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	ec = (void *)mib->ifvm_p;
 
 	bpf_mtap(ifp, m);
+
+	if (pfil_run_hooks(ifp->if_pfil, &m, ifp, PFIL_OUT) != 0) {
+		if (m != NULL)
+			m_freem(m);
+		error = 0;
+		goto out;
+	}
+
 	/*
 	 * If the parent can insert the tag itself, just mark
 	 * the tag in the mbuf header.
@@ -1567,6 +1603,12 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 
 	m_set_rcvif(m, &ifv->ifv_if);
 	ifv->ifv_if.if_ipackets++;
+
+	if (pfil_run_hooks(ifp->if_pfil, &m, ifp, PFIL_IN) != 0) {
+		if (m != NULL)
+			m_freem(m);
+		goto out;
+	}
 
 	m->m_flags &= ~M_PROMISC;
 	if_input(&ifv->ifv_if, m);

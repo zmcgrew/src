@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.468 2017/11/06 02:57:18 rin Exp $
+# $NetBSD: GENERIC,v 1.475 2017/12/10 17:19:48 bouyer Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.468 $"
+#ident		"GENERIC-$Revision: 1.475 $"
 
 maxusers	64		# estimated number of users
 
@@ -115,11 +115,13 @@ makeoptions	DEBUG="-g"	# compile full symbol table for CTF
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
 
 # Compatibility options
-# (note that really old compat (< 1.6) is only useful for 32-bit binaries)
 #options 	EXEC_AOUT	# required by binaries from before 1.5
-#options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 
+# NetBSD backward compatibility. Support goes from COMPAT_15 up until
+# the latest release. Note that really old compat (< COMPAT_16) is only
+# useful for 32-bit binaries.
 include 	"conf/compat_netbsd15.config"
+
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 
 options 	COMPAT_OSSAUDIO
@@ -162,19 +164,22 @@ file-system	PTYFS		# /dev/ptm support
 #file-system	NILFS		# experimental - NTT's NiLFS(2)
 
 # File system options
+# ffs
 options 	QUOTA		# legacy UFS quotas
 options 	QUOTA2		# new, in-filesystem UFS quotas
-#options 	DISKLABEL_EI	# disklabel Endian Independent support
 options 	FFS_EI		# FFS Endian Independent support
 options 	WAPBL		# File system journaling support
 # Note that UFS_DIRHASH is suspected of causing kernel memory corruption.
 # It is not recommended for general use.
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
-options 	NFSSERVER	# Network File System server
-#options 	EXT2FS_SYSTEM_FLAGS # makes ext2fs file flags (append and
-				# immutable) behave as system flags.
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 options 	UFS_EXTATTR	# Extended attribute support for UFS1
+# ext2fs
+#options 	EXT2FS_SYSTEM_FLAGS # makes ext2fs file flags (append and
+				# immutable) behave as system flags.
+# other
+#options 	DISKLABEL_EI	# disklabel Endian Independent support
+options 	NFSSERVER	# Network File System server
 
 # Networking options
 #options 	GATEWAY		# packet forwarding
@@ -313,6 +318,7 @@ joy*		at acpi?		# Joystick/Game port
 mpu*		at acpi?		# Roland MPU-401 MIDI UART
 pckbc*		at acpi?		# PC keyboard controller
 pcppi*		at acpi?		# AT-style speaker sound
+qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 sdhc*		at acpi?		# SD Host Controller
 sony*		at acpi?		# Sony Notebook Controller
 spic*		at acpi?		# Sony Programmable I/O Controller
@@ -389,6 +395,7 @@ wsdisplay*	at vga? console ?
 wsdisplay*	at wsemuldisplaydev?
 wskbd*		at pckbd? console ?
 wsmouse*	at pms? mux 0
+wsmouse*	at wsmousedev?
 
 attimer0	at isa?
 pcppi0		at isa?
@@ -503,6 +510,10 @@ iic*	at ichsmb?
 ismt* at pci? dev ? function ?
 iic*	at ismt?
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # Thermal monitor and fan controller
 #dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
 #dbcool* at iic? addr 0x2D		# Tyan S2881
@@ -537,6 +548,13 @@ iic*	at ismt?
 #sdtemp* at iic? addr 0x1d
 #sdtemp* at iic? addr 0x1e
 #sdtemp* at iic? addr 0x1f
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 iop*	at pci? dev ? function ?	# I/O processor
@@ -1111,6 +1129,7 @@ audio*	at audiobus?
 # The spkr driver provides a simple tone interface to the built in speaker.
 spkr*	at pcppi?		# PC speaker
 spkr*	at audio?		# PC speaker (synthesized)
+#wsbell* at spkr?		# Bell for wscons display (module by default)
 
 # MPU 401 UARTs
 #mpu*	at isa? port 0x330 irq 9	# MPU401 or compatible card

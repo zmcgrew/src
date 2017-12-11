@@ -1,4 +1,4 @@
-#	$NetBSD: files.amd64,v 1.94 2017/10/08 09:06:50 maxv Exp $
+#	$NetBSD: files.amd64,v 1.96 2017/12/07 23:11:50 christos Exp $
 #
 # new style config file for amd64 architecture
 #

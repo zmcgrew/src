@@ -1,4 +1,4 @@
-# $NetBSD: md.i386,v 1.146 2017/08/12 21:46:01 kre Exp $
+# $NetBSD: md.i386,v 1.148 2017/11/29 09:34:01 wiz Exp $
 ./dev/lms0					base-obsolete		obsolete
 ./dev/mms0					base-obsolete		obsolete
 ./dev/pms0					base-obsolete		obsolete
@@ -14,6 +14,7 @@
 ./lib/libm387.so.0				base-sys-shlib		dynamicroot,pic
 ./lib/libm387.so.0.1				base-sys-shlib		dynamicroot,pic
 ./sbin/ldconfig					base-sysutil-root	pic
+./sbin/mount_qemufwcfg				base-sysutil-root
 ./usr/bin/fdformat				base-util-bin
 ./usr/bin/fontedit				base-obsolete		obsolete
 ./usr/bin/iasl					base-util-bin
@@ -103,6 +104,9 @@
 ./usr/sbin/ipwctl				base-sysutil-bin
 ./usr/sbin/ndiscvt				base-sysutil-bin
 ./usr/sbin/zzz					base-sysutil-bin
+./usr/share/man/cat8/mount_qemufwcfg.0		man-sysutil-catman	.cat
+./usr/share/man/html8/mount_qemufwcfg.html	man-sysutil-htmlman	html
+./usr/share/man/man8/mount_qemufwcfg.8		man-sysutil-man		.man
 ./usr/share/pcvt				base-obsolete		obsolete
 ./usr/share/pcvt/fonts				base-obsolete		obsolete
 ./usr/share/pcvt/fonts/vt220h.808		base-obsolete		obsolete

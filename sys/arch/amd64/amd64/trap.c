@@ -1,4 +1,4 @@
-/*	$NetBSD: trap.c,v 1.104 2017/10/21 08:08:26 maxv Exp $	*/
+/*	$NetBSD: trap.c,v 1.109 2017/12/09 00:52:41 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000, 2017 The NetBSD Foundation, Inc.
@@ -64,14 +64,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.104 2017/10/21 08:08:26 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: trap.c,v 1.109 2017/12/09 00:52:41 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_xen.h"
 #include "opt_dtrace.h"
-#include "opt_compat_netbsd.h"
-#include "opt_compat_netbsd32.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -152,6 +150,13 @@ const char * const trap_type[] = {
 int	trap_types = __arraycount(trap_type);
 
 #define	IDTVEC(name)	__CONCAT(X, name)
+
+#ifdef TRAP_SIGDEBUG
+static void sigdebug(const struct trapframe *, const ksiginfo_t *, int);
+#define SIGDEBUG(a, b, c) sigdebug(a, b, c)
+#else
+#define SIGDEBUG(a, b, c)
+#endif
 
 static void
 onfault_restore(struct trapframe *frame, void *onfault, int error)
@@ -467,8 +472,8 @@ trap(struct trapframe *frame)
 		}
 		goto trapsignal;
 
-	case T_PRIVINFLT|T_USER:
-	case T_FPOPFLT|T_USER:
+	case T_PRIVINFLT|T_USER:	/* privileged instruction fault */
+	case T_FPOPFLT|T_USER:		/* coprocessor operand fault */
 		KSI_INIT_TRAP(&ksi);
 		ksi.ksi_signo = SIGILL;
 		ksi.ksi_trap = type & ~T_USER;
@@ -546,16 +551,26 @@ trap(struct trapframe *frame)
 
 		if (frame->tf_err & PGEX_X) {
 			/* SMEP might have brought us here */
-			if (cr2 < VM_MAXUSER_ADDRESS)
-				panic("prevented execution of %p (SMEP)",
-				    (void *)cr2);
+			if (cr2 < VM_MAXUSER_ADDRESS) {
+				if (cr2 == 0)
+					panic("prevented jump to null"
+					    " instruction pointer (SMEP)");
+				else
+					panic("prevented execution of"
+					    " user address %p (SMEP)",
+					    (void *)cr2);
+			}
 		}
 
 		if (cr2 < VM_MAXUSER_ADDRESS) {
 			/* SMAP might have brought us here */
-			if (onfault_handler(pcb, frame) == NULL)
-				panic("prevented access to %p (SMAP)",
+			if (onfault_handler(pcb, frame) == NULL) {
+				panic("prevented %s %p (SMAP)",
+				    (cr2 < PAGE_SIZE
+					? "null pointer dereference at"
+					: "access to"),
 				    (void *)cr2);
+			}
 		}
 
 		goto faultcommon;
@@ -699,7 +714,8 @@ faultcommon:
 			break;
 		}
 
-		(*p->p_emul->e_trapsignal)(l, &ksi);
+		SIGDEBUG(frame, &ksi, error);
+ 		(*p->p_emul->e_trapsignal)(l, &ksi);
 		break;
 	}
 
@@ -725,8 +741,8 @@ faultcommon:
 		}
 		goto we_re_toast;
 
-	case T_BPTFLT|T_USER:
-	case T_TRCTRAP|T_USER:
+	case T_BPTFLT|T_USER:		/* bpt instruction fault */
+	case T_TRCTRAP|T_USER:		/* trace trap */
 		/*
 		 * Don't go single-stepping into a RAS.
 		 */
@@ -753,6 +769,7 @@ out:
 	userret(l);
 	return;
 trapsignal:
+	SIGDEBUG(frame, &ksi, 0);
 	(*p->p_emul->e_trapsignal)(l, &ksi);
 	userret(l);
 }
@@ -774,3 +791,43 @@ startlwp(void *arg)
 	userret(l);
 }
 
+#ifdef TRAP_SIGDEBUG
+static void
+frame_dump(const struct trapframe *tf, struct pcb *pcb)
+{
+
+	printf("trapframe %p\n", tf);
+	printf("rip %#018lx  rsp %#018lx  rfl %#018lx\n",
+	    tf->tf_rip, tf->tf_rsp, tf->tf_rflags);
+	printf("rdi %#018lx  rsi %#018lx  rdx %#018lx\n",
+	    tf->tf_rdi, tf->tf_rsi, tf->tf_rdx);
+	printf("rcx %#018lx  r8  %#018lx  r9  %#018lx\n",
+	    tf->tf_rcx, tf->tf_r8, tf->tf_r9);
+	printf("r10 %#018lx  r11 %#018lx  r12 %#018lx\n",
+	    tf->tf_r10, tf->tf_r11, tf->tf_r12);
+	printf("r13 %#018lx  r14 %#018lx  r15 %#018lx\n",
+	    tf->tf_r13, tf->tf_r14, tf->tf_r15);
+	printf("rbp %#018lx  rbx %#018lx  rax %#018lx\n",
+	    tf->tf_rbp, tf->tf_rbx, tf->tf_rax);
+	printf("cs %#04lx  ds %#04lx  es %#04lx  "
+	    "fs %#04lx  gs %#04lx  ss %#04lx\n",
+	    tf->tf_cs & 0xffff, tf->tf_ds & 0xffff, tf->tf_es & 0xffff,
+	    tf->tf_fs & 0xffff, tf->tf_gs & 0xffff, tf->tf_ss & 0xffff);
+	printf("fsbase %#018lx gsbase %#018lx\n", pcb->pcb_fs, pcb->pcb_gs);
+	printf("\n");
+	hexdump(printf, "Stack dump", tf, 256);
+}
+
+static void
+sigdebug(const struct trapframe *tf, const ksiginfo_t *ksi, int e)
+{
+	struct lwp *l = curlwp;
+	struct proc *p = l->l_proc;
+
+	printf("pid %d.%d (%s): signal %d (trap %#lx) "
+	    "@rip %#lx addr %#lx error=%d\n",
+	    p->p_pid, l->l_lid, p->p_comm, ksi->ksi_signo, tf->tf_trapno,
+	    tf->tf_rip, rcr2(), e);
+	frame_dump(tf, lwp_getpcb(l));
+}
+#endif

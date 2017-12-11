@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.141 2017/11/17 07:52:07 ozaki-r Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.145 2017/12/11 03:29:20 ozaki-r Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.141 2017/11/17 07:52:07 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.145 2017/12/11 03:29:20 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bridge_ipf.h"
@@ -772,7 +772,10 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		}
 		/* FALLTHROUGH */
 	case IFT_L2TP:
-		if ((error = ether_enable_vlan_mtu(ifs)) > 0)
+		IFNET_LOCK(ifs);
+		error = ether_enable_vlan_mtu(ifs);
+		IFNET_UNLOCK(ifs);
+		if (error > 0)
 			goto out;
 		/*
 		 * Place the interface into promiscuous mode.
@@ -853,7 +856,9 @@ bridge_ioctl_del(struct bridge_softc *sc, void *arg)
 		 * Don't call it with holding a spin lock.
 		 */
 		(void) ifpromisc(ifs, 0);
+		IFNET_LOCK(ifs);
 		(void) ether_disable_vlan_mtu(ifs);
+		IFNET_UNLOCK(ifs);
 		break;
 	default:
 #ifdef DIAGNOSTIC
@@ -1327,14 +1332,13 @@ bridge_init(struct ifnet *ifp)
 {
 	struct bridge_softc *sc = ifp->if_softc;
 
-	if (ifp->if_flags & IFF_RUNNING)
-		return 0;
+	KASSERT((ifp->if_flags & IFF_RUNNING) == 0);
 
 	callout_reset(&sc->sc_brcallout, bridge_rtable_prune_period * hz,
 	    bridge_timer, sc);
+	bstp_initialization(sc);
 
 	ifp->if_flags |= IFF_RUNNING;
-	bstp_initialization(sc);
 	return 0;
 }
 
@@ -1348,15 +1352,12 @@ bridge_stop(struct ifnet *ifp, int disable)
 {
 	struct bridge_softc *sc = ifp->if_softc;
 
-	if ((ifp->if_flags & IFF_RUNNING) == 0)
-		return;
+	KASSERT((ifp->if_flags & IFF_RUNNING) != 0);
+	ifp->if_flags &= ~IFF_RUNNING;
 
 	callout_stop(&sc->sc_brcallout);
 	bstp_stop(sc);
-
 	bridge_rtflush(sc, IFBF_FLUSHDYN);
-
-	ifp->if_flags &= ~IFF_RUNNING;
 }
 
 /*

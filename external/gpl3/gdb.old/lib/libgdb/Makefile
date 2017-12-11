@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.6 2016/10/12 15:36:26 christos Exp $
+#	$NetBSD: Makefile,v 1.8 2017/12/08 14:10:29 rin Exp $
 
 .include <bsd.own.mk>
 
@@ -9,8 +9,6 @@ LIB=		gdb
 GDBARCHDIR=	${.CURDIR}/arch/${GDB_MACHINE_ARCH}
 
 .include "${GDBARCHDIR}/defs.mk"
-
-DIST=		${NETBSDSRCDIR}/gnu/dist/gdb6
 
 SRCS=		${G_LIBGDB_OBS:.o=.c}
 GCPPFLAGS=	${G_INTERNAL_CFLAGS}
@@ -27,6 +25,7 @@ CPPFLAGS+=	-I${.CURDIR} \
 		-I${.CURDIR}/../libdecnumber/arch/${GDB_MACHINE_ARCH} \
 		-I${DIST}/bfd \
 		-I${DIST}/include \
+		-Dsighandler_t=sig_t \
 		-DTARGET_SYSTEM_ROOT=\"\" \
 		-DTARGET_SYSTEM_ROOT_RELOCATABLE=0 \
 		-DBINDIR=\"${BINDIR}\" \
@@ -41,8 +40,8 @@ CWARNFLAGS.clang+=	-Wno-switch
 .include "../../Makefile.inc"
 .include <bsd.lib.mk>
 
-.PATH: ${DIST}/gdb ${DIST}/gdb/mi ${DIST}/gdb/cli ${DIST}/gdb/tui \
-    ${DIST}/gdb/python ${DIST}/gdb/common ${DIST}/gdb/target \
+.PATH: ${DIST}/gdb ${DIST}/gdb/arch ${DIST}/gdb/mi ${DIST}/gdb/cli  \
+    ${DIST}/gdb/tui ${DIST}/gdb/python ${DIST}/gdb/common ${DIST}/gdb/target \
     ${DIST}/gdb/guile ${DIST}/gdb/compile ${DIST}/gdb/doc ${GDBARCHDIR}
 
 #

@@ -1,4 +1,4 @@
-/*	$NetBSD: mm.c,v 1.18 2017/11/21 07:56:05 maxv Exp $	*/
+/*	$NetBSD: mm.c,v 1.20 2017/11/26 14:29:48 maxv Exp $	*/
 
 /*
  * Copyright (c) 2017 The NetBSD Foundation, Inc. All rights reserved.
@@ -71,6 +71,15 @@ mm_init(paddr_t first_pa)
 static void
 mm_enter_pa(paddr_t pa, vaddr_t va, pte_prot_t prot)
 {
+	if (PTE_BASE[pl1_i(va)] & PG_V) {
+		fatal("mm_enter_pa: mapping already present");
+	}
+	PTE_BASE[pl1_i(va)] = pa | PG_V | protection_codes[prot];
+}
+
+static void
+mm_reenter_pa(paddr_t pa, vaddr_t va, pte_prot_t prot)
+{
 	PTE_BASE[pl1_i(va)] = pa | PG_V | protection_codes[prot];
 }
 
@@ -92,7 +101,7 @@ mm_palloc(size_t npages)
 
 	/* Zero them out */
 	for (i = 0; i < npages; i++) {
-		mm_enter_pa(pa + i * PAGE_SIZE, tmpva,
+		mm_reenter_pa(pa + i * PAGE_SIZE, tmpva,
 		    MM_PROT_READ|MM_PROT_WRITE);
 		mm_flush_va(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
@@ -120,7 +129,7 @@ mm_mprotect(vaddr_t startva, size_t size, pte_prot_t prot)
 	for (i = 0; i < npages; i++) {
 		va = startva + i * PAGE_SIZE;
 		pa = (PTE_BASE[pl1_i(va)] & PG_FRAME);
-		mm_enter_pa(pa, va, prot);
+		mm_reenter_pa(pa, va, prot);
 		mm_flush_va(va);
 	}
 }
@@ -196,13 +205,6 @@ mm_map_tree(vaddr_t startva, vaddr_t endva)
 	}
 }
 
-static uint64_t
-mm_rand_num64(void)
-{
-	/* XXX: yes, this is ridiculous, will be fixed soon */
-	return rdtsc();
-}
-
 static vaddr_t
 mm_randva_kregion(size_t size, size_t pagesz)
 {
@@ -213,7 +215,7 @@ mm_randva_kregion(size_t size, size_t pagesz)
 	bool ok;
 
 	while (1) {
-		rnd = mm_rand_num64();
+		prng_get_rand(&rnd, sizeof(rnd));
 		randva = rounddown(KASLR_WINDOW_BASE +
 		    rnd % (KASLR_WINDOW_SIZE - size), pagesz);
 
@@ -231,6 +233,10 @@ mm_randva_kregion(size_t size, size_t pagesz)
 				break;
 			}
 			if ((sva < randva + size) && (randva + size <= eva)) {
+				ok = false;
+				break;
+			}
+			if (randva < sva && eva < (randva + size)) {
 				ok = false;
 				break;
 			}
@@ -298,7 +304,7 @@ mm_shift_segment(vaddr_t va, size_t pagesz, size_t elfsz, size_t elfalign)
 		return 0;
 	}
 
-	rnd = mm_rand_num64();
+	prng_get_rand(&rnd, sizeof(rnd));
 	offset = roundup(rnd % shiftsize, elfalign);
 	ASSERT((va + offset) % elfalign == 0);
 
@@ -322,7 +328,7 @@ mm_map_head(void)
 	size = elf_get_head_size((vaddr_t)kernpa_start);
 	npages = size / PAGE_SIZE;
 
-	rnd = mm_rand_num64();
+	prng_get_rand(&rnd, sizeof(rnd));
 	randva = rounddown(HEAD_WINDOW_BASE + rnd % (HEAD_WINDOW_SIZE - size),
 	    PAGE_SIZE);
 	mm_map_tree(randva, randva + size);

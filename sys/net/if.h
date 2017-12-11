@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.244 2017/11/22 03:03:18 ozaki-r Exp $	*/
+/*	$NetBSD: if.h,v 1.253 2017/12/11 03:29:20 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -1006,6 +1006,7 @@ bool	if_is_deactivated(const struct ifnet *);
 void	if_purgeaddrs(struct ifnet *, int, void (*)(struct ifaddr *));
 void	if_detach(struct ifnet *);
 void	if_down(struct ifnet *);
+void	if_down_locked(struct ifnet *);
 void	if_link_state_change(struct ifnet *, int);
 void	if_link_state_change_softint(struct ifnet *, int);
 void	if_up(struct ifnet *);
@@ -1015,6 +1016,7 @@ int	ifaddrpref_ioctl(struct socket *, u_long, void *, struct ifnet *);
 extern int (*ifioctl)(struct socket *, u_long, void *, struct lwp *);
 int	ifioctl_common(struct ifnet *, u_long, void *);
 int	ifpromisc(struct ifnet *, int);
+int	ifpromisc_locked(struct ifnet *, int);
 int	if_addr_init(ifnet_t *, struct ifaddr *, bool);
 int	if_do_dad(struct ifnet *);
 int	if_mcast_op(ifnet_t *, const unsigned long, const struct sockaddr *);
@@ -1029,6 +1031,8 @@ ifnet_t *if_get_bylla(const void *, unsigned char, struct psref *);
 void	if_put(const struct ifnet *, struct psref *);
 void	if_acquire(struct ifnet *, struct psref *);
 #define	if_release	if_put
+
+int if_tunnel_check_nesting(struct ifnet *, struct mbuf *, int);
 
 static inline if_index_t
 if_get_index(const struct ifnet *ifp)
@@ -1181,9 +1185,9 @@ __END_DECLS
 		}							\
 	} while (0)
 
-#define	IFNET_LOCK()			mutex_enter(&ifnet_mtx)
-#define	IFNET_UNLOCK()			mutex_exit(&ifnet_mtx)
-#define	IFNET_LOCKED()			mutex_owned(&ifnet_mtx)
+#define	IFNET_GLOBAL_LOCK()			mutex_enter(&ifnet_mtx)
+#define	IFNET_GLOBAL_UNLOCK()			mutex_exit(&ifnet_mtx)
+#define	IFNET_GLOBAL_LOCKED()			mutex_owned(&ifnet_mtx)
 
 #define IFNET_READER_EMPTY() \
 	(PSLIST_READER_FIRST(&ifnet_pslist, struct ifnet, if_pslist_entry) == NULL)
@@ -1222,6 +1226,10 @@ __END_DECLS
 			}						\
 		}							\
 	} while (0)
+
+#define IFNET_LOCK(ifp)		mutex_enter((ifp)->if_ioctl_lock)
+#define IFNET_UNLOCK(ifp)	mutex_exit((ifp)->if_ioctl_lock)
+#define IFNET_LOCKED(ifp)	mutex_owned((ifp)->if_ioctl_lock)
 
 extern struct pslist_head ifnet_pslist;
 extern kmutex_t ifnet_mtx;

@@ -1,4 +1,4 @@
-#	$NetBSD: files.acpi,v 1.98 2016/06/21 11:35:47 nonaka Exp $
+#	$NetBSD: files.acpi,v 1.100 2017/12/10 16:51:30 bouyer Exp $
 
 include "dev/acpi/acpica/files.acpica"
 
@@ -18,6 +18,7 @@ device	acpi: acpica, acpiapmbus, acpinodebus, acpiecdtbus, acpihpetbus, acpiwdrt
 attach	acpi at acpibus
 file	dev/acpi/acpi.c			acpi
 file	dev/acpi/acpi_debug.c		acpi
+file	dev/acpi/acpi_i2c.c		acpi
 file	dev/acpi/acpi_mcfg.c		acpi
 file	dev/acpi/acpi_pci.c		acpi
 file	dev/acpi/acpi_pci_link.c	acpi
@@ -220,5 +221,9 @@ file	dev/acpi/apple_smc_acpi.c	apple_smc_acpi
 # SD Host Controller
 attach	sdhc at acpinodebus with sdhc_acpi
 file	dev/acpi/sdhc_acpi.c		sdhc_acpi
+
+# QEMU Firmware Configuration (fw_cfg) device
+attach	qemufwcfg at acpinodebus with qemufwcfg_acpi
+file	dev/acpi/qemufwcfg_acpi.c	qemufwcfg_acpi
 
 include	"dev/acpi/wmi/files.wmi"

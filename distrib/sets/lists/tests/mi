@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.767 2017/11/19 21:05:26 martin Exp $
+# $NetBSD: mi,v 1.771 2017/12/10 15:39:37 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -2118,8 +2118,11 @@
 ./usr/tests/kernel/arch/i386/t_ptrace_waitid	tests-obsolete		obsolete
 ./usr/tests/kernel/arch/i386/t_ptrace_waitpid	tests-obsolete		obsolete
 ./usr/tests/kernel/arch/x86			tests-obsolete		obsolete
+./usr/tests/kernel/h_getprocpath		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/h_interpreter		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings1		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings2		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/h_segv			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue/Atffile		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua
@@ -2156,6 +2159,7 @@
 ./usr/tests/kernel/t_extattrctl			tests-kernel-tests	atf,rump
 ./usr/tests/kernel/t_extent			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_filedesc			tests-kernel-tests	atf,rump
+./usr/tests/kernel/t_interp			tests-kernel-tests	atf
 ./usr/tests/kernel/t_kauth_pr_47598		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_lock			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_lockf			tests-kernel-tests	compattestfile,atf
@@ -2167,6 +2171,7 @@
 ./usr/tests/kernel/t_pollts			tests-obsolete		obsolete
 ./usr/tests/kernel/t_posix_fadvise		tests-obsolete		obsolete
 ./usr/tests/kernel/t_posix_fallocate		tests-obsolete		obsolete
+./usr/tests/kernel/t_procpath			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_ps_strings			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_ptrace			tests-obsolete		obsolete
 ./usr/tests/kernel/t_ptrace_wait		tests-obsolete		obsolete
@@ -2177,6 +2182,8 @@
 ./usr/tests/kernel/t_ptrace_waitpid		tests-obsolete		obsolete
 ./usr/tests/kernel/t_pty			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_rnd			tests-kernel-tests	atf,rump
+./usr/tests/kernel/t_timeleft			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_trapsignal			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sigaction			tests-obsolete		obsolete
 ./usr/tests/kernel/t_subr_prf			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sysctl			tests-kernel-tests	compattestfile,atf

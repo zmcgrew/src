@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.71 2017/09/14 07:58:39 mrg Exp $
+# $NetBSD: ALL,v 1.75 2017/12/10 17:19:48 bouyer Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,7 +17,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.71 $"
+#ident		"ALL-$Revision: 1.75 $"
 
 maxusers	64		# estimated number of users
 
@@ -130,7 +130,6 @@ options 	UVMHIST		# kernhist for uvm subsystem
 options 	BIOHIST		# kernhist for buff I/O
 
 # Compatibility options
-options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 options 	EXEC_AOUT	# required by binaries from before 1.5
 options 	COMPAT_386BSD_MBRPART # recognize old partition ID
 include 	"conf/compat_netbsd09.config"
@@ -139,13 +138,7 @@ options 	COMPAT_OSSAUDIO	# OSS (Voxware) audio driver compatibility
 options 	COMPAT_NETBSD32 # NetBSD 32-bit
 options 	COMPAT_LINUX	# binary compatibility with Linux
 options 	COMPAT_LINUX32	# binary compatibility with Linux 32-bit
-options 	COMPAT_FREEBSD	# binary compatibility with FreeBSD
 options 	COMPAT_NDIS	# NDIS network driver
-options 	COMPAT_OSF1	# OSF1 binary compatibility
-#options 	COMPAT_SVR4	# SVR4 binary compatibility (no amd64)
-#options 	COMPAT_SVR4_32	# SVR4 32-bit binary compatibility (no amd64)
-options 	COMPAT_ULTRIX	# DEC Ultrix binary compatibility
-options 	COMPAT_SUNOS	# SunOS 4.x binary compatibility
 
 # Wedge support
 options 	DKWEDGE_AUTODISCOVER	# Automatically add dk(4) instances
@@ -387,6 +380,7 @@ lpt*		at acpi?		# Parallel port
 mpu*		at acpi?		# Roland MPU-401 MIDI UART
 pckbc*		at acpi?		# PC keyboard controller
 pcppi*		at acpi?		# AT-style speaker sound
+qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 sdhc*		at acpi?		# SD Host Controller
 sony*		at acpi?		# Sony Notebook Controller
 spic*		at acpi?		# Sony Programmable I/O Controller
@@ -634,6 +628,10 @@ iic*	at nfsmb?
 piixpm* at pci? dev ? function ?	# PIIX4 compatible PM controller
 iic*	at piixpm?			# SMBus on PIIX4
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # dbCool Thermal monitor and fan controller
 dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
 dbcool* at iic? addr 0x2D		# Tyan S2881
@@ -697,6 +695,13 @@ sdtemp* at iic? addr 0x1c
 sdtemp* at iic? addr 0x1d
 sdtemp* at iic? addr 0x1e
 sdtemp* at iic? addr 0x1f
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 iop*	at pci? dev ? function ?	# I/O processor

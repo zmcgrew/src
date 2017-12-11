@@ -1,7 +1,7 @@
-/*	$NetBSD: bcm2835_pm.c,v 1.3 2013/04/14 15:11:52 skrll Exp $	*/
+/*	$NetBSD: bcm2835_pm.c,v 1.4 2017/12/10 21:38:26 skrll Exp $	*/
 
 /*-
- * Copyright (c) 2012 The NetBSD Foundation, Inc.
+ * Copyright (c) 2012, 2016 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_pm.c,v 1.3 2013/04/14 15:11:52 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_pm.c,v 1.4 2017/12/10 21:38:26 skrll Exp $");
 
 
 #include <sys/param.h>
@@ -43,10 +43,11 @@ __KERNEL_RCSID(0, "$NetBSD: bcm2835_pm.c,v 1.3 2013/04/14 15:11:52 skrll Exp $")
 
 #include <dev/sysmon/sysmonvar.h>
 
-#include <arm/broadcom/bcm_amba.h>
 #include <arm/broadcom/bcm2835reg.h>
 #include <arm/broadcom/bcm2835_intr.h>
-#include <arm/broadcom/bcm2835_pmvar.h>
+#include <arm/broadcom/bcm2835_pmwdogvar.h>
+
+#include <dev/fdt/fdtvar.h>
 
 #ifndef BCM2835_PM_DEFAULT_PERIOD
 #define BCM2835_PM_DEFAULT_PERIOD	15	/* seconds */
@@ -62,7 +63,7 @@ __KERNEL_RCSID(0, "$NetBSD: bcm2835_pm.c,v 1.3 2013/04/14 15:11:52 skrll Exp $")
 #define	BCM2835_PM_WDOG		0x24
 #define	 BCM2835_PM_WDOG_TIMEMASK	0x000fffff
 
-struct bcm2835pm_softc {
+struct bcm2835pmwdog_softc {
 	device_t sc_dev;
 
 	bus_space_tag_t sc_iot;
@@ -71,48 +72,54 @@ struct bcm2835pm_softc {
 	struct sysmon_wdog sc_smw;
 };
 
-static struct bcm2835pm_softc *bcm2835pm_sc;
+static struct bcm2835pmwdog_softc *bcm2835pmwdog_sc;
 
-static int bcmpm_match(device_t, cfdata_t, void *);
-static void bcmpm_attach(device_t, device_t, void *);
+static int bcmpmwdog_match(device_t, cfdata_t, void *);
+static void bcmpmwdog_attach(device_t, device_t, void *);
 
-static void bcmpm_wdog_set_timeout(struct bcm2835pm_softc *, uint32_t);
+static void bcmpmwdog_set_timeout(struct bcm2835pmwdog_softc *, uint32_t);
 
-static int bcmpm_wdog_setmode(struct sysmon_wdog *);
-static int bcmpm_wdog_tickle(struct sysmon_wdog *);
+static int bcmpmwdog_setmode(struct sysmon_wdog *);
+static int bcmpmwdog_tickle(struct sysmon_wdog *);
 
-CFATTACH_DECL_NEW(bcmpm_amba, sizeof(struct bcm2835pm_softc),
-    bcmpm_match, bcmpm_attach, NULL, NULL);
+CFATTACH_DECL_NEW(bcmpmwdog_fdt, sizeof(struct bcm2835pmwdog_softc),
+    bcmpmwdog_match, bcmpmwdog_attach, NULL, NULL);
 
 /* ARGSUSED */
 static int
-bcmpm_match(device_t parent, cfdata_t match, void *aux)
+bcmpmwdog_match(device_t parent, cfdata_t match, void *aux)
 {
-	struct amba_attach_args *aaa = aux;
+	const char * const compatible[] = { "brcm,bcm2835-pm-wdt", NULL };
+	struct fdt_attach_args * const faa = aux;
 
-	if (strcmp(aaa->aaa_name, "bcmpm") != 0)
-		return 0;
-
-	return 1;
+	return of_match_compatible(faa->faa_phandle, compatible);
 }
 
 static void
-bcmpm_attach(device_t parent, device_t self, void *aux)
+bcmpmwdog_attach(device_t parent, device_t self, void *aux)
 {
-        struct bcm2835pm_softc *sc = device_private(self);
- 	struct amba_attach_args *aaa = aux;
+        struct bcm2835pmwdog_softc *sc = device_private(self);
+	struct fdt_attach_args * const faa = aux;
+	const int phandle = faa->faa_phandle;
 
 	aprint_naive("\n");
 	aprint_normal(": Power management, Reset and Watchdog controller\n");
 
-	if (bcm2835pm_sc == NULL)
-		bcm2835pm_sc = sc;
+	if (bcm2835pmwdog_sc == NULL)
+		bcm2835pmwdog_sc = sc;
 
 	sc->sc_dev = self;
-	sc->sc_iot = aaa->aaa_iot;
+	sc->sc_iot = faa->faa_bst;
 
-	if (bus_space_map(aaa->aaa_iot, aaa->aaa_addr, BCM2835_PM_SIZE, 0,
-	    &sc->sc_ioh)) {
+	bus_addr_t addr;
+	bus_size_t size;
+
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
+		aprint_error(": couldn't get register address\n");
+		return;
+	}
+
+	if (bus_space_map(faa->faa_bst, addr, size, 0, &sc->sc_ioh) != 0) {
 		aprint_error_dev(sc->sc_dev, "unable to map device\n");
 		return;
 	}
@@ -120,15 +127,15 @@ bcmpm_attach(device_t parent, device_t self, void *aux)
 	/* watchdog */
 	sc->sc_smw.smw_name = device_xname(sc->sc_dev);
 	sc->sc_smw.smw_cookie = sc;
-	sc->sc_smw.smw_setmode = bcmpm_wdog_setmode;
-	sc->sc_smw.smw_tickle = bcmpm_wdog_tickle;
+	sc->sc_smw.smw_setmode = bcmpmwdog_setmode;
+	sc->sc_smw.smw_tickle = bcmpmwdog_tickle;
 	sc->sc_smw.smw_period = BCM2835_PM_DEFAULT_PERIOD;
 	if (sysmon_wdog_register(&sc->sc_smw) != 0)
 		aprint_error_dev(self, "couldn't register watchdog\n");
 }
 
 static void
-bcmpm_wdog_set_timeout(struct bcm2835pm_softc *sc, uint32_t ticks)
+bcmpmwdog_set_timeout(struct bcm2835pmwdog_softc *sc, uint32_t ticks)
 {
 	uint32_t tmp, rstc, wdog;
 
@@ -146,9 +153,9 @@ bcmpm_wdog_set_timeout(struct bcm2835pm_softc *sc, uint32_t ticks)
 }
 
 static int
-bcmpm_wdog_setmode(struct sysmon_wdog *smw)
+bcmpmwdog_setmode(struct sysmon_wdog *smw)
 {
-	struct bcm2835pm_softc *sc = smw->smw_cookie;
+	struct bcm2835pmwdog_softc *sc = smw->smw_cookie;
 	int error = 0;
 
 	if ((smw->smw_mode & WDOG_MODE_MASK) == WDOG_MODE_DISARMED) {
@@ -159,19 +166,19 @@ bcmpm_wdog_setmode(struct sysmon_wdog *smw)
 			smw->smw_period = BCM2835_PM_DEFAULT_PERIOD;
 		if (smw->smw_period > (BCM2835_PM_WDOG_TIMEMASK >> 16))
 			return EINVAL;
-		error = bcmpm_wdog_tickle(smw);
+		error = bcmpmwdog_tickle(smw);
 	}
 
 	return error;
 }
 
 static int
-bcmpm_wdog_tickle(struct sysmon_wdog *smw)
+bcmpmwdog_tickle(struct sysmon_wdog *smw)
 {
-	struct bcm2835pm_softc *sc = smw->smw_cookie;
+	struct bcm2835pmwdog_softc *sc = smw->smw_cookie;
 	uint32_t timeout = smw->smw_period << 16;
 
-	bcmpm_wdog_set_timeout(sc, timeout);
+	bcmpmwdog_set_timeout(sc, timeout);
 
 	return 0;
 }
@@ -179,8 +186,8 @@ bcmpm_wdog_tickle(struct sysmon_wdog *smw)
 void
 bcm2835_system_reset(void)
 {
-	struct bcm2835pm_softc *sc = bcm2835pm_sc;
+	struct bcm2835pmwdog_softc *sc = bcm2835pmwdog_sc;
 	uint32_t timeout = 10;
 
-	bcmpm_wdog_set_timeout(sc, timeout);
+	bcmpmwdog_set_timeout(sc, timeout);
 }

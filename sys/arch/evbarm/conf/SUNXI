@@ -1,5 +1,5 @@
 #
-#	$NetBSD: SUNXI,v 1.52 2017/11/13 17:37:47 jmcneill Exp $
+#	$NetBSD: SUNXI,v 1.55 2017/12/03 17:18:53 jmcneill Exp $
 #
 #	Allwinner sunxi family
 #
@@ -10,6 +10,28 @@ include	"arch/evbarm/conf/GENERIC.common"
 makeoptions	DTSGNUARCH="arm arm64"
 makeoptions	DTSSUBDIR="allwinner"
 makeoptions	DTS="
+	sun4i-a10-a1000.dts
+	sun4i-a10-ba10-tvbox.dts
+	sun4i-a10-chuwi-v7-cw0825.dts
+	sun4i-a10-cubieboard.dts
+	sun4i-a10-dserve-dsrv9703c.dts
+	sun4i-a10-gemei-g9.dts
+	sun4i-a10-hackberry.dts
+	sun4i-a10-hyundai-a7hd.dts
+	sun4i-a10-inet1.dts
+	sun4i-a10-inet97fv2.dts
+	sun4i-a10-inet9f-rev03.dts
+	sun4i-a10-itead-iteaduino-plus.dts
+	sun4i-a10-jesurun-q5.dts
+	sun4i-a10-marsboard.dts
+	sun4i-a10-mini-xplus.dts
+	sun4i-a10-mk802.dts
+	sun4i-a10-mk802ii.dts
+	sun4i-a10-olinuxino-lime.dts
+	sun4i-a10-pcduino.dts
+	sun4i-a10-pcduino2.dts
+	sun4i-a10-pov-protab2-ips9.dts
+
 	sun5i-a13-difrnce-dit4350.dts
 	sun5i-a13-empire-electronix-d709.dts
 	sun5i-a13-empire-electronix-m712.dts
@@ -34,15 +56,42 @@ makeoptions	DTS="
 	sun6i-a31-m9.dts
 	sun6i-a31-mele-a1000g-quad.dts
 
+	sun7i-a20-bananapi-m1-plus.dts
+	sun7i-a20-bananapi.dts
+	sun7i-a20-bananapro.dts
+	sun7i-a20-cubieboard2.dts
+	sun7i-a20-cubietruck.dts
+	sun7i-a20-hummingbird.dts
+	sun7i-a20-i12-tvbox.dts
+	sun7i-a20-icnova-swac.dts
+	sun7i-a20-itead-ibox.dts
+	sun7i-a20-lamobo-r1.dts
+	sun7i-a20-m3.dts
+	sun7i-a20-mk808c.dts
+	sun7i-a20-olimex-som-evb.dts
+	sun7i-a20-olinuxino-lime.dts
+	sun7i-a20-olinuxino-lime2-emmc.dts
+	sun7i-a20-olinuxino-lime2.dts
+	sun7i-a20-olinuxino-micro-emmc.dts
+	sun7i-a20-olinuxino-micro.dts
+	sun7i-a20-orangepi-mini.dts
+	sun7i-a20-orangepi.dts
+	sun7i-a20-pcduino3-nano.dts
+	sun7i-a20-pcduino3.dts
+	sun7i-a20-wexler-tab7200.dts
+	sun7i-a20-wits-pro-a20-dkt.dts
+
 	sun8i-a83t-allwinner-h8homlet-v2.dts
 	sun8i-a83t-bananapi-m3.dts
 	sun8i-a83t-cubietruck-plus.dts
+	sun8i-a83t-tbs-a711.dts
 
 	sun8i-h2-plus-orangepi-zero.dts
 
 	sun8i-h3-bananapi-m2-plus.dts
 	sun8i-h3-beelink-x2.dts
 	sun8i-h3-nanopi-m1.dts
+	sun8i-h3-nanopi-m1-plus.dts
 	sun8i-h3-nanopi-neo.dts
 	sun8i-h3-nanopi-neo-air.dts
 	sun8i-h3-orangepi-2.dts
@@ -64,6 +113,12 @@ makeoptions	DTS="
 	sun50i-a64-pine64.dts
 	sun50i-a64-pinebook.dts
 	sun50i-a64-sopine-baseboard.dts
+
+	sun50i-h5-nanopi-neo-plus2.dts
+	sun50i-h5-nanopi-neo2.dts
+	sun50i-h5-orangepi-pc2.dts
+	sun50i-h5-orangepi-prime.dts
+	sun50i-h5-orangepi-zero-plus2.dts
 "
 
 options 	MULTIPROCESSOR

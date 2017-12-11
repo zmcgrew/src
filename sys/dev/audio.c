@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.440 2017/11/16 23:43:48 nat Exp $	*/
+/*	$NetBSD: audio.c,v 1.442 2017/11/30 20:25:54 christos Exp $	*/
 
 /*-
  * Copyright (c) 2016 Nathanial Sloss <nathanialsloss@yahoo.com.au>
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.440 2017/11/16 23:43:48 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.442 2017/11/30 20:25:54 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -437,6 +437,7 @@ const struct cdevsw audio_cdevsw = {
 };
 
 const struct fileops audio_fileops = {
+	.fo_name = "audio",
 	.fo_read = audioread,
 	.fo_write = audiowrite,
 	.fo_ioctl = audioioctl,
@@ -5592,14 +5593,20 @@ mix_write(void *arg)
 				cc = cc2;				\
 									\
 			for (m = 0; m < (cc / (bits / NBBY)); m++) {	\
+				if (vc->sc_swvol == 255)		\
+					goto vol_done;			\
 				tomix[m] = (bigger_type)tomix[m] *	\
 				    (bigger_type)(vc->sc_swvol) / 255;	\
+vol_done:								\
 				result = (bigger_type)orig[m] + tomix[m]; \
+				if (sc->sc_opens == 1)			\
+					goto adj_done;			\
 				product = (bigger_type)orig[m] * tomix[m]; \
 				if (orig[m] > 0 && tomix[m] > 0)	\
 					result -= product / MAXVAL;	\
 				else if (orig[m] < 0 && tomix[m] < 0)	\
 					result -= product / MINVAL;	\
+adj_done:								\
 				orig[m] = result;			\
 			}						\
 									\

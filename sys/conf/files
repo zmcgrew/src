@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1184 2017/11/18 18:44:55 christos Exp $
+#	$NetBSD: files,v 1.1187 2017/12/10 17:12:54 bouyer Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -378,6 +378,9 @@ file	dev/ic/nslm7x.c			lm			needs-flag
 
 device	spdmem
 file	dev/ic/spdmem.c			spdmem
+
+# Generic HID support (used by USB, bluetooth and i2c)
+include "dev/hid/files.hid"
 
 # I2C device support
 include "dev/i2c/files.i2c"
@@ -1125,6 +1128,11 @@ file	dev/ic/pcf8584.c		pcf8584
 define	pca9564
 file	dev/ic/pca9564.c		pca9564
 
+# Synopsys DesignWare I2C controller
+define	dwiic
+device dwiic: dwiic, i2cbus
+file	dev/ic/dwiic.c			dwiic
+
 # ACPI power management timer (hardware access, independent of ACPI)
 #
 define acpipmtimer
@@ -1291,10 +1299,6 @@ file	dev/ic/sl811hs.c		slhci			needs-flag
 #
 include "external/bsd/dwc2/conf/files.dwc2"
 
-# USB HID processing (as used by bluetooth and usb code)
-define	hid
-file	dev/usb/hid.c			hid
-
 # SD Host controller
 device	sdhc: sdmmcbus
 file	dev/sdmmc/sdhc.c		sdhc			needs-flag
@@ -1418,6 +1422,10 @@ file	dev/ic/ld_nvme.c		ld_nvme
 # Broadcom FullMAC 802.11 driver
 device	bwfm: arp, ifnet, wlan
 file	dev/ic/bwfm.c			bwfm
+
+# QEMU Firmware Configuration (fw_cfg) device
+device	qemufwcfg
+file	dev/ic/qemufwcfg.c		qemufwcfg
 
 # legitimate pseudo-devices
 #

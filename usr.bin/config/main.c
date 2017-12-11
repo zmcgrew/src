@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.95 2017/11/24 23:42:36 christos Exp $	*/
+/*	$NetBSD: main.c,v 1.97 2017/11/28 15:31:33 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,7 +45,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: main.c,v 1.95 2017/11/24 23:42:36 christos Exp $");
+__RCSID("$NetBSD: main.c,v 1.97 2017/11/28 15:31:33 christos Exp $");
 
 #ifndef MAKE_BOOTSTRAP
 #include <sys/cdefs.h>
@@ -1876,21 +1876,22 @@ addlevelparent(struct devbase *d, struct devbase *parent)
 	struct devbase *p;
 
 	if (d == parent) {
-		if (d->d_level++ > 1)
+		if (d->d_level > 1)
 			return 0;
 		return 1;
 	}
 
 	if (d->d_levelparent) {
-		if (d->d_level++ > 1)
+		if (d->d_level > 1)
 			return 0;
 		return 1;
 	}
 
 	for (p = parent; p != NULL; p = p->d_levelparent)
-		if (d == p && d->d_level++ > 1)
+		if (d == p && d->d_level > 1)
 			return 0;
 	d->d_levelparent = p ? p : &root; 
+	d->d_level++;
 	return 1;
 }
 
@@ -1926,6 +1927,7 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 		}
 	} else {
 		int seen = 0;
+		int changed = 0;
 
 		for (i = d->d_ihead; i != NULL; i = i->i_bsame) {
 			for (j = i; j != NULL; j = j->i_alias) {
@@ -1958,9 +1960,13 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 						seen = 1;
 						continue;
 					}
+					changed |= j->i_active != state;
 					j->i_active = active = state;
-					if (p != NULL)
-						p->p_active = state;
+					if (p != NULL) {
+						if (state == DEVI_ACTIVE ||
+						    --p->p_ref == 0)
+							p->p_active = state;
+					}
 					if (state == DEVI_IGNORED) {
 						CFGDBG(5,
 						    "`%s' at '%s' ignored",
@@ -1994,7 +2000,8 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 				CFGDBG(5, "`%s' at '%s' ignored", d->d_name,
 				    parent ? parent->d_name : "(root)");
 
-			}
+			} else if (!changed)
+				goto out;
 		}
 	}
 
