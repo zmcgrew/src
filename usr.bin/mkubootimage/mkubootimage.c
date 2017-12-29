@@ -1,4 +1,4 @@
-/* $NetBSD: mkubootimage.c,v 1.20 2017/07/15 11:13:08 jmcneill Exp $ */
+/* $NetBSD: mkubootimage.c,v 1.22 2017/11/05 11:07:32 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: mkubootimage.c,v 1.20 2017/07/15 11:13:08 jmcneill Exp $");
+__RCSID("$NetBSD: mkubootimage.c,v 1.22 2017/11/05 11:07:32 jmcneill Exp $");
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -106,12 +106,13 @@ static const struct uboot_arch {
 	const char *name;
 } uboot_arch[] = {
 	{ IH_ARCH_ARM,		"arm" },
+	{ IH_ARCH_ARM64,	"arm64" },
 	{ IH_ARCH_I386,		"i386" },
 	{ IH_ARCH_MIPS,		"mips" },
 	{ IH_ARCH_MIPS64,	"mips64" },
 	{ IH_ARCH_PPC,		"powerpc" },
 	{ IH_ARCH_OPENRISC,	"or1k" },
-	{ IH_ARCH_ARM64,	"arm64" },
+	{ IH_ARCH_SH,		"sh" },
 };
 
 static enum uboot_image_arch
@@ -219,7 +220,7 @@ __dead static void
 usage(void)
 {
 	fprintf(stderr, "usage: mkubootimage -A "
-	    "<arm|arm64|i386|mips|mips64|or1k|powerpc>");
+	    "<arm|arm64|i386|mips|mips64|or1k|powerpc|sh>");
 	fprintf(stderr, " -C <none|bz2|gz|lzma|lzo>");
 	fprintf(stderr, " -O <openbsd|netbsd|freebsd|linux>");
 	fprintf(stderr, " -T <standalone|kernel|kernel_noload|ramdisk|fs|script>");
@@ -410,6 +411,7 @@ main(int argc, char *argv[])
 			    (num == ULONG_MAX || num == 0)))
 				errx(1, "illegal number -- %s", optarg);
 			image_magic = (uint32_t)num;
+			break;
 		case 'n':	/* name */
 			image_name = strdup(optarg);
 			break;

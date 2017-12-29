@@ -1,4 +1,4 @@
-/*	$NetBSD: pthread_compat.c,v 1.3 2014/01/31 20:44:01 christos Exp $	*/
+/*	$NetBSD: pthread_compat.c,v 1.6 2017/12/08 09:59:26 kre Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: pthread_compat.c,v 1.3 2014/01/31 20:44:01 christos Exp $");
+__RCSID("$NetBSD: pthread_compat.c,v 1.6 2017/12/08 09:59:26 kre Exp $");
 
 #include <sys/param.h>
 #include <sys/syscall.h>

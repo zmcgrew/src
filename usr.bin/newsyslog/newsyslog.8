@@ -1,4 +1,4 @@
-.\"	$NetBSD: newsyslog.8,v 1.39 2013/12/20 17:01:39 wiz Exp $
+.\"	$NetBSD: newsyslog.8,v 1.41 2017/10/23 01:06:52 wiz Exp $
 .\"
 .\" Copyright (c) 1999, 2000 Andrew Doran <ad@NetBSD.org>
 .\" All rights reserved.
@@ -44,7 +44,8 @@
 .Dt NEWSYSLOG 8
 .Os
 .Sh NAME
-.Nm newsyslog
+.Nm newsyslog ,
+.Nm newsyslog.conf
 .Nd maintain system log files to manageable sizes
 .Sh SYNOPSIS
 .Nm newsyslog
@@ -107,7 +108,6 @@ Blank lines or lines beginning with
 are ignored.
 The fields of the configuration file are as
 follows:
-.Pp
 .Bl -tag -width indent
 .It Ar logfile_name
 Name of the system log file to be archived.
@@ -158,9 +158,7 @@ Otherwise, the
 field consists of an optional interval in hours, optionally followed
 by an
 .So Li \&@ Sc Ns No -sign
-and a time in a restricted
-.Tn ISO 8601
-format or by an
+and a time in a restricted ISO 8601 format or by an
 .So Li \&$ Sc Ns No -sign
 and a time specification for logfile rotation at a fixed time once
 per day, per week or per month.
@@ -182,14 +180,9 @@ hour'.
 .Pp
 .Em ISO 8601 restricted time format
 .Pp
-The lead-in character for a restricted
-.Tn ISO 8601
-time is
-an
+The lead-in character for a restricted ISO 8601 time is an
 .So Li \&@ Sc Ns No -sign .
-The particular format of the time in restricted
-.Tn ISO 8601
-is:
+The particular format of the time in restricted ISO 8601 is:
 .Sm off
 .Oo
 .Oo
@@ -304,7 +297,6 @@ rotate at the last day of every month at midnight
 .It Ar $M5D6
 rotate on every 5th day of month at 6:00 hr
 .El
-.Pp
 .It Ar flags
 This field specifies any special processing that is required.
 These flags are parsed in a case insensitive manner.
@@ -316,10 +308,7 @@ This flag means nothing - it is used as a spacer when no flags are set.
 .It Sy b
 The file is a binary file or is not in
 .Xr syslogd 8
-format:
-the
-.Tn ASCII
-message which
+format: the ASCII message which
 .Nm
 inserts to indicate that the logs have been trimmed should not be included.
 .It Sy c

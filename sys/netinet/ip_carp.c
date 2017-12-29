@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_carp.c,v 1.90 2017/05/19 08:53:51 ozaki-r Exp $	*/
+/*	$NetBSD: ip_carp.c,v 1.94 2017/12/06 09:54:47 ozaki-r Exp $	*/
 /*	$OpenBSD: ip_carp.c,v 1.113 2005/11/04 08:11:54 mcbride Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.90 2017/05/19 08:53:51 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.94 2017/12/06 09:54:47 ozaki-r Exp $");
 
 /*
  * TODO:
@@ -59,8 +59,9 @@ __KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.90 2017/05/19 08:53:51 ozaki-r Exp $")
 #include <sys/syslog.h>
 #include <sys/acct.h>
 #include <sys/cprng.h>
-
 #include <sys/cpu.h>
+#include <sys/pserialize.h>
+#include <sys/psref.h>
 
 #include <net/if.h>
 #include <net/pfil.h>
@@ -297,9 +298,11 @@ carp_hmac_prepare(struct carp_softc *sc)
 #ifdef INET
 	cur.s_addr = 0;
 	do {
+		int s;
 		found = 0;
 		last = cur;
 		cur.s_addr = 0xffffffff;
+		s = pserialize_read_enter();
 		IFADDR_READER_FOREACH(ifa, &sc->sc_if) {
 			in.s_addr = ifatoia(ifa)->ia_addr.sin_addr.s_addr;
 			if (ifa->ifa_addr->sa_family == AF_INET &&
@@ -309,6 +312,7 @@ carp_hmac_prepare(struct carp_softc *sc)
 				found++;
 			}
 		}
+		pserialize_read_exit(s);
 		if (found)
 			SHA1Update(&sc->sc_sha1, (void *)&cur, sizeof(cur));
 	} while (found);
@@ -317,9 +321,11 @@ carp_hmac_prepare(struct carp_softc *sc)
 #ifdef INET6
 	memset(&cur6, 0x00, sizeof(cur6));
 	do {
+		int s;
 		found = 0;
 		last6 = cur6;
 		memset(&cur6, 0xff, sizeof(cur6));
+		s = pserialize_read_enter();
 		IFADDR_READER_FOREACH(ifa, &sc->sc_if) {
 			in6 = ifatoia6(ifa)->ia_addr.sin6_addr;
 			if (IN6_IS_ADDR_LINKLOCAL(&in6))
@@ -331,6 +337,7 @@ carp_hmac_prepare(struct carp_softc *sc)
 				found++;
 			}
 		}
+		pserialize_read_exit(s);
 		if (found)
 			SHA1Update(&sc->sc_sha1, (void *)&cur6, sizeof(cur6));
 	} while (found);
@@ -375,11 +382,16 @@ static void
 carp_setroute(struct carp_softc *sc, int cmd)
 {
 	struct ifaddr *ifa;
-	int s;
+	int s, bound;
 
 	KERNEL_LOCK(1, NULL);
-	s = splsoftnet();
+	bound = curlwp_bind();
+	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, &sc->sc_if) {
+		struct psref psref;
+		ifa_acquire(ifa, &psref);
+		pserialize_read_exit(s);
+
 		switch (ifa->ifa_addr->sa_family) {
 		case AF_INET: {
 			int count = 0;
@@ -473,8 +485,11 @@ carp_setroute(struct carp_softc *sc, int cmd)
 		default:
 			break;
 		}
+		s = pserialize_read_enter();
+		ifa_release(ifa, &psref);
 	}
-	splx(s);
+	pserialize_read_exit(s);
+	curlwp_bindx(bound);
 	KERNEL_UNLOCK_ONE(NULL);
 }
 
@@ -832,6 +847,7 @@ carp_clone_create(struct if_clone *ifc, int unit)
 	extern int ifqmaxlen;
 	struct carp_softc *sc;
 	struct ifnet *ifp;
+	int rv;
 
 	sc = malloc(sizeof(*sc), M_DEVBUF, M_NOWAIT|M_ZERO);
 	if (!sc)
@@ -865,13 +881,20 @@ carp_clone_create(struct if_clone *ifc, int unit)
 	ifp->if_start = carp_start;
 	IFQ_SET_MAXLEN(&ifp->if_snd, ifqmaxlen);
 	IFQ_SET_READY(&ifp->if_snd);
-	if_initialize(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0) {	
+		callout_destroy(&sc->sc_ad_tmo);
+		callout_destroy(&sc->sc_md_tmo);
+		callout_destroy(&sc->sc_md6_tmo);
+		free(ifp->if_softc, M_DEVBUF);
+
+		return rv;
+	}
 	ether_ifattach(ifp, NULL);
 	carp_set_enaddr(sc);
 	/* Overwrite ethernet defaults */
 	ifp->if_type = IFT_CARP;
 	ifp->if_output = carp_output;
-	ifp->if_extflags &= ~IFEF_OUTPUT_MPSAFE;
 	if_register(ifp);
 
 	return (0);
@@ -1232,18 +1255,27 @@ static void
 carp_send_arp(struct carp_softc *sc)
 {
 	struct ifaddr *ifa;
-	int s;
+	int s, bound;
 
 	KERNEL_LOCK(1, NULL);
-	s = splsoftnet();
+	bound = curlwp_bind();
+	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, &sc->sc_if) {
+		struct psref psref;
 
 		if (ifa->ifa_addr->sa_family != AF_INET)
 			continue;
 
+		ifa_acquire(ifa, &psref);
+		pserialize_read_exit(s);
+
 		arpannounce(sc->sc_carpdev, ifa, CLLADDR(sc->sc_if.if_sadl));
+
+		s = pserialize_read_enter();
+		ifa_release(ifa, &psref);
 	}
-	splx(s);
+	pserialize_read_exit(s);
+	curlwp_bindx(bound);
 	KERNEL_UNLOCK_ONE(NULL);
 }
 
@@ -1254,21 +1286,29 @@ carp_send_na(struct carp_softc *sc)
 	struct ifaddr *ifa;
 	struct in6_addr *in6;
 	static struct in6_addr mcast = IN6ADDR_LINKLOCAL_ALLNODES_INIT;
-	int s;
+	int s, bound;
 
 	KERNEL_LOCK(1, NULL);
-	s = splsoftnet();
-
+	bound = curlwp_bind();
+	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, &sc->sc_if) {
+		struct psref psref;
 
 		if (ifa->ifa_addr->sa_family != AF_INET6)
 			continue;
 
+		ifa_acquire(ifa, &psref);
+		pserialize_read_exit(s);
+
 		in6 = &ifatoia6(ifa)->ia_addr.sin6_addr;
 		nd6_na_output(sc->sc_carpdev, &mcast, in6,
 		    ND_NA_FLAG_OVERRIDE, 1, NULL);
+
+		s = pserialize_read_enter();
+		ifa_release(ifa, &psref);
 	}
-	splx(s);
+	pserialize_read_exit(s);
+	curlwp_bindx(bound);
 	KERNEL_UNLOCK_ONE(NULL);
 }
 #endif /* INET6 */
@@ -1321,12 +1361,14 @@ carp_addrcount(struct carp_if *cif, struct in_ifaddr *ia, int type)
 		    (vh->sc_if.if_flags & (IFF_UP|IFF_RUNNING)) ==
 		    (IFF_UP|IFF_RUNNING)) ||
 		    (type == CARP_COUNT_MASTER && vh->sc_state == MASTER)) {
+			int s = pserialize_read_enter();
 			IFADDR_READER_FOREACH(ifa, &vh->sc_if) {
 				if (ifa->ifa_addr->sa_family == AF_INET &&
 				    ia->ia_addr.sin_addr.s_addr ==
 				    ifatoia(ifa)->ia_addr.sin_addr.s_addr)
 					count++;
 			}
+			pserialize_read_exit(s);
 		}
 	}
 	return (count);
@@ -1377,6 +1419,7 @@ carp_iamatch6(void *v, struct in6_addr *taddr)
 	struct ifaddr *ifa;
 
 	TAILQ_FOREACH(vh, &cif->vhif_vrs, sc_list) {
+		int s = pserialize_read_enter();
 		IFADDR_READER_FOREACH(ifa, &vh->sc_if) {
 			if (IN6_ARE_ADDR_EQUAL(taddr,
 			    &ifatoia6(ifa)->ia_addr.sin6_addr) &&
@@ -1384,6 +1427,7 @@ carp_iamatch6(void *v, struct in6_addr *taddr)
 			    (IFF_UP|IFF_RUNNING)) && vh->sc_state == MASTER)
 				return (ifa);
 		}
+		pserialize_read_exit(s);
 	}
 
 	return (NULL);
@@ -2191,7 +2235,13 @@ carp_set_state(struct carp_softc *sc, int state)
 		link_state = LINK_STATE_UNKNOWN;
 		break;
 	}
+	/*
+	 * The lock is needed to serialize a call of
+	 * if_link_state_change_softint from here and a call from softint.
+	 */
+	KERNEL_LOCK(1, NULL);
 	if_link_state_change_softint(&sc->sc_if, link_state);
+	KERNEL_UNLOCK_ONE(NULL);
 }
 
 void

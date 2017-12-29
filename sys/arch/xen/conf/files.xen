@@ -1,4 +1,4 @@
-#	$NetBSD: files.xen,v 1.156 2017/08/15 08:51:38 maxv Exp $
+#	$NetBSD: files.xen,v 1.164 2017/12/02 13:03:15 maxv Exp $
 #	NetBSD: files.x86,v 1.10 2003/10/08 17:30:00 bouyer Exp 
 #	NetBSD: files.i386,v 1.254 2004/03/25 23:32:10 jmc Exp 
 
@@ -14,6 +14,9 @@ defparam opt_kernbase.h	KERNBASE
 
 # options for MP configuration through the MP spec
 defflag opt_mpbios.h MPBIOS MPVERBOSE MPDEBUG MPBIOS_SCANPCI
+
+# Interrupt debug
+defflag opt_intrdebug.h	INTRDEBUG
 
 # delay before cpu_reset() for reboot.
 defparam		CPURESET_DELAY
@@ -135,8 +138,10 @@ file	arch/xen/x86/xen_bus_dma.c	machdep
 file	arch/x86/x86/bus_space.c	machdep
 file	arch/xen/x86/consinit.c		machdep
 file	arch/x86/x86/identcpu.c		machdep
-file	arch/xen/x86/intr.c		machdep
+file	arch/xen/x86/pintr.c		machdep & dom0ops
 file	arch/xen/x86/xen_ipi.c		multiprocessor
+file	arch/x86/x86/intr.c		machdep
+file	arch/x86/x86/idt.c		machdep
 file	arch/x86/x86/pmap.c		machdep
 file	arch/x86/x86/pmap_tlb.c		machdep
 file	arch/x86/x86/procfs_machdep.c	procfs
@@ -226,7 +231,7 @@ include	"dev/pckbport/files.pckbport"
 include "dev/i2o/files.i2o"
 include "dev/pci/files.pci"
 include "dev/pci/files.agp"
-file	arch/xen/xen/pciide_machdep.c	pciide_common
+file	arch/x86/pci/pciide_machdep.c	pciide_common
 
 device	pciback {unit = -1}
 attach	pciback at pci
@@ -252,7 +257,7 @@ include "dev/apm/files.apm"
 include "dev/acpi/files.acpi"
 file	arch/xen/xen/xen_acpi_machdep.c	acpi
 file	arch/x86/x86/mpacpi.c		acpi
-file	arch/x86/x86/i8259.c
+file	arch/x86/x86/i8259.c		dom0ops
 
 # Stubs for x86 routines not included in the system
 file	arch/x86/x86/x86_stub.c
@@ -325,7 +330,6 @@ include	"compat/freebsd/files.freebsd"
 elifdef amd64
 
 # Binary compatibility with previous NetBSD releases (COMPAT_XX)
-file	arch/amd64/amd64/compat_13_machdep.c	compat_13
 file	arch/amd64/amd64/compat_16_machdep.c	compat_16
 
 # NetBSD/i386 32-bit binary compatibility (COMPAT_NETBSD32)
@@ -376,7 +380,9 @@ defflag	opt_xen.h			DOM0OPS
 file	arch/xen/xen/privcmd.c		dom0ops
 file 	arch/xen/x86/xen_shm_machdep.c	dom0ops
 file	arch/x86/pci/pci_machdep.c	hypervisor & pci & dom0ops
-file	arch/xen/xen/pci_intr_machdep.c	hypervisor & pci
+file	arch/x86/pci/pci_intr_machdep.c	hypervisor & pci
+file	arch/x86/pci/pci_msi_machdep.c	hypervisor & pci
+file	arch/x86/pci/msipic.c		hypervisor & pci
 file	arch/x86/isa/isa_machdep.c	hypervisor & dom0ops
 file	arch/xen/xen/xenevt.c		xenevt & dom0ops
 file	arch/xen/xen/xennetback_xenbus.c xvif

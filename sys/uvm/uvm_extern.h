@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.206 2017/05/20 07:27:15 chs Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.208 2017/12/15 16:03:29 maya Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -408,6 +408,8 @@ struct uvmexp {
 	int pdreanon;	/* anon pages reactivated due to thresholds */
 	int pdrefile;	/* file pages reactivated due to thresholds */
 	int pdreexec;	/* executable pages reactivated due to thresholds */
+
+	int bootpages;  /* number of pages stolen at boot */
 };
 
 /*
@@ -493,6 +495,8 @@ struct uvmexp_sysctl {
 	int64_t colorhit;
 	int64_t colormiss;
 	int64_t ncolors;
+	int64_t bootpages;
+	int64_t poolpages;
 };
 
 #ifdef _KERNEL
@@ -548,7 +552,7 @@ extern bool vm_page_zero_enable;
 struct vmspace {
 	struct	vm_map vm_map;	/* VM address map */
 	int	vm_refcnt;	/* number of references *
-				 * note: protected by vm_map.ref_lock */
+				 * note: protected by vm_map.misc_lock */
 	void *	vm_shm;		/* SYS5 shared memory private data XXX */
 /* we copy from vm_startcopy to the end of the structure on fork */
 #define vm_startcopy vm_rssize

@@ -1,4 +1,4 @@
-.\"	$NetBSD: pthread_attr_getstack.3,v 1.6 2016/07/05 10:04:17 wiz Exp $
+.\"	$NetBSD: pthread_attr_getstack.3,v 1.8 2017/10/23 01:03:23 wiz Exp $
 .\"
 .\" Copyright (c) 2010 Jukka Ruohonen <jruohonen@iki.fi>
 .\" All rights reserved.
@@ -29,7 +29,12 @@
 .Dt PTHREAD_ATTR_GETSTACK 3
 .Os
 .Sh NAME
-.Nm pthread_attr_getstack
+.Nm pthread_attr_getstack ,
+.Nm pthread_attr_setstack ,
+.Nm pthread_attr_getstacksize ,
+.Nm pthread_attr_setstacksize ,
+.Nm pthread_attr_getstackaddr ,
+.Nm pthread_attr_setstackaddr
 .Nd get and set thread stack attributes
 .Sh LIBRARY
 .Lb libpthread
@@ -105,8 +110,7 @@ and the use of these functions should be generally avoided.
 At least few potential caveats can be mentioned.
 .Bl -bullet -offset 2n
 .It
-There is a certain degree of ambiguity in the
-.Tn POSIX
+There is a certain degree of ambiguity in the POSIX
 standard with respect to thread stack.
 .It
 The exact behavior of the functions may vary

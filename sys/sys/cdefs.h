@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.133 2017/07/15 13:46:02 christos Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.135 2017/12/26 17:08:56 christos Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -369,7 +369,7 @@
 #define	__c99inline	extern __attribute__((__gnu_inline__)) __inline
 #elif defined(__GNUC__)
 #define	__c99inline	extern __inline
-#elif defined(__STDC_VERSION__)
+#elif defined(__STDC_VERSION__) || defined(__lint__)
 #define	__c99inline	__inline
 #endif
 
@@ -609,7 +609,7 @@
 #define __CASTV(__dt, __st)	__CAST(__dt, __CAST(void *, __st))
 #define __CASTCV(__dt, __st)	__CAST(__dt, __CAST(const void *, __st))
 
-#define __USE(a) ((void)(a))
+#define __USE(a) (/*LINTED*/(void)(a))
 
 #define __type_mask(t) (/*LINTED*/sizeof(t) < sizeof(intmax_t) ? \
     (~((1ULL << (sizeof(t) * NBBY)) - 1)) : 0ULL)

@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_machdep.c,v 1.38 2017/08/30 15:44:01 maxv Exp $	*/
+/*	$NetBSD: sys_machdep.c,v 1.43 2017/10/21 08:27:19 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2009, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.38 2017/08/30 15:44:01 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.43 2017/10/21 08:27:19 maxv Exp $");
 
 #include "opt_mtrr.h"
 #include "opt_pmc.h"
@@ -65,24 +65,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.38 2017/08/30 15:44:01 maxv Exp $"
 #include <machine/mtrr.h>
 
 #ifdef __x86_64__
-/*
- * The code for USER_LDT on amd64 is mostly functional, but it is still not
- * enabled.
- *
- * On amd64 we are allowing only 8-byte-sized entries in the LDT, and we are
- * not allowing the user to overwrite the existing entries (below LDT_SIZE).
- * Note that USER_LDT is used only by 32bit applications, under compat_netbsd32.
- * This is theoretically enough for Wine to work.
- *
- * However, letting segment registers have different location breaks amd64's
- * Thread Local Storage: %fs and %gs must be reloaded when returning to
- * userland. See the tech-kern@ archive from February 2017. A patch has been
- * proposed to fix that, but Wine still randomly crashes; it is not clear
- * whether the issues come from Wine, from netbsd32 or from the patch itself.
- */
-#undef	USER_LDT
-/* Need to be checked. */
-#undef	IOPERM
+#undef	IOPERM	/* not implemented */
 #else
 #if defined(XEN)
 #undef	IOPERM
@@ -92,6 +75,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.38 2017/08/30 15:44:01 maxv Exp $"
 #endif
 
 #ifdef XEN
+#undef	USER_LDT
 #undef	PMC
 #endif
 
@@ -264,6 +248,11 @@ x86_set_ldt1(struct lwp *l, struct x86_set_ldt_args *ua,
 	/* Check descriptors for access violations. */
 	for (i = 0; i < ua->num; i++) {
 		union descriptor *desc = &descv[i];
+
+#ifdef __x86_64__
+		if (desc->sd.sd_long != 0)
+			return EACCES;
+#endif
 
 		switch (desc->sd.sd_type) {
 		case SDT_SYSNULL:
@@ -617,9 +606,6 @@ x86_set_sdbase32(void *arg, char which, lwp_t *l, bool direct)
 		    sizeof(struct segment_descriptor));
 		if (l == curlwp) {
 			update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &usd);
-#ifdef __x86_64__
-			setfs(GSEL(GUFS_SEL, SEL_UPL));
-#endif
 		}
 		tf->tf_fs = GSEL(GUFS_SEL, SEL_UPL);
 	} else /* which == 'g' */ {
@@ -627,13 +613,8 @@ x86_set_sdbase32(void *arg, char which, lwp_t *l, bool direct)
 		    sizeof(struct segment_descriptor));
 		if (l == curlwp) {
 			update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &usd);
-#ifdef __x86_64__
-#ifndef XEN
+#if defined(__x86_64__) && defined(XEN)
 			setusergs(GSEL(GUGS_SEL, SEL_UPL));
-#else
-			HYPERVISOR_set_segment_base(SEGBASE_GS_USER_SEL,
-						    GSEL(GUGS_SEL, SEL_UPL));
-#endif
 #endif
 		}
 		tf->tf_gs = GSEL(GUGS_SEL, SEL_UPL);

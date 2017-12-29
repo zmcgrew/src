@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.102 2017/09/07 06:40:42 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.105 2017/10/19 06:29:16 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1991 The Regents of the University of California.
@@ -299,12 +299,13 @@
 #define CPUID_DSPM_HWP_EPP __BIT(10)	/* HWP Energy Performance Preference */
 #define CPUID_DSPM_HWP_PLR __BIT(11)	/* HWP Package Level Request */
 #define CPUID_DSPM_HDC	__BIT(13)	/* Hardware Duty Cycling */
+#define CPUID_DSPM_TBMT3 __BIT(14)	/* Turbo Boost Max Technology 3.0 */
 
 #define CPUID_DSPM_FLAGS	"\20" \
 	"\1" "DTS"	"\2" "IDA"	"\3" "ARAT" 			\
 	"\5" "PLN"	"\6" "ECMD"	"\7" "PTM"	"\10" "HWP"	\
 	"\11" "HWP_NOTIFY" "\12" "HWP_ACTWIN" "\13" "HWP_EPP" "\14" "HWP_PLR" \
-			"\16" "HDC"
+			"\16" "HDC"	"\17" "TBM3"
 
 /*
  * Intel Digital Thermal Sensor and
@@ -345,6 +346,7 @@
 #define CPUID_SEF_RDSEED	__BIT(18)
 #define CPUID_SEF_ADX		__BIT(19)
 #define CPUID_SEF_SMAP		__BIT(20)
+#define CPUID_SEF_AVX512_IFMA	__BIT(21)
 #define CPUID_SEF_CLFLUSHOPT	__BIT(23)
 #define CPUID_SEF_CLWB		__BIT(24)
 #define CPUID_SEF_PT		__BIT(25)
@@ -361,23 +363,40 @@
 	"\11" "BMI2"	"\12" "ERMS"	"\13" "INVPCID"	"\14" "RTM"	\
 	"\15" "QM"	"\16" "FPUCSDS"	"\17" "MPX"    	"\20" "PQE"	\
 	"\21" "AVX512F"	"\22" "AVX512DQ" "\23" "RDSEED"	"\24" "ADX"	\
-	"\25" "SMAP"					"\30" "CLFLUSHOPT" \
+	"\25" "SMAP"	"\26" "AVX512_IFMA"		"\30" "CLFLUSHOPT" \
 	"\31" "CLWB"	"\32" "PT"	"\33" "AVX512PF" "\34" "AVX512ER" \
 	"\35" "AVX512CD""\36" "SHA"	"\37" "AVX512BW" "\40" "AVX512VL"
 
 /* %ecx */
 #define CPUID_SEF_PREFETCHWT1	__BIT(0)
+#define CPUID_SEF_AVX512_VBMI	__BIT(1)
 #define CPUID_SEF_UMIP		__BIT(2)
 #define CPUID_SEF_PKU		__BIT(3)
 #define CPUID_SEF_OSPKE		__BIT(4)
+#define CPUID_SEF_AVX512_VBMI2	__BIT(6)
+#define CPUID_SEF_GFNI		__BIT(8)
+#define CPUID_SEF_VAES		__BIT(9)
+#define CPUID_SEF_VPCLMULQDQ	__BIT(10)
+#define CPUID_SEF_AVX512_VNNI	__BIT(11)
+#define CPUID_SEF_AVX512_BITALG	__BIT(12)
+#define CPUID_SEF_AVX512_VPOPCNTDQ __BIT(14)
 #define CPUID_SEF_RDPID		__BIT(22)
 #define CPUID_SEF_SGXLC		__BIT(30)
 
 #define CPUID_SEF_FLAGS1	"\20" \
-	"\1" "PREFETCHWT1"		"\3" "UMIP"	"\4" "PKU"	\
-	"\5" "OSPKE"							\
+	"\1" "PREFETCHWT1" "\2" "AVX512_VBMI" "\3" "UMIP" "\4" "PKU"	\
+	"\5" "OSPKE"			"\7" "AVX512_VBMI2"		\
+	"\11" "GFNI"	"\12" "VAES"	"\13" "VPCLMULQDQ" "\14" "AVX512_VNNI"\
+	"\15" "AVX512_BITALG"		"\17" "AVX512_VPOPCNTDQ"	\
 					"\27" "RDPID"			\
 					"\37" "SGXLC"
+
+/* %edx */
+#define CPUID_SEF_AVX512_4VNNIW	__BIT(2)
+#define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
+
+#define CPUID_SEF_FLAGS2	"\20" \
+				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS"
 
 /*
  * CPUID Processor extended state Enumeration Fn0000000d
@@ -520,13 +539,18 @@
 #define CPUID_AMD_SVM_FlushByASID	0x00000040
 #define CPUID_AMD_SVM_DecodeAssist	0x00000080
 #define CPUID_AMD_SVM_PauseFilter	0x00000400
+#define CPUID_AMD_SVM_PFThreshold	0x0x001000 /* PAUSE filter threshold */
+#define CPUID_AMD_SVM_AVIC		0x00002000 /* AMD Virtual intr. ctrl */
+#define CPUID_AMD_SVM_V_VMSAVE_VMLOAD	0x00008000 /* Virtual VM{SAVE/LOAD} */
+#define CPUID_AMD_SVM_vGIF		0x00010000 /* Virtualized GIF */
 #define CPUID_AMD_SVM_FLAGS	 "\20" \
-	"\1" "NP"	"\2" "LbrVirt"	"\3" "SVML"	"\4" "NRIPS" \
-	"\5" "TSCRate"	"\6" "VMCBCleanBits" \
-		"\7" "FlushByASID"	"\10" "DecodeAssist" \
+	"\1" "NP"	"\2" "LbrVirt"	"\3" "SVML"	"\4" "NRIPS"	\
+	"\5" "TSCRate"	"\6" "VMCBCleanBits" 				\
+			        "\7" "FlushByASID" "\10" "DecodeAssist"	\
 	"\11" "B08"	"\12" "B09"	"\13" "PauseFilter" "\14" "B11" \
-	"\15" "B12"	"\16" "B13"	"\17" "B17"	"\20" "B18" \
-	"\21" "B19"
+	"\15" "PFThreshold" "\16" "AVIC" "\17" "B14"			\
+						"\20" "V_VMSAVE_VMLOAD"	\
+	"\21" "VGIF"
 
 /*
  * Centaur Extended Feature flags

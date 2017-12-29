@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.112 2017/09/17 09:04:51 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.116 2017/11/11 11:00:47 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.112 2017/09/17 09:04:51 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.116 2017/11/11 11:00:47 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -89,6 +89,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.112 2017/09/17 09:04:51 maxv Exp $");
 
 #include <uvm/uvm.h>
 
+#include <machine/cpu.h>
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 #include <machine/pmap.h>
@@ -537,6 +538,10 @@ cpu_init(struct cpu_info *ci)
 		 */
 		if (cpu_feature[0] & (CPUID_SSE|CPUID_SSE2))
 			lcr4(rcr4() | CR4_OSXMMEXCPT);
+	}
+
+	if (x86_fpu_save >= FPU_SAVE_FXSAVE) {
+		fpuinit_mxcsr_mask();
 	}
 
 	atomic_or_32(&ci->ci_flags, CPUF_RUNNING);

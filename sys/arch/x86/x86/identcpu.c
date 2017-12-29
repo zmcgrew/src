@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.57 2017/09/12 07:19:36 msaitoh Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.67 2017/11/11 11:00:46 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.57 2017/09/12 07:19:36 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.67 2017/11/11 11:00:46 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -49,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.57 2017/09/12 07:19:36 msaitoh Exp $"
 #include <x86/cacheinfo.h>
 #include <x86/cpuvar.h>
 #include <x86/cpu_msr.h>
+#include <x86/fpu.h>
 
 #include <x86/x86/vmtreg.h>	/* for vmt_hvcall() */
 #include <x86/x86/vmtvar.h>	/* for vmt_hvcall() */
@@ -64,7 +65,7 @@ static const struct x86_cache_info amd_cpuid_l3cache_assoc_info[] =
 int cpu_vendor;
 char cpu_brand_string[49];
 
-int x86_fpu_save __read_mostly = FPU_SAVE_FSAVE;
+int x86_fpu_save __read_mostly;
 unsigned int x86_fpu_save_size __read_mostly = 512;
 uint64_t x86_xsave_features __read_mostly = 0;
 
@@ -701,25 +702,13 @@ cpu_probe_vortex86(struct cpu_info *ci)
 #undef PCI_MODE1_DATA_REG
 }
 
-#if !defined(__i386__) || defined(XEN)
-#define cpu_probe_old_fpu(ci)
-#else
 static void
 cpu_probe_old_fpu(struct cpu_info *ci)
 {
-	uint16_t control;
+#if defined(__i386__) && !defined(XEN)
 
-	/* Check that there really is an fpu (496SX) */
 	clts();
 	fninit();
-	/* Read default control word */
-	fnstcw(&control);
-	if (control != __INITIAL_NPXCW__) {
-		/* Must be a 486SX, trap FP instructions */
-		lcr0((rcr0() & ~CR0_MP) | CR0_EM);
-		i386_fpu_present = 0;
-		return;
-	}
 
 	/* Check for 'FDIV' bug on the original Pentium */
 	if (npx586bug1(4195835, 3145727) != 0)
@@ -727,13 +716,15 @@ cpu_probe_old_fpu(struct cpu_info *ci)
 		i386_fpu_fdivbug = 1;
 
 	stts();
-}
 #endif
+}
 
 static void
 cpu_probe_fpu(struct cpu_info *ci)
 {
 	u_int descs[4];
+
+	x86_fpu_save = FPU_SAVE_FSAVE;
 
 #ifdef i386 /* amd64 always has fxsave, sse and sse2 */
 	/* If we have FXSAVE/FXRESTOR, use them. */
@@ -762,7 +753,7 @@ cpu_probe_fpu(struct cpu_info *ci)
 
 	x86_fpu_save = FPU_SAVE_FXSAVE;
 
-	/* See if xsave (for AVX is supported) */
+	/* See if xsave (for AVX) is supported */
 	if ((ci->ci_feat_val[1] & CPUID2_XSAVE) == 0)
 		return;
 
@@ -780,6 +771,7 @@ cpu_probe_fpu(struct cpu_info *ci)
 
 #ifdef XEN
 	/* Don't use xsave, force fxsave with x86_xsave_features = 0. */
+	x86_fpu_save = FPU_SAVE_FXSAVE;
 #else
 	x86_xsave_features = (uint64_t)descs[3] << 32 | descs[0];
 #endif
@@ -983,9 +975,6 @@ cpu_identify(struct cpu_info *ci)
 #endif
 
 #ifdef i386
-	if (i386_fpu_present == 0)
-		aprint_normal_dev(ci->ci_dev, "no fpu\n");
-
 	if (i386_fpu_fdivbug == 1)
 		aprint_normal_dev(ci->ci_dev,
 		    "WARNING: Pentium FDIV bug detected!\n");

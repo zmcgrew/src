@@ -1,4 +1,4 @@
-#	$NetBSD: t_vlan.sh,v 1.3 2017/08/09 06:19:56 knakahara Exp $
+#	$NetBSD: t_vlan.sh,v 1.7 2017/11/23 04:59:49 kre Exp $
 #
 # Copyright (c) 2016 Internet Initiative Japan Inc.
 # All rights reserved.
@@ -332,14 +332,27 @@ vlan_vlanid_body_common()
 	atf_check -s not-exit:0 -e ignore\
 	    rump.ifconfig vlan0 vlan -1 vlanif shmif0
 
-	$config_and_ping 0 # reserved vlan id
+	# $config_and_ping 0 # reserved vlan id
 	$config_and_ping 1
 	$config_and_ping 4094
-	$config_and_ping 4095 #reserved vlan id
+	# $config_and_ping 4095 #reserved vlan id
+
+	if [ "${RANDOM:-0}" != "${RANDOM:-0}" ]
+	then
+		for TAG in $(( ${RANDOM:-0} % 4092 + 2 )) \
+			   $(( ${RANDOM:-0} % 4092 + 2 )) \
+			   $(( ${RANDOM:-0} % 4092 + 2 ))
+		do
+			$config_and_ping "${TAG}"
+		done
+	fi
 
 	export RUMP_SERVER=$SOCK_LOCAL
-	atf_check -s not-exit:0 -e ignore \
-	    rump.ifconfig vlan0 vlan 4096 vlanif shmif0
+	for TAG in 0 4095 4096 $((4096*4 + 1)) 65536 65537 $((65536 + 4095))
+	do
+		atf_check -s not-exit:0 -e not-empty \
+		    rump.ifconfig vlan0 vlan "${TAG}" vlanif shmif0
+	done
 
 	atf_check -s exit:0 rump.ifconfig vlan0 vlan 1 vlanif shmif0
 	atf_check -s not-exit:0 -e ignore \
@@ -451,6 +464,18 @@ vlan_configs_body_common()
 	atf_check -s exit:0 -e match:'Invalid argument' \
 	    rump.ifconfig vlan0 mtu 41
 	atf_check -s exit:0 rump.ifconfig vlan0 -vlanif
+
+	atf_check -s exit:0 rump.ifconfig vlan1 create
+	atf_check -s exit:0 rump.ifconfig vlan0 vlan 10 vlanif shmif0
+	atf_check -s not-exit:0 -e match:'File exists' \
+	    rump.ifconfig vlan1 vlan 10 vlanif shmif0
+	atf_check -s exit:0 rump.ifconfig vlan1 vlan 10 vlanif shmif1
+
+	atf_check -s exit:0 rump.ifconfig vlan1 -vlanif shmif1
+	atf_check -s exit:0 rump.ifconfig vlan1 vlan 10 vlanif shmif1
+
+	atf_check -s exit:0 rump.ifconfig vlan0 -vlanif shmif0
+	atf_check -s exit:0 rump.ifconfig vlan0 vlan 10 vlanif shmif0
 }
 
 atf_test_case vlan_configs cleanup

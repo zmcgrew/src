@@ -1,8 +1,8 @@
-# $NetBSD: shl.mi,v 1.181 2017/08/16 21:32:22 joerg Exp $
+# $NetBSD: shl.mi,v 1.187 2017/11/04 16:21:49 kamil Exp $
 ./usr/lib/libbfd_g.a						comp-c-debuglib	debuglib,compatfile,binutils
 ./usr/libdata/debug/lib						base-sys-usr	debug,dynamicroot,compatdir
 ./usr/libdata/debug/lib/libblacklist.so.0.0.debug		comp-sys-debug	debug,dynamicroot
-./usr/libdata/debug/lib/libc.so.12.208.debug			comp-sys-debug	debug,dynamicroot
+./usr/libdata/debug/lib/libc.so.12.209.debug			comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libcrypt.so.1.0.debug			comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libcrypto.so.12.0.debug			comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libdevmapper.so.1.0.debug		comp-sys-debug	debug,dynamicroot,lvm
@@ -20,7 +20,8 @@
 ./usr/libdata/debug/lib/libppath.so.0.0.debug			comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libprop.so.1.1.debug			comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libradius.so.4.0.debug			comp-sys-debug	debug,dynamicroot
-./usr/libdata/debug/lib/librumpclient.so.0.0.debug		comp-sys-debug	debug,dynamicroot,rump
+./usr/libdata/debug/lib/librumpclient.so.0.0.debug		comp-rump-debug	debug,dynamicroot,rump
+./usr/libdata/debug/lib/librumpres.so.0.0.debug			comp-rump-debug	debug,dynamicroot,rump
 ./usr/libdata/debug/lib/libterminfo.so.1.0.debug		comp-sys-debug	debug,dynamicroot
 ./usr/libdata/debug/lib/libutil.so.7.23.debug			comp-obsolete	debug,obsolete,compatfile
 ./usr/libdata/debug/lib/libutil.so.7.24.debug			comp-sys-debug	debug,dynamicroot
@@ -56,10 +57,9 @@
 ./usr/libdata/debug/usr/lib/libamu.so.5.0.debug			comp-amd-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libarchive.so.4.0.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libasan.so.0.0.debug		comp-sys-debug	debug,compatfile,gcc=48
-./usr/libdata/debug/usr/lib/libasan.so.1.0.debug		comp-sys-debug	debug,compatfile,gcc=53
+./usr/libdata/debug/usr/lib/libasan.so.2.0.debug		comp-sys-debug	debug,compatfile,gcc=53
 ./usr/libdata/debug/usr/lib/libasn1.so.10.0.debug		comp-krb5-debug	debug,compatfile,kerberos
-./usr/libdata/debug/usr/lib/libatf-c++.so.0.0.debug		comp-obsolete	debug,compatfile,atf,obsolete
-./usr/libdata/debug/usr/lib/libatf-c++.so.1.0.debug		comp-atf-debug	debug,compatfile,atf
+./usr/libdata/debug/usr/lib/libatf-c++.so.2.0.debug		comp-atf-debug	debug,compatfile,atf
 ./usr/libdata/debug/usr/lib/libatf-c.so.0.0.debug		comp-atf-debug	debug,compatfile,atf
 ./usr/libdata/debug/usr/lib/libavl.so.0.0.debug			comp-zfs-debug	debug,compatfile,zfs
 ./usr/libdata/debug/usr/lib/libbfd.so.14.0.debug		comp-sys-debug	debug,compatfile,binutils=226
@@ -70,7 +70,7 @@
 ./usr/libdata/debug/usr/lib/libbsdmalloc.so.0.0.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libbz2.so.1.1.debug			comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libc++.so.1.0.debug			comp-sys-debug	debug,compatfile,libcxx
-./usr/libdata/debug/usr/lib/libc.so.12.208.debug		comp-sys-debug	debug,compatfile
+./usr/libdata/debug/usr/lib/libc.so.12.209.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libcom_err.so.8.0.debug		comp-krb5-debug	debug,compatfile,kerberos
 ./usr/libdata/debug/usr/lib/libcrypt.so.1.0.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libcrypto.so.12.0.debug		comp-crypto-debug	debug,compatfile
@@ -158,7 +158,7 @@
 ./usr/libdata/debug/usr/lib/libperfuse.so.0.0.debug		comp-perfuse-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libposix.so.0.1.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libppath.so.0.0.debug		comp-sys-debug	debug,compatfile
-./usr/libdata/debug/usr/lib/libproc.so.0.0.debug		comp-sys-debug	debug,dtrace
+./usr/libdata/debug/usr/lib/libproc.so.1.0.debug		comp-sys-debug	debug,dtrace
 ./usr/libdata/debug/usr/lib/libprop.so.1.1.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libpthread.so.1.3.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libpthread_dbg.so.2.0.debug		comp-obsolete	obsolete
@@ -259,6 +259,7 @@
 ./usr/libdata/debug/usr/lib/librumpnet_tun.so.0.0.debug		comp-rump-debug	debug,rump
 ./usr/libdata/debug/usr/lib/librumpnet_virtif.so.0.0.debug	comp-rump-debug	debug,rump
 ./usr/libdata/debug/usr/lib/librumpnet_vlan.so.0.0.debug	comp-rump-debug	debug,rump
+./usr/libdata/debug/usr/lib/librumpres.so.0.0.debug		comp-rump-debug	debug,compatfile,rump
 ./usr/libdata/debug/usr/lib/librumpuser.so.0.1.debug		comp-rump-debug	debug,compatfile,rump
 ./usr/libdata/debug/usr/lib/librumpvfs.so.0.0.debug		comp-rump-debug	debug,compatfile,rump
 ./usr/libdata/debug/usr/lib/librumpvfs_aio.so.0.0.debug		comp-rump-debug	debug,rump
@@ -268,15 +269,15 @@
 ./usr/libdata/debug/usr/lib/libskey.so.2.0.debug		comp-sys-debug	debug,compatfile,skey
 ./usr/libdata/debug/usr/lib/libsl.so.6.0.debug			comp-krb5-debug	debug,compatfile,kerberos
 ./usr/libdata/debug/usr/lib/libsqlite3.so.1.3.debug		comp-sys-debug	debug,compatfile
-./usr/libdata/debug/usr/lib/libssh.so.30.0.debug		comp-secsh-debug	debug,compatfile
+./usr/libdata/debug/usr/lib/libssh.so.31.0.debug		comp-secsh-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libssl.so.12.0.debug		comp-crypto-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libstdc++.so.7.3.debug		comp-sys-debug	debug,compatfile,gcc=48,cxx,libstdcxx
-./usr/libdata/debug/usr/lib/libstdc++.so.7.4.debug		comp-sys-debug	debug,compatfile,gcc=53,cxx,libstdcxx
+./usr/libdata/debug/usr/lib/libstdc++.so.8.0.debug		comp-sys-debug	debug,compatfile,gcc=53,cxx,libstdcxx
 ./usr/libdata/debug/usr/lib/libterminfo.so.1.0.debug		comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libtpm_unseal.so.1.0.debug		comp-tpm-debug	debug,compatfile,tpm
 ./usr/libdata/debug/usr/lib/libtre.so.0.8.debug			comp-sys-debug	debug,compatfile
 ./usr/libdata/debug/usr/lib/libtspi.so.3.0.debug		comp-tpm-debug	debug,compatfile,tpm
-./usr/libdata/debug/usr/lib/libubsan.so.0.0.debug		comp-sys-debug	debug,compatfile,gcc=53
+./usr/libdata/debug/usr/lib/libubsan.so.1.0.debug		comp-sys-debug	debug,compatfile,gcc=53
 ./usr/libdata/debug/usr/lib/libukfs.so.1.0.debug		comp-sys-debug	debug,compatfile,rump
 ./usr/libdata/debug/usr/lib/libumem.so.0.0.debug		comp-zfs-debug	debug,compatfile,zfs
 ./usr/libdata/debug/usr/lib/libunbound.so.6.1.debug 		comp-net-debug	debug,compatfile,unbound
@@ -296,7 +297,7 @@
 ./usr/libdata/debug/usr/lib/npf/libext_normalise.so.0.0.debug	comp-obsolete	debug,compatfile,npf,obsolete
 ./usr/libdata/debug/usr/lib/npf/libext_rndblock.so.0.0.debug	comp-obsolete	debug,compatfile,npf,obsolete
 ./usr/libdata/debug/usr/libexec/ld.elf_so.debug			comp-sys-debug	debug,dynamicroot
-./usr/libdata/debug/usr/libexec/liblto_plugin.so.0.0.debug	comp-sys-debug	debug,gcc
+./usr/libdata/debug/usr/libexec/liblto_plugin.so.0.1.debug	comp-sys-debug	debug,gcc
 ./usr/libdata/debug/usr/tests/lib/csu/h_initfini3_dso.so.1.debug	tests-lib-debug		debug,compattestfile,atf
 ./usr/libdata/debug/usr/tests/lib/csu/libh_initfini3_dso.so.1.debug	tests-obsolete		debug,compattestfile,atf,obsolete
 ./usr/libdata/debug/usr/tests/lib/libc/tls/h_tls_dlopen.so.1.debug	tests-lib-debug		debug,compattestfile,atf
@@ -319,4 +320,3 @@
 ./usr/tests/libexec/ld.elf_so/libh_helper_dso2_g.a			comp-c-debuglib	atf,debuglib,compattestfile
 ./usr/tests/libexec/ld.elf_so/libh_helper_dso3_g.a			comp-c-debuglib	atf,debuglib,compattestfile
 ./usr/tests/libexec/ld.elf_so/libh_helper_ifunc_dso_g.a			comp-c-debuglib	atf,debuglib,compattestfile
-

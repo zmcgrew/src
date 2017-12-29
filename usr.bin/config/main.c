@@ -1,4 +1,4 @@
-/*	$NetBSD: main.c,v 1.91 2016/09/05 00:40:28 sevan Exp $	*/
+/*	$NetBSD: main.c,v 1.97 2017/11/28 15:31:33 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -45,7 +45,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: main.c,v 1.91 2016/09/05 00:40:28 sevan Exp $");
+__RCSID("$NetBSD: main.c,v 1.97 2017/11/28 15:31:33 christos Exp $");
 
 #ifndef MAKE_BOOTSTRAP
 #include <sys/cdefs.h>
@@ -1868,6 +1868,33 @@ check_dead_devi(const char *key, void *value, void *aux)
 	return 0;
 }
 
+static struct devbase root;
+
+static int
+addlevelparent(struct devbase *d, struct devbase *parent)
+{
+	struct devbase *p;
+
+	if (d == parent) {
+		if (d->d_level > 1)
+			return 0;
+		return 1;
+	}
+
+	if (d->d_levelparent) {
+		if (d->d_level > 1)
+			return 0;
+		return 1;
+	}
+
+	for (p = parent; p != NULL; p = p->d_levelparent)
+		if (d == p && d->d_level > 1)
+			return 0;
+	d->d_levelparent = p ? p : &root; 
+	d->d_level++;
+	return 1;
+}
+
 static void
 do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
     int state)
@@ -1878,6 +1905,9 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 	struct devi *i, *j = NULL;
 	struct pspec *p;
 	int active = 0;
+
+	if (!addlevelparent(d, parent))
+		return;
 
 	/*
 	 * A pseudo-device will always attach at root, and if it has an
@@ -1897,6 +1927,7 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 		}
 	} else {
 		int seen = 0;
+		int changed = 0;
 
 		for (i = d->d_ihead; i != NULL; i = i->i_bsame) {
 			for (j = i; j != NULL; j = j->i_alias) {
@@ -1929,22 +1960,32 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 						seen = 1;
 						continue;
 					}
+					changed |= j->i_active != state;
 					j->i_active = active = state;
-					if (p != NULL)
-						p->p_active = state;
+					if (p != NULL) {
+						if (state == DEVI_ACTIVE ||
+						    --p->p_ref == 0)
+							p->p_active = state;
+					}
+					if (state == DEVI_IGNORED) {
+						CFGDBG(5,
+						    "`%s' at '%s' ignored",
+						    d->d_name, parent ?
+						    parent->d_name : "(root)");
+					}
 				}
 			}
 		}
 		/*
 		 * If we've been there but have made no change, stop.
 		 */
-		if (seen && !active)
-			return;
-		if (!active) {
+		if (seen && active != DEVI_ACTIVE)
+			goto out;
+		if (active != DEVI_ACTIVE) {
 			struct cdd_params cdd = { d, at, parent };
 			/* Look for a matching dead devi */
 			if (ht_enumerate(deaddevitab, check_dead_devi, &cdd) &&
-			    d != parent)
+			    d != parent) {
 				/*
 				 * That device had its instances removed.
 				 * Continue the loop marking descendants
@@ -1956,16 +1997,23 @@ do_kill_orphans(struct devbase *d, struct attr *at, struct devbase *parent,
 				 * have to continue looping.
 				 */
 				active = DEVI_IGNORED;
-			else
-				return;
+				CFGDBG(5, "`%s' at '%s' ignored", d->d_name,
+				    parent ? parent->d_name : "(root)");
+
+			} else if (!changed)
+				goto out;
 		}
 	}
 
 	for (al = d->d_attrs; al != NULL; al = al->al_next) {
 		a = al->al_this;
-		for (nv1 = a->a_devs; nv1 != NULL; nv1 = nv1->nv_next)
+		for (nv1 = a->a_devs; nv1 != NULL; nv1 = nv1->nv_next) {
 			do_kill_orphans(nv1->nv_ptr, a, d, active);
+		}
 	}
+out:
+	d->d_levelparent = NULL;
+	d->d_level--;
 }
 
 static int

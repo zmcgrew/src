@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.prog.mk,v 1.307 2017/05/21 15:28:42 riastradh Exp $
+#	$NetBSD: bsd.prog.mk,v 1.310 2017/12/11 13:08:47 christos Exp $
 #	@(#)bsd.prog.mk	8.2 (Berkeley) 4/2/94
 
 .ifndef HOSTPROG
@@ -348,8 +348,8 @@ SRCS.rump.${PROG}=	${PROG}.c ${PROG}_rumpops.c ${RUMPSRCS}
 .  endif
 .   if (${MKRUMP} != "no")
 DPSRCS+=		${PROG}_rumpops.c ${RUMPSRCS}
-LDADD.rump.${PROG}+=	-lrumpclient
-DPADD.rump.${PROG}+=	${LIBRUMPCLIENT}
+LDADD.rump.${PROG}+=	${LDADD.rump} -lrumpclient
+DPADD.rump.${PROG}+=	${DPADD.rump} ${LIBRUMPCLIENT}
 MAN.rump.${PROG}=	# defined but feeling empty
 _RUMPINSTALL.rump.${PROG}=# defined
 .   endif
@@ -431,7 +431,8 @@ _CCLINK.${_P}=	${CXX} ${_CCLINKFLAGS}
 BINDIR.${_P}?=		${BINDIR}
 PROGNAME.${_P}?=	${_P}
 
-.if ${MKDEBUG:Uno} != "no" && !defined(NODEBUG) && !commands(${_P})
+.if ${MKDEBUG:Uno} != "no" && !defined(NODEBUG) && !commands(${_P}) && \
+    empty(SRCS.${_P}:M*.sh)
 _PROGDEBUG.${_P}:=	${PROGNAME.${_P}}.debug
 .endif
 

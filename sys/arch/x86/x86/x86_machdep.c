@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.93 2017/06/14 12:27:24 maxv Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.102 2017/11/23 16:30:50 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,11 +31,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.93 2017/06/14 12:27:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.102 2017/11/23 16:30:50 kamil Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
 #include "opt_splash.h"
+#include "opt_kaslr.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -70,6 +71,8 @@ __KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.93 2017/06/14 12:27:24 maxv Exp $"
 
 #include <uvm/uvm_extern.h>
 
+#include "tsc.h"
+
 #include "acpica.h"
 #if NACPICA > 0
 #include <dev/acpi/acpivar.h>
@@ -100,6 +103,8 @@ char module_machine_i386pae_xen[] = "i386pae-xen";
 struct bootinfo bootinfo;
 
 /* --------------------------------------------------------------------- */
+
+bool bootmethod_efi;
 
 static kauth_listener_t x86_listener;
 
@@ -227,7 +232,11 @@ module_init_md(void)
 			    bi->path, bi->len, bi->base);
 			KASSERT(trunc_page(bi->base) == bi->base);
 			module_prime(bi->path,
+#ifdef KASLR
+			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
+#else
 			    (void *)((uintptr_t)bi->base + KERNBASE),
+#endif
 			    bi->len);
 			break;
 		case BI_MODULE_IMAGE:
@@ -236,7 +245,12 @@ module_init_md(void)
 			    bi->path, bi->len, bi->base);
 			KASSERT(trunc_page(bi->base) == bi->base);
 			splash_setimage(
-			    (void *)((uintptr_t)bi->base + KERNBASE), bi->len);
+#ifdef KASLR
+			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
+#else
+			    (void *)((uintptr_t)bi->base + KERNBASE),
+#endif
+			    bi->len);
 #endif
 			break;
 		case BI_MODULE_RND:
@@ -244,7 +258,11 @@ module_init_md(void)
 				     bi->path, bi->len, bi->base);
 			KASSERT(trunc_page(bi->base) == bi->base);
 			rnd_seed(
+#ifdef KASLR
+			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
+#else
 			    (void *)((uintptr_t)bi->base + KERNBASE),
+#endif
 			     bi->len);
 			break;
 		case BI_MODULE_FS:
@@ -252,7 +270,12 @@ module_init_md(void)
 			    bi->path, bi->len, bi->base);
 			KASSERT(trunc_page(bi->base) == bi->base);
 #if defined(MEMORY_DISK_HOOKS) && defined(MEMORY_DISK_DYNAMIC)
-			md_root_setconf((void *)((uintptr_t)bi->base + KERNBASE),
+			md_root_setconf(
+#ifdef KASLR
+			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
+#else
+			    (void *)((uintptr_t)bi->base + KERNBASE),
+#endif
 			    bi->len);
 #endif
 			break;	
@@ -862,7 +885,8 @@ init_x86_clusters(void)
 int
 init_x86_vm(paddr_t pa_kend)
 {
-	paddr_t pa_kstart = (KERNTEXTOFF - KERNBASE);
+	extern struct bootspace bootspace;
+	paddr_t pa_kstart = bootspace.head.pa;
 	uint64_t seg_start, seg_end;
 	uint64_t seg_start1, seg_end1;
 	int x;
@@ -1039,9 +1063,7 @@ x86_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case KAUTH_MACHDEP_IOPERM_GET:
 	case KAUTH_MACHDEP_LDT_GET:
 	case KAUTH_MACHDEP_LDT_SET:
-	case KAUTH_MACHDEP_MTRR_GET:
 		result = KAUTH_RESULT_ALLOW;
-
 		break;
 
 	default:
@@ -1094,6 +1116,23 @@ sysctl_machdep_booted_kernel(SYSCTLFN_ARGS)
 }
 
 static int
+sysctl_machdep_bootmethod(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	char buf[5];
+
+	node = *rnode;
+	node.sysctl_data = buf;
+	if (bootmethod_efi)
+		memcpy(node.sysctl_data, "UEFI", 5);
+	else
+		memcpy(node.sysctl_data, "BIOS", 5);
+
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
+}
+
+
+static int
 sysctl_machdep_diskinfo(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
@@ -1110,6 +1149,38 @@ sysctl_machdep_diskinfo(SYSCTLFN_ARGS)
 	return sysctl_lookup(SYSCTLFN_CALL(&node));
 }
 
+#ifndef XEN
+static int
+sysctl_machdep_tsc_enable(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int error, val;
+
+	val = *(int *)rnode->sysctl_data;
+
+	node = *rnode;
+	node.sysctl_data = &val;
+
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error != 0 || newp == NULL)
+		return error;
+
+	if (val == 1) {
+		tsc_user_enable();
+	} else if (val == 0) {
+		tsc_user_disable();
+	} else {
+		error = EINVAL;
+	}
+	if (error)
+		return error;
+
+	*(int *)rnode->sysctl_data = val;
+
+	return 0;
+}
+#endif
+
 static void
 const_sysctl(struct sysctllog **clog, const char *name, int type,
     u_quad_t value, int tag)
@@ -1123,6 +1194,9 @@ const_sysctl(struct sysctllog **clog, const char *name, int type,
 SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 {
 	extern uint64_t tsc_freq;
+#ifndef XEN
+	extern int tsc_user_enabled;
+#endif
 	extern int sparse_dump;
 
 	sysctl_createv(clog, 0, NULL, NULL,
@@ -1143,10 +1217,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTL_MACHDEP, CPU_BOOTED_KERNEL, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
+		       CTLTYPE_STRING, "bootmethod", NULL,
+		       sysctl_machdep_bootmethod, 0, NULL, 0,
+		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT,
 		       CTLTYPE_STRUCT, "diskinfo", NULL,
 		       sysctl_machdep_diskinfo, 0, NULL, 0,
 		       CTL_MACHDEP, CPU_DISKINFO, CTL_EOL);
-
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_STRING, "cpu_brand", NULL,
@@ -1168,6 +1246,14 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       SYSCTL_DESCR("Whether the kernel uses PAE"),
 		       NULL, 0, &use_pae, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+#ifndef XEN
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_READWRITE,
+		       CTLTYPE_INT, "tsc_user_enable",
+		       SYSCTL_DESCR("RDTSC instruction enabled in usermode"),
+		       sysctl_machdep_tsc_enable, 0, &tsc_user_enabled, 0,
+		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+#endif
 
 	/* None of these can ever change once the system has booted */
 	const_sysctl(clog, "fpu_present", CTLTYPE_INT, i386_fpu_present,

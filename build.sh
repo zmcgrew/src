@@ -1,5 +1,5 @@
 #! /usr/bin/env sh
-#	$NetBSD: build.sh,v 1.316 2017/04/08 18:22:35 christos Exp $
+#	$NetBSD: build.sh,v 1.321 2017/10/08 01:05:13 kre Exp $
 #
 # Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -952,11 +952,34 @@ setmakeenv()
 	eval "$1='$2'; export $1"
 	makeenv="${makeenv} $1"
 }
+safe_setmakeenv()
+{
+	case "$1" in
+
+	#	Look for any vars we want to prohibit here, like:
+	# Bad | Dangerous)	usage "Cannot override $1 with -V";;
+
+	# That first char is OK has already been verified.
+	*[!A-Za-z0-9_]*)	usage "Bad variable name (-V): '$1'";;
+	esac
+	setmakeenv "$@"
+}
 
 unsetmakeenv()
 {
 	eval "unset $1"
 	makeenv="${makeenv} $1"
+}
+safe_unsetmakeenv()
+{
+	case "$1" in
+
+	#	Look for any vars user should not be able to unset
+	# Needed | Must_Have)	usage "Variable $1 cannot be unset";;
+
+	[!A-Za-z_]* | *[!A-Za-z0-9_]*)	usage "Bad variable name (-Z): '$1'";;
+	esac
+	unsetmakeenv "$1"
 }
 
 # Given a variable name in $1, modify the variable in place as follows:
@@ -1259,8 +1282,11 @@ parseoptions()
 			eval ${optargcmd}
 			case "${OPTARG}" in
 		    # XXX: consider restricting which variables can be changed?
-			[a-zA-Z_][a-zA-Z_0-9]*=*)
-				setmakeenv "${OPTARG%%=*}" "${OPTARG#*=}"
+			[a-zA-Z_]*=*)
+				safe_setmakeenv "${OPTARG%%=*}" "${OPTARG#*=}"
+				;;
+			[a-zA-Z_]*)
+				safe_setmakeenv "${OPTARG}" ""
 				;;
 			*)
 				usage "-V argument must be of the form 'var=[value]'"
@@ -1294,7 +1320,7 @@ parseoptions()
 		-Z)
 			eval ${optargcmd}
 		    # XXX: consider restricting which variables can be unset?
-			unsetmakeenv "${OPTARG}"
+			safe_unsetmakeenv "${OPTARG}"
 			;;
 
 		--)
@@ -1441,7 +1467,26 @@ sanitycheck()
 		fi
 		;;
 	esac
+
+	while [ ${MKX11-no} = "yes" ]; do		# not really a loop
+		test -n "${X11SRCDIR}" && {
+		    test -d "${X11SRCDIR}" ||
+		    	bomb "X11SRCDIR (${X11SRCDIR}) does not exist (with -x)"
+		    break
+		}
+		for _xd in \
+		    "${NETBSDSRCDIR%/*}/xsrc" \
+		    "${NETBSDSRCDIR}/xsrc" \
+		    /usr/xsrc
+		do
+		    test -d "${_xd}" &&
+			setmakeenv X11SRCDIR "${_xd}" &&
+			break 2
+		done
+		bomb "Asked to build X11 but no xsrc"
+	done
 }
+
 # print_tooldir_make --
 # Try to find and print a path to an existing
 # ${TOOLDIR}/bin/${toolprefix}program
@@ -1893,7 +1938,7 @@ createmakewrapper()
 	eval cat <<EOF ${makewrapout}
 #! ${HOST_SH}
 # Set proper variables to allow easy "make" building of a NetBSD subtree.
-# Generated from:  \$NetBSD: build.sh,v 1.316 2017/04/08 18:22:35 christos Exp $
+# Generated from:  \$NetBSD: build.sh,v 1.321 2017/10/08 01:05:13 kre Exp $
 # with these arguments: ${_args}
 #
 

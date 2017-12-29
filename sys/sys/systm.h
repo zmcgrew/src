@@ -1,4 +1,4 @@
-/*	$NetBSD: systm.h,v 1.272 2016/12/22 16:05:15 cherry Exp $	*/
+/*	$NetBSD: systm.h,v 1.274 2017/10/27 12:25:15 joerg Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1988, 1991, 1993

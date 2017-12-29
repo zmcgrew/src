@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_src.c,v 1.81 2017/09/17 17:35:10 christos Exp $	*/
+/*	$NetBSD: in6_src.c,v 1.84 2017/12/06 14:17:42 roy Exp $	*/
 /*	$KAME: in6_src.c,v 1.159 2005/10/19 01:40:32 t-momose Exp $	*/
 
 /*
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_src.c,v 1.81 2017/09/17 17:35:10 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_src.c,v 1.84 2017/12/06 14:17:42 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -134,6 +134,9 @@ static int walk_addrsel_policy(int (*)(struct in6_addrpolicy *, void *),
 				    void *);
 static int dump_addrsel_policyent(struct in6_addrpolicy *, void *);
 static struct in6_addrpolicy *match_addrsel_policy(struct sockaddr_in6 *);
+
+#define	IFA6_IS_VALIDATED(ia) \
+	(((ia)->ia6_flags & (IN6_IFF_TENTATIVE | IN6_IFF_DETACHED)) == 0)
 
 /*
  * Return an IPv6 address, which is the most appropriate for a given
@@ -217,10 +220,8 @@ in6_select_best_ia(struct sockaddr_in6 *dstsock, struct in6_addr *dst,
 		}
 
 		/* avoid unusable addresses */
-		if ((ia->ia6_flags &
-		     (IN6_IFF_NOTREADY | IN6_IFF_ANYCAST | IN6_IFF_DETACHED))) {
-				continue;
-		}
+		if ((ia->ia6_flags & (IN6_IFF_DUPLICATED | IN6_IFF_ANYCAST)))
+			continue;
 		if (!ip6_use_deprecated && IFA6_IS_DEPRECATED(ia))
 			continue;
 
@@ -238,7 +239,7 @@ in6_select_best_ia(struct sockaddr_in6 *dstsock, struct in6_addr *dst,
 		}
 
 		if (ia_best == NULL)
-			REPLACE(0);
+			REPLACE(1);
 
 		/* Rule 2: Prefer appropriate scope */
 		if (dst_scope < 0)
@@ -257,7 +258,12 @@ in6_select_best_ia(struct sockaddr_in6 *dstsock, struct in6_addr *dst,
 		/*
 		 * Rule 3: Avoid deprecated addresses.  Note that the case of
 		 * !ip6_use_deprecated is already rejected above.
+		 * Treat unvalidated addresses as deprecated here.
 		 */
+		if (IFA6_IS_VALIDATED(ia_best) && !IFA6_IS_VALIDATED(ia))
+			NEXT(3);
+		if (!IFA6_IS_VALIDATED(ia_best) && IFA6_IS_VALIDATED(ia))
+			REPLACE(3);
 		if (!IFA6_IS_DEPRECATED(ia_best) && IFA6_IS_DEPRECATED(ia))
 			NEXT(3);
 		if (IFA6_IS_DEPRECATED(ia_best) && !IFA6_IS_DEPRECATED(ia))
@@ -878,6 +884,9 @@ addrsel_policy_init(void)
 	defaultaddrpolicy.label = ADDR_LABEL_NOTAPP;
 }
 
+/*
+ * XXX: NOMPSAFE if a policy is set
+ */
 static struct in6_addrpolicy *
 lookup_addrsel_policy(struct sockaddr_in6 *key)
 {

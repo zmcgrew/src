@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1016 2017/08/22 11:14:28 joerg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1025 2017/12/01 22:48:00 mrg Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -81,9 +81,9 @@ MKGCCCMDS?=	no
 # set to the relevant subdirectory in src/external/gpl3 for his HAVE_GCC.
 #
 .if ${HAVE_GCC} == 53
-EXTERNAL_GCC_SUBDIR=	gcc.old
+EXTERNAL_GCC_SUBDIR?=	gcc.old
 .else
-EXTERNAL_GCC_SUBDIR=	/does/not/exist
+EXTERNAL_GCC_SUBDIR=?	/does/not/exist
 .endif
 .else
 MKGCCCMDS?=	no
@@ -131,11 +131,11 @@ USE_SSP?=	yes
 #
 # What GDB is used?
 #
-HAVE_GDB?=	712
+HAVE_GDB?=	801
 
-.if ${HAVE_GDB} == 712
+.if ${HAVE_GDB} == 801
 EXTERNAL_GDB_SUBDIR=		gdb
-.elif ${HAVE_GDB} == 710
+.elif ${HAVE_GDB} == 712
 EXTERNAL_GDB_SUBDIR=		gdb.old
 .else
 EXTERNAL_GDB_SUBDIR=		/does/not/exist
@@ -1017,6 +1017,12 @@ MKRELRO?=	partial
 MKRELRO?=	no
 .endif
 
+.if ${MACHINE_ARCH} == "x86_64"
+MKSTATICPIE?=	no
+.else
+MKSTATICPIE?=	no
+.endif
+
 #
 # MK* options which default to "yes".
 #
@@ -1357,7 +1363,6 @@ X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
     ${MACHINE} == "alpha"	|| \
     ${MACHINE} == "amiga"	|| \
     ${MACHINE} == "ews4800mips"	|| \
-    ${MACHINE} == "hp300"	|| \
     ${MACHINE} == "hpcarm"	|| \
     ${MACHINE} == "hpcmips"	|| \
     ${MACHINE} == "hpcsh"	|| \

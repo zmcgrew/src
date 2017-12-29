@@ -1,4 +1,4 @@
-/*	$NetBSD: wdc_obio.c,v 1.59 2016/07/15 21:11:12 macallan Exp $	*/
+/*	$NetBSD: wdc_obio.c,v 1.61 2017/10/20 07:06:07 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2003 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wdc_obio.c,v 1.59 2016/07/15 21:11:12 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wdc_obio.c,v 1.61 2017/10/20 07:06:07 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -66,7 +66,6 @@ struct wdc_obio_softc {
 	struct wdc_softc sc_wdcdev;
 	struct ata_channel *sc_chanptr;
 	struct ata_channel sc_channel;
-	struct ata_queue sc_chqueue;
 	struct wdc_regs sc_wdc_regs;
 	bus_space_handle_t sc_dmaregh;
 	dbdma_regmap_t *sc_dmareg;
@@ -237,11 +236,11 @@ wdc_obio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_wdcdev.dma_init = wdc_obio_dma_init;
 	sc->sc_wdcdev.dma_start = wdc_obio_dma_start;
 	sc->sc_wdcdev.dma_finish = wdc_obio_dma_finish;
+
 	chp->ch_channel = 0;
 	chp->ch_atac = &sc->sc_wdcdev.sc_atac;
-	chp->ch_queue = &sc->sc_chqueue;
 
-	wdc_init_shadow_regs(chp);
+	wdc_init_shadow_regs(wdr);
 
 #define OHARE_FEATURE_REG	0xf3000038
 

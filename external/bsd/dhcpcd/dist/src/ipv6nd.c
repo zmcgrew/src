@@ -158,6 +158,10 @@ static void ipv6nd_handledata(void *);
 #define IPV6_RECVPKTINFO IPV6_PKTINFO
 #endif
 
+/* Handy defines */
+#define ipv6nd_free_ra(ra) ipv6nd_freedrop_ra((ra),  0)
+#define ipv6nd_drop_ra(ra) ipv6nd_freedrop_ra((ra),  1)
+
 void
 ipv6nd_printoptions(const struct dhcpcd_ctx *ctx,
     const struct dhcp_opt *opts, size_t opts_len)
@@ -332,6 +336,8 @@ ipv6nd_expire(struct interface *ifp, uint32_t seconds)
 {
 	struct ra *rap;
 	struct timespec now;
+	uint32_t vltime = seconds;
+	uint32_t pltime = seconds / 2;
 
 	if (ifp->ctx->ra_routers == NULL)
 		return;
@@ -343,13 +349,18 @@ ipv6nd_expire(struct interface *ifp, uint32_t seconds)
 			rap->acquired = now;
 			rap->expired = seconds ? 0 : 1;
 			if (seconds) {
-				struct ipv6_addr *ap;
+				struct ipv6_addr *ia;
 
 				rap->lifetime = seconds;
-				TAILQ_FOREACH(ap, &rap->addrs, next) {
-					if (ap->prefix_vltime) {
-						ap->prefix_vltime = seconds;
-						ap->prefix_pltime = seconds / 2;
+				TAILQ_FOREACH(ia, &rap->addrs, next) {
+					if (ia->prefix_pltime > pltime ||
+					    ia->prefix_vltime > vltime)
+					{
+						ia->acquired = now;
+						if (ia->prefix_pltime != 0)
+							ia->prefix_pltime =
+							    pltime;
+						ia->prefix_vltime = vltime;
 					}
 				}
 				ipv6_addaddrs(&rap->addrs);
@@ -448,14 +459,14 @@ ipv6nd_removefreedrop_ra(struct ra *rap, int remove_ra, int drop_ra)
 
 	eloop_timeout_delete(rap->iface->ctx->eloop, NULL, rap->iface);
 	eloop_timeout_delete(rap->iface->ctx->eloop, NULL, rap);
-	if (remove_ra && !drop_ra)
+	if (remove_ra)
 		TAILQ_REMOVE(rap->iface->ctx->ra_routers, rap, next);
 	ipv6_freedrop_addrs(&rap->addrs, drop_ra, NULL);
 	free(rap->data);
 	free(rap);
 }
 
-void
+static void
 ipv6nd_freedrop_ra(struct ra *rap, int drop)
 {
 
@@ -1084,7 +1095,7 @@ handle_flag:
 #define LOG_DHCP6	logdebug
 #endif
 	if (rap->flags & ND_RA_FLAG_MANAGED) {
-		if (new_data && dhcp6_start(ifp, DH6S_INIT) == -1)
+		if (new_data && dhcp6_start(ifp, DH6S_REQUEST) == -1)
 			LOG_DHCP6("dhcp6_start: %s", ifp->name);
 	} else if (rap->flags & ND_RA_FLAG_OTHER) {
 		if (new_data && dhcp6_start(ifp, DH6S_INFORM) == -1)
@@ -1396,27 +1407,20 @@ ipv6nd_expirera(void *arg)
 void
 ipv6nd_drop(struct interface *ifp)
 {
-	struct ra *rap;
+	struct ra *rap, *ran;
 	uint8_t expired = 0;
-	TAILQ_HEAD(rahead, ra) rtrs;
 
 	if (ifp->ctx->ra_routers == NULL)
 		return;
 
 	eloop_timeout_delete(ifp->ctx->eloop, NULL, ifp);
-	TAILQ_INIT(&rtrs);
-	TAILQ_FOREACH(rap, ifp->ctx->ra_routers, next) {
+	TAILQ_FOREACH_SAFE(rap, ifp->ctx->ra_routers, next, ran) {
 		if (rap->iface == ifp) {
 			rap->expired = expired = 1;
-			TAILQ_REMOVE(ifp->ctx->ra_routers, rap, next);
-			TAILQ_INSERT_TAIL(&rtrs, rap, next);
+			ipv6nd_drop_ra(rap);
 		}
 	}
 	if (expired) {
-		while ((rap = TAILQ_FIRST(&rtrs))) {
-			TAILQ_REMOVE(&rtrs, rap, next);
-			ipv6nd_drop_ra(rap);
-		}
 		rt_build(ifp->ctx, AF_INET6);
 		if ((ifp->options->options & DHCPCD_NODROP) != DHCPCD_NODROP)
 			script_runreason(ifp, "ROUTERADVERT");
@@ -1562,14 +1566,17 @@ ipv6nd_handledata(void *arg)
 		return;
 	}
 
+	/* Find the receiving interface */
 	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
-		if (ifp->active &&
-		    ifp->index == (unsigned int)pkt.ipi6_ifindex) {
-			if (!(ifp->options->options & DHCPCD_IPV6))
-				return;
+		if (ifp->index == (unsigned int)pkt.ipi6_ifindex)
 			break;
-		}
 	}
+
+	/* Don't do anything if the user hasn't configured it. */
+	if (ifp != NULL &&
+	    (ifp->active != IF_ACTIVE_USER ||
+	    !(ifp->options->options & DHCPCD_IPV6)))
+		return;
 
 	icp = (struct icmp6_hdr *)ctx->rcvhdr.msg_iov[0].iov_base;
 	if (icp->icmp6_code == 0) {

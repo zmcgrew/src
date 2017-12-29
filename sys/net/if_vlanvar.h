@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlanvar.h,v 1.10 2017/06/07 03:53:11 knakahara Exp $	*/
+/*	$NetBSD: if_vlanvar.h,v 1.12 2017/11/22 03:45:15 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -71,13 +71,10 @@ struct ether_vlan_header {
 	uint16_t	evl_proto;
 } __packed;
 
-#define	EVL_VLANOFTAG(tag)	((tag) & 4095)
-#define	EVL_PRIOFTAG(tag)	(((tag) >> 13) & 7)
-
 /* Configuration structure for SIOCSETVLAN and SIOCGETVLAN ioctls. */
 struct vlanreq {
-	char	vlr_parent[IFNAMSIZ];
-	u_short	vlr_tag;
+	char		vlr_parent[IFNAMSIZ];
+	uint16_t	vlr_tag;
 };
 
 #define	SIOCSETVLAN	SIOCSIFGENERIC

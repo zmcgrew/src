@@ -1,6 +1,7 @@
-/* $NetBSD: ixgbe_type.h,v 1.27 2017/09/14 09:25:58 msaitoh Exp $ */
+/* $NetBSD: ixgbe_type.h,v 1.30 2017/12/06 04:08:50 msaitoh Exp $ */
 
 /******************************************************************************
+  SPDX-License-Identifier: BSD-3-Clause
 
   Copyright (c) 2001-2017, Intel Corporation
   All rights reserved.
@@ -3424,6 +3425,8 @@ typedef u64 ixgbe_physical_layer;
 #define IXGBE_PHYSICAL_LAYER_1000BASE_SX	0x04000
 #define IXGBE_PHYSICAL_LAYER_10BASE_T		0x08000
 #define IXGBE_PHYSICAL_LAYER_2500BASE_KX	0x10000
+#define IXGBE_PHYSICAL_LAYER_2500BASE_T		0x20000
+#define IXGBE_PHYSICAL_LAYER_5GBASE_T		0x40000
 
 /* Flow Control Data Sheet defined values
  * Calculation and defines taken from 802.1bb Annex O
@@ -4137,12 +4140,12 @@ struct ixgbe_mbx_operations {
 };
 
 struct ixgbe_mbx_stats {
-	u32 msgs_tx;
-	u32 msgs_rx;
+	struct evcnt msgs_tx;
+	struct evcnt msgs_rx;
 
-	u32 acks;
-	u32 reqs;
-	u32 rsts;
+	struct evcnt acks;
+	struct evcnt reqs;
+	struct evcnt rsts;
 };
 
 struct ixgbe_mbx_info {

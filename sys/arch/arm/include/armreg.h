@@ -1,4 +1,4 @@
-/*	$NetBSD: armreg.h,v 1.112 2017/09/16 00:47:16 matt Exp $	*/
+/*	$NetBSD: armreg.h,v 1.116 2017/12/20 15:22:14 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Ben Harris
@@ -528,19 +528,6 @@
 #define	CPU_CSSR_L1		0x00000000
 #define	CPU_CSSR_InD		0x00000001
 
-/* ARMv7A CP15 Global Timer definitions */
-#define	CNTKCTL_PL0PTEN		0x00000200	/* PL0 Physical Timer Enable */
-#define	CNTKCTL_PL0VTEN		0x00000100	/* PL0 Virtual Timer Enable */
-#define	CNTKCTL_EVNTI		0x000000f0	/* CNTVCT Event Bit Select */
-#define	CNTKCTL_EVNTDIR		0x00000008	/* CNTVCT Event Dir (1->0) */
-#define	CNTKCTL_EVNTEN		0x00000004	/* CNTVCT Event Enable */
-#define	CNTKCTL_PL0PCTEN	0x00000200	/* PL0 Physical Counter Enable */
-#define	CNTKCTL_PL0VCTEN	0x00000100	/* PL0 Virtual Counter Enable */
-
-#define	CNT_CTL_ISTATUS		0x00000004	/* Timer is asserted */
-#define	CNT_CTL_IMASK		0x00000002	/* Timer output is masked */
-#define	CNT_CTL_ENABLE		0x00000001	/* Timer is enabled */
-
 /* Fault status register definitions */
 
 #define FAULT_TYPE_MASK 0x0f
@@ -724,7 +711,7 @@
 #define CORTEXA9_MPIDR_MP	MPIDR_MP
 #define CORTEXA9_MPIDR_U	MPIDR_U
 #define	CORTEXA9_MPIDR_CLID	__BITS(11,8)	/* AFF1 = cluster id */
-#define CORTEXA9_MPIDR_CPUID	__BITS(0,1)	/* AFF0 = phisycal core id */
+#define CORTEXA9_MPIDR_CPUID	__BITS(0,1)	/* AFF0 = physical core id */
 
 /* MPIDR implementation of Marvell PJ4B-MP: AFF2 is not used */
 #define PJ4B_MPIDR_MP		MPIDR_MP
@@ -734,23 +721,24 @@
 #define PJ4B_MPIDR_CPUID	__BITS(0,3)	/* AFF0 = core id */
 
 /* Defines for ARM Generic Timer */
-#define ARM_CNTCTL_ENABLE		__BIT(0) // Timer Enabled
-#define ARM_CNTCTL_IMASK		__BIT(1) // Mask Interrupt
-#define ARM_CNTCTL_ISTATUS		__BIT(2) // Interrupt is pending
+#define ARM_CNTCTL_ISTATUS	__BIT(2)	// Interrupt is pending
+#define ARM_CNTCTL_IMASK	__BIT(1)	// Mask Interrupt
+#define ARM_CNTCTL_ENABLE	__BIT(0)	// Timer Enabled
 
-#define ARM_CNTKCTL_PL0PTEN		__BIT(9)
-#define ARM_CNTKCTL_PL0VTEN		__BIT(8)
-#define ARM_CNTKCTL_EVNTI		__BITS(7,4)
-#define ARM_CNTKCTL_EVNTDIR		__BIT(3)
-#define ARM_CNTKCTL_EVNTEN		__BIT(2)
-#define ARM_CNTKCTL_PL0PCTEN		__BIT(1)
-#define ARM_CNTKCTL_PL0VCTEN		__BIT(0)
+#define ARM_CNTKCTL_PL0PTEN	__BIT(9)	/* PL0 Physical Timer Enable */
+#define ARM_CNTKCTL_PL0VTEN	__BIT(8)	/* PL0 Virtual Timer Enable */
+#define ARM_CNTKCTL_EVNTI	__BITS(7,4)	/* CNTVCT Event Bit Select */
+#define ARM_CNTKCTL_EVNTDIR	__BIT(3)	/* CNTVCT Event Dir (1->0) */
+#define ARM_CNTKCTL_EVNTEN	__BIT(2)	/* CNTVCT Event Enable */
+#define ARM_CNTKCTL_PL0VCTEN	__BIT(1)	/* PL0 Virtual Counter Enable */
+#define ARM_CNTKCTL_PL0PCTEN	__BIT(0)	/* PL0 Physical Counter Enable */
 
-#define ARM_CNTHCTL_EVNTI		__BITS(7,4)
-#define ARM_CNTHCTL_EVNTDIR		__BIT(3)
-#define ARM_CNTHCTL_EVNTEN		__BIT(2)
-#define ARM_CNTHCTL_PL1PCTEN		__BIT(1)
-#define ARM_CNTHCTL_PL1VCTEN		__BIT(0)
+/* CNCHCTL, Timer PL2 Control register, Virtualization Extensions */
+#define ARM_CNTHCTL_EVNTI	__BITS(7,4)
+#define ARM_CNTHCTL_EVNTDIR	__BIT(3)
+#define ARM_CNTHCTL_EVNTEN	__BIT(2)
+#define ARM_CNTHCTL_PL1PCEN	__BIT(1)
+#define ARM_CNTHCTL_PL1PCTEN	__BIT(0)
 
 #define ARM_A5_TLBDATA_DOM		__BITS(62,59)
 #define ARM_A5_TLBDATA_AP		__BITS(58,56)
@@ -1024,6 +1012,10 @@ ARMREG_READ_INLINE(pmccntr, "p15,0,%0,c9,c13,0") /* PMC Cycle Counter */
 ARMREG_WRITE_INLINE(pmccntr, "p15,0,%0,c9,c13,0") /* PMC Cycle Counter */
 ARMREG_READ_INLINE(pmuserenr, "p15,0,%0,c9,c14,0") /* PMC User Enable */
 ARMREG_WRITE_INLINE(pmuserenr, "p15,0,%0,c9,c14,0") /* PMC User Enable */
+ARMREG_READ_INLINE(pmintenset, "p15,0,%0,c9,c14,1") /* PMC Interrupt Enable Set */
+ARMREG_WRITE_INLINE(pmintenset, "p15,0,%0,c9,c14,1") /* PMC Interrupt Enable Set */
+ARMREG_READ_INLINE(pmintenclr, "p15,0,%0,c9,c14,2") /* PMC Interrupt Enable Clear */
+ARMREG_WRITE_INLINE(pmintenclr, "p15,0,%0,c9,c14,2") /* PMC Interrupt Enable Clear */
 ARMREG_READ_INLINE(l2ctrl, "p15,1,%0,c9,c0,2") /* A7/A15 L2 Control Register */
 /* cp10 c10 registers */
 ARMREG_READ_INLINE(prrr, "p15,0,%0,c10,c2,0") /* Primary Region Remap Register */
@@ -1064,6 +1056,8 @@ ARMREG_READ64_INLINE(cntp_cval, "p15,2,%Q0,%R0,c14") /* PL1 Physical Timer Compa
 ARMREG_WRITE64_INLINE(cntp_cval, "p15,2,%Q0,%R0,c14") /* PL1 Physical Timer CompareValue Register */
 ARMREG_READ64_INLINE(cntv_cval, "p15,3,%Q0,%R0,c14") /* PL1 Virtual Timer CompareValue Register */
 ARMREG_WRITE64_INLINE(cntv_cval, "p15,3,%Q0,%R0,c14") /* PL1 Virtual Timer CompareValue Register */
+ARMREG_READ64_INLINE(cntvoff, "p15,4,%Q0,%R0,c14") /* Virtual Offset Register */
+ARMREG_WRITE64_INLINE(cntvoff, "p15,4,%Q0,%R0,c14") /* Virtual Offset Register */
 /* cp15 c15 registers */
 ARMREG_READ_INLINE(cbar, "p15,4,%0,c15,c0,0")	/* Configuration Base Address Register */
 ARMREG_READ_INLINE(pmcrv6, "p15,0,%0,c15,c12,0") /* PMC Control Register (armv6) */

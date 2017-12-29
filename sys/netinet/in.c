@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.207 2017/08/10 04:31:58 ryo Exp $	*/
+/*	$NetBSD: in.c,v 1.213 2017/12/27 08:35:20 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.207 2017/08/10 04:31:58 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.213 2017/12/27 08:35:20 ozaki-r Exp $");
 
 #include "arp.h"
 
@@ -751,13 +751,9 @@ in_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 {
 	int error;
 
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-#endif
+	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
 	error = in_control0(so, cmd, data, ifp);
-#ifndef NET_MPSAFE
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 
 	return error;
 }
@@ -849,7 +845,7 @@ in_purgeaddr(struct ifaddr *ifa)
 	struct in_ifaddr *ia = (void *) ifa;
 	struct ifnet *ifp = ifa->ifa_ifp;
 
-	KASSERT(!ifa_held(ifa));
+	/* KASSERT(!ifa_held(ifa)); XXX need ifa_not_held (psref_not_held) */
 
 	ifa->ifa_flags |= IFA_DESTROYING;
 	in_scrubaddr(ia);
@@ -916,11 +912,14 @@ in_addrhash_remove(struct in_ifaddr *ia)
 void
 in_purgeif(struct ifnet *ifp)		/* MUST be called at splsoftnet() */
 {
+
+	IFNET_LOCK(ifp);
 	if_purgeaddrs(ifp, AF_INET, in_purgeaddr);
 	igmp_purgeif(ifp);		/* manipulates pools */
 #ifdef MROUTING
 	ip_mrouter_detach(ifp);
 #endif
+	IFNET_UNLOCK(ifp);
 }
 
 /*
@@ -1954,6 +1953,7 @@ in_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 {
 	struct ifnet *ifp __diagused;
 	size_t pkts_dropped;
+	bool locked = false;
 
 	LLE_WLOCK_ASSERT(lle);
 	KASSERT(llt != NULL);
@@ -1963,27 +1963,40 @@ in_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 		ifp = llt->llt_ifp;
 		IF_AFDATA_WLOCK_ASSERT(ifp);
 		lltable_unlink_entry(llt, lle);
+		locked = true;
 	}
 
+	/*
+	 * We need to release the lock here to lle_timer proceeds;
+	 * lle_timer should stop immediately if LLE_LINKED isn't set.
+	 * Note that we cannot pass lle->lle_lock to callout_halt
+	 * because it's a rwlock.
+	 */
+	LLE_ADDREF(lle);
+	LLE_WUNLOCK(lle);
+	if (locked)
+		IF_AFDATA_WUNLOCK(ifp);
+
 	/* cancel timer */
-	if (callout_halt(&lle->lle_timer, &lle->lle_lock))
-		LLE_REMREF(lle);
+	callout_halt(&lle->lle_timer, NULL);
+
+	LLE_WLOCK(lle);
+	LLE_REMREF(lle);
 
 	/* Drop hold queue */
 	pkts_dropped = llentry_free(lle);
 	arp_stat_add(ARP_STAT_DFRDROPPED, (uint64_t)pkts_dropped);
+
+	if (locked)
+		IF_AFDATA_WLOCK(ifp);
 }
 
 static int
-in_lltable_rtcheck(struct ifnet *ifp, u_int flags, const struct sockaddr *l3addr)
+in_lltable_rtcheck(struct ifnet *ifp, u_int flags, const struct sockaddr *l3addr,
+    const struct rtentry *rt)
 {
-	struct rtentry *rt;
 	int error = EINVAL;
 
-	KASSERTMSG(l3addr->sa_family == AF_INET,
-	    "sin_family %d", l3addr->sa_family);
-
-	rt = rtalloc1(l3addr, 0);
 	if (rt == NULL)
 		return error;
 
@@ -2044,7 +2057,6 @@ in_lltable_rtcheck(struct ifnet *ifp, u_int flags, const struct sockaddr *l3addr
 
 	error = 0;
 error:
-	rt_unref(rt);
 	return error;
 }
 
@@ -2135,7 +2147,8 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 }
 
 static struct llentry *
-in_lltable_create(struct lltable *llt, u_int flags, const struct sockaddr *l3addr)
+in_lltable_create(struct lltable *llt, u_int flags, const struct sockaddr *l3addr,
+    const struct rtentry *rt)
 {
 	const struct sockaddr_in *sin = (const struct sockaddr_in *)l3addr;
 	struct ifnet *ifp = llt->llt_ifp;
@@ -2160,7 +2173,7 @@ in_lltable_create(struct lltable *llt, u_int flags, const struct sockaddr *l3add
 	 * verify this.
 	 */
 	if (!(flags & LLE_IFADDR) &&
-	    in_lltable_rtcheck(ifp, flags, l3addr) != 0)
+	    in_lltable_rtcheck(ifp, flags, l3addr, rt) != 0)
 		return (NULL);
 
 	lle = in_lltable_new(sin->sin_addr, flags);

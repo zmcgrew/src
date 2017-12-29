@@ -1,5 +1,5 @@
 #
-#	$NetBSD: TEGRA,v 1.29 2017/09/19 23:18:01 jmcneill Exp $
+#	$NetBSD: TEGRA,v 1.33 2017/09/26 16:12:45 jmcneill Exp $
 #
 #	NVIDIA Tegra family SoCs
 #
@@ -56,8 +56,9 @@ cpu*		at cpus?
 tegra124cpu*	at cpu?
 
 fclock*		at fdt? pass 4
-fregulator*	at fdt? pass 4
+fregulator*	at fdt? pass 5
 gpiokeys*	at fdt?
+wskbd*		at gpiokeys? console ? mux 1
 
 # Timer
 gtmr*		at fdt? pass 1		# ARM Generic Timer
@@ -90,11 +91,12 @@ tegragpio*	at fdt? pass 2		# GPIO
 gpio*		at gpiobus?
 
 # MPIO / Pinmux
-tegrampio*	at fdt?			# MPIO
+tegrapinmux*	at fdt?			# MPIO
 
 # XUSB PADCTL
 tegra124xpad*	at fdt?			# XUSB PADCTL (T124)
 tegra210xpad*	at fdt?			# XUSB PADCTL (T210)
+tegra210xphy*	at tegra210xpad?
 
 # PCIE
 tegrapcie0	at fdt?			# PCIE
@@ -116,12 +118,14 @@ athn*		at pci? dev ? function ?	# Atheros IEEE 802.11
 com*		at fdt?			# UART
 
 # I2C
-tegrai2c*	at fdt?			# I2C
+tegrai2c*	at fdt? pass 4		# I2C
 iic*		at tegrai2c?
 titemp*		at iic?
 seeprom*	at iic?
 as3722pmic*	at iic?
 as3722reg*	at as3722pmic?
+max77620pmic*	at iic?
+tcagpio*	at iic?
 
 # RTC
 tegrartc*	at fdt?			# RTC

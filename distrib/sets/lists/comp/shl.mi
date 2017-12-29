@@ -1,4 +1,4 @@
-# $NetBSD: shl.mi,v 1.306 2017/05/27 21:02:54 bouyer Exp $
+# $NetBSD: shl.mi,v 1.309 2017/11/04 16:21:49 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -130,7 +130,7 @@
 ./usr/lib/libposix_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libppath_pic.a			comp-c-piclib		compatfile,picinstall
 ./usr/lib/libproc.so				comp-c-shlib		compatfile,dtrace
-./usr/lib/libproc.so.0				comp-c-shlib		compatfile,dtrace
+./usr/lib/libproc.so.1				comp-c-shlib		compatfile,dtrace
 ./usr/lib/libproc_pic.a				comp-c-piclib		compatfile,dtrace,picinstall
 ./usr/lib/libprop_pic.a				comp-c-piclib		compatfile,picinstall
 ./usr/lib/libpthread_dbg_pic.a			comp-obsolete		obsolete
@@ -238,6 +238,7 @@
 ./usr/lib/librumpnet_tun_pic.a			comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_virtif_pic.a		comp-c-piclib		picinstall,rump
 ./usr/lib/librumpnet_vlan_pic.a			comp-c-piclib		picinstall,rump
+./usr/lib/librumpres_pic.a			comp-c-piclib		compatfile,picinstall,rump
 ./usr/lib/librumpuser_pic.a			comp-c-piclib		compatfile,picinstall,rump
 ./usr/lib/librumpvfs_aio_pic.a			comp-c-piclib		picinstall,rump
 ./usr/lib/librumpvfs_fifofs_pic.a		comp-c-piclib		picinstall,rump
@@ -276,4 +277,4 @@
 ./usr/lib/libzpool_pic.a			comp-zfs-piclib		compatfile,zfs,picinstall
 ./usr/libexec/liblto_plugin.so			comp-c-bin              gcc
 ./usr/libexec/liblto_plugin.so.0		comp-c-bin              gcc
-./usr/libexec/liblto_plugin.so.0.0		comp-c-bin              gcc
+./usr/libexec/liblto_plugin.so.0.1		comp-c-bin              gcc

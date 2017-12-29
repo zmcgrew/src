@@ -1,4 +1,4 @@
-/*	$NetBSD: at24cxx.c,v 1.23 2016/09/10 13:16:12 jakllsch Exp $	*/
+/*	$NetBSD: at24cxx.c,v 1.25 2017/10/28 04:53:55 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.23 2016/09/10 13:16:12 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.25 2017/10/28 04:53:55 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -52,6 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.23 2016/09/10 13:16:12 jakllsch Exp $"
 
 #include <dev/i2c/i2cvar.h>
 #include <dev/i2c/at24cxxvar.h>
+
+#include "ioconf.h"
 
 /*
  * AT24Cxx EEPROM I2C address:
@@ -86,7 +88,6 @@ static void seeprom_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(seeprom, sizeof(struct seeprom_softc),
 	seeprom_match, seeprom_attach, NULL, NULL);
-extern struct cfdriver seeprom_cd;
 
 dev_type_open(seeprom_open);
 dev_type_close(seeprom_close);
@@ -114,6 +115,7 @@ static const char * seeprom_compats[] = {
 	"i2c-at24c64",
 	"i2c-at34c02",
 	"atmel,24c02",
+	"atmel,24c16",
 	NULL
 };
 
@@ -122,6 +124,7 @@ static const struct seeprom_size {
 	int size;
 } seeprom_sizes[] = {
 	{ "atmel,24c02", 256 },
+	{ "atmel,24c16", 2048 },
 };
 
 static int

@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_ctl.c,v 1.48 2017/05/17 18:56:12 christos Exp $	*/
+/*	$NetBSD: npf_ctl.c,v 1.50 2017/12/10 01:18:21 rmind Exp $	*/
 
 /*-
  * Copyright (c) 2009-2014 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_ctl.c,v 1.48 2017/05/17 18:56:12 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_ctl.c,v 1.50 2017/12/10 01:18:21 rmind Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -371,11 +371,17 @@ npf_mk_rules(npf_t *npf, npf_ruleset_t *rlset, prop_array_t rules,
 	it = prop_array_iterator(rules);
 	while ((rldict = prop_object_iterator_next(it)) != NULL) {
 		npf_rule_t *rl = NULL;
+		const char *name;
 
-		/* Generate a single rule. */
 		error = npf_mk_singlerule(npf, rldict, rpset, &rl, errdict);
 		if (error) {
 			break;
+		}
+		if (prop_dictionary_get_cstring_nocopy(rldict, "name", &name) &&
+		    npf_ruleset_lookup(rlset, name) != NULL) {
+			NPF_ERR_DEBUG(errdict);
+			npf_rule_free(rl);
+			return EEXIST;
 		}
 		npf_ruleset_insert(rlset, rl);
 	}
@@ -630,15 +636,31 @@ fail:
 	if (tblset) {
 		npf_tableset_destroy(tblset);
 	}
-	prop_object_release(npf_dict);
-
-	/* Error report. */
-#if !defined(_NPF_TESTING) && !defined(_NPF_STANDALONE)
-	prop_dictionary_set_int32(errdict, "errno", error);
-	prop_dictionary_copyout_ioctl(pref, cmd, errdict);
-	prop_object_release(errdict);
-	error = 0;
+#if defined(_NPF_TESTING) || defined(_NPF_STANDALONE)
+	/* Free only if allocated by prop_dictionary_copyin_ioctl_size. */
+	if (!npfctl_testing)
 #endif
+		prop_object_release(npf_dict);
+
+	/*
+	 * - _NPF_STANDALONE doesn't require to set prop.
+	 * - For _NPF_TESTING, if npfctl_testing, setting prop isn't needed,
+	 *   otherwise it's needed.
+	 */
+#ifndef _NPF_STANDALONE
+#ifdef _NPF_TESTING
+	if (!npfctl_testing) {
+#endif
+		/* Error report. */
+		prop_dictionary_set_int32(errdict, "errno", error);
+		prop_dictionary_copyout_ioctl(pref, cmd, errdict);
+		error = 0;
+#ifdef _NPF_TESTING
+	}
+#endif
+#endif /* _NPF_STANDALONE */
+	prop_object_release(errdict);
+
 	return error;
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: mptramp.S,v 1.24 2017/07/22 08:01:35 maxv Exp $	*/
+/*	$NetBSD: mptramp.S,v 1.26 2017/11/26 14:54:43 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000, 2016 The NetBSD Foundation, Inc.
@@ -82,15 +82,21 @@
 #include <machine/i82489reg.h>
 #include <machine/gdt.h>
 
-#define _RELOC(x)	((x) - KERNBASE)
-#define RELOC(x)	_RELOC(_C_LABEL(x))
-
 #define _TRMP_LABEL(a)	a = . - _C_LABEL(cpu_spinup_trampoline) + MP_TRAMPOLINE
+
+/*
+ * A smp_data structure is packed at the end of the trampoline page. The stack
+ * is right below this structure.
+ */
+#define SMP_DATA	(MP_TRAMPOLINE + PAGE_SIZE - 3 * 4)
+#define SMP_DATA_STACK	(SMP_DATA + 0 * 4)
+#define SMP_DATA_LARGE	(SMP_DATA + 0 * 4)
+#define SMP_DATA_NOX	(SMP_DATA + 1 * 4)
+#define SMP_DATA_PDIR	(SMP_DATA + 2 * 4)
 
 	.global _C_LABEL(cpu_spinup_trampoline)
 	.global _C_LABEL(cpu_spinup_trampoline_end)
 	.global _C_LABEL(cpu_hatch)
-	.global _C_LABEL(mp_pdirpa)
 
 	.text
 	.align 4,0x0
@@ -126,8 +132,8 @@ _TRMP_LABEL(mp_startup)
 	movw	%ax,%fs
 	movw	%ax,%gs
 
-	/* bootstrap stack end, with scratch space.. */
-	movl	$(MP_TRAMPOLINE+PAGE_SIZE-16),%esp
+	/* bootstrap stack end */
+	movl	$SMP_DATA_STACK,%esp
 
 	/* First, reset the PSL. */
 	pushl	$PSL_MBO
@@ -136,11 +142,12 @@ _TRMP_LABEL(mp_startup)
 	/* Enable PAE, SSE, and PSE if available */
 	movl	%cr4,%eax
 	orl	$(CR4_PAE|CR4_OSFXSR|CR4_OSXMMEXCPT),%eax
-	movl	RELOC(pmap_largepages),%ecx
+	movl	$SMP_DATA_LARGE,%ecx
+	movl	(%ecx),%ecx
 	orl	%ecx,%ecx
-	jz	no_PSE
+	jz	.Lno_PSE
 	orl	$CR4_PSE,%eax
-no_PSE:
+.Lno_PSE:
 	movl	%eax,%cr4
 
 	/*
@@ -151,15 +158,17 @@ no_PSE:
 	rdmsr
 	xorl	%eax,%eax
 	orl	$(EFER_LME|EFER_SCE),%eax
-	movl	RELOC(nox_flag),%ebx
+	movl	$SMP_DATA_NOX,%ebx
+	movl	(%ebx),%ebx
 	cmpl	$0,%ebx
-	je 	no_NOX
+	je 	.Lno_NOX
 	orl	$(EFER_NXE),%eax
-no_NOX:
+.Lno_NOX:
 	wrmsr
 
 	/* Load %cr3. */
-	movl	RELOC(mp_pdirpa),%ecx	/* guaranteed < 4G */
+	movl	$SMP_DATA_PDIR,%ecx
+	movl	(%ecx),%ecx		/* guaranteed < 4G */
 	movl	%ecx,%cr3		/* load PTD addr into MMU */
 
 	/* Enable paging and the rest of it. */
@@ -167,8 +176,8 @@ no_NOX:
 	orl	$(CR0_PE|CR0_PG|CR0_NE|CR0_TS|CR0_MP|CR0_WP|CR0_AM),%eax
 	movl	%eax,%cr0
 
-	jmp	mptramp_compat
-mptramp_compat:
+	jmp	.Lmptramp_compat
+.Lmptramp_compat:
 
 	movl	$GSEL(GDATA_SEL, SEL_KPL),%eax	/* switch to new segment */
 	movl	%eax,%ds
@@ -237,9 +246,4 @@ _C_LABEL(cpu_spinup_trampoline_end):	/* end of code copied to MP_TRAMPOLINE */
 
 	call	_C_LABEL(cpu_hatch)
 END(cpu_spinup_trampoline)
-
-	.data
-LABEL(mp_pdirpa)
-	.quad	0
-END(mp_pdirpa)
 

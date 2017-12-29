@@ -99,7 +99,7 @@ typedef struct tre_backtrack_struct {
 #ifdef TRE_USE_ALLOCA
 #define tre_bt_mem_new		  tre_mem_newa
 #define tre_bt_mem_alloc	  tre_mem_alloca
-#define tre_bt_mem_destroy(obj)	  do { } while (/*CONSTCOND*/0)
+#define tre_bt_mem_destroy(obj)	  do { } while (/*CONSTCOND*/(void)0,0)
 #else /* !TRE_USE_ALLOCA */
 #define tre_bt_mem_new		  tre_mem_new
 #define tre_bt_mem_alloc	  tre_mem_alloc
@@ -156,7 +156,7 @@ typedef struct tre_backtrack_struct {
 	stack->item.tags[i] = (_tags)[i];				      \
       BT_STACK_MBSTATE_IN;						      \
     }									      \
-  while (/*CONSTCOND*/0)
+  while (/*CONSTCOND*/(void)0,0)
 
 #define BT_STACK_POP()							      \
   do									      \
@@ -169,13 +169,13 @@ typedef struct tre_backtrack_struct {
       str_byte = stack->item.str_byte;					      \
       BT_STACK_WIDE_OUT;						      \
       state = stack->item.state;					      \
-      next_c = stack->item.next_c;					      \
+      next_c = (tre_char_t) stack->item.next_c;					      \
       for (i = 0; i < tnfa->num_tags; i++)				      \
 	tags[i] = stack->item.tags[i];					      \
       BT_STACK_MBSTATE_OUT;						      \
       stack = stack->prev;						      \
     }									      \
-  while (/*CONSTCOND*/0)
+  while (/*CONSTCOND*/(void)0,0)
 
 #undef MIN
 #define MIN(a, b) ((a) <= (b) ? (a) : (b))
@@ -230,7 +230,7 @@ tre_tnfa_run_backtrack(const tre_tnfa_t *tnfa, const void *string,
 
   tre_tnfa_transition_t *trans_i;
   regmatch_t *pmatch = NULL;
-  int ret;
+  reg_errcode_t ret;
 
 #ifdef TRE_MBSTATE
   memset(&mbstate, '\0', sizeof(mbstate));
@@ -355,7 +355,7 @@ tre_tnfa_run_backtrack(const tre_tnfa_t *tnfa, const void *string,
   if (state == NULL)
     goto backtrack;
 
-  while (/*CONSTCOND*/1)
+  while (/*CONSTCOND*/(void)1,1)
     {
       tre_tnfa_transition_t *next_state;
       int empty_br_match;
@@ -409,7 +409,7 @@ tre_tnfa_run_backtrack(const tre_tnfa_t *tnfa, const void *string,
 	  DPRINT(("  should match back reference %d\n", bt));
 	  /* Get the substring we need to match against.  Remember to
 	     turn off REG_NOSUB temporarily. */
-	  tre_fill_pmatch(bt + 1, pmatch, tnfa->cflags & /*LINTED*/!REG_NOSUB,
+	  tre_fill_pmatch(bt + 1, pmatch, tnfa->cflags & ~REG_NOSUB,
 			  tnfa, tags, pos);
 	  /* LINTED */so = pmatch[bt].rm_so;
 	  /* LINTED */eo = pmatch[bt].rm_eo;
@@ -617,7 +617,7 @@ tre_tnfa_run_backtrack(const tre_tnfa_t *tnfa, const void *string,
 		    }
 		}
 	      DPRINT(("restarting from next start position\n"));
-	      next_c = next_c_start;
+	      next_c = (tre_char_t) next_c_start;
 #ifdef TRE_MBSTATE
 	      mbstate = mbstate_start;
 #endif /* TRE_MBSTATE */

@@ -1,4 +1,4 @@
-/*	$NetBSD: exec_elf.h,v 1.156 2016/09/03 11:18:28 christos Exp $	*/
+/*	$NetBSD: exec_elf.h,v 1.158 2017/11/06 17:56:25 christos Exp $	*/
 
 /*-
  * Copyright (c) 1994 The NetBSD Foundation, Inc.
@@ -1050,8 +1050,12 @@ struct netbsd_elfcore_procinfo {
 #define ELF_NOTE_MCMODEL_NAME		ELF_NOTE_NETBSD_NAME
 
 
-#if !defined(ELFSIZE) && defined(ARCH_ELFSIZE)
-#define ELFSIZE ARCH_ELFSIZE
+#if !defined(ELFSIZE)
+# if defined(_RUMPKERNEL) || !defined(_KERNEL)
+#  define ELFSIZE ARCH_ELFSIZE
+# else
+#  define ELFSIZE KERN_ELFSIZE
+# endif
 #endif
 
 #if defined(ELFSIZE)

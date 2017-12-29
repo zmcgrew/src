@@ -1,4 +1,4 @@
-/*	$NetBSD: sequencer.c,v 1.66 2017/06/01 09:44:30 pgoyette Exp $	*/
+/*	$NetBSD: sequencer.c,v 1.70 2017/10/29 17:57:21 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sequencer.c,v 1.66 2017/06/01 09:44:30 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sequencer.c,v 1.70 2017/10/29 17:57:21 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "sequencer.h"
@@ -90,6 +90,24 @@ __KERNEL_RCSID(0, "$NetBSD: sequencer.c,v 1.66 2017/06/01 09:44:30 pgoyette Exp 
 #include <dev/sequencervar.h>
 
 #include "ioconf.h"
+
+/*
+ * XXX Kludge.  This module uses midi_cd, and depends on the `midi'
+ * module, but there's no obvious way to get midi_cd declared in
+ * ioconf.h without actually pulling MIDI into the module in
+ * sys/modules/sequencer/sequencer.ioconf.  Please fix me!
+ *
+ * XXX XXX XXX Apparently sequencer.ioconf doesn't actually make the
+ * sequencer cdev!  Did this ever work?
+ *
+ * XXX XXX XXX Apparently there are even some kernels that include a
+ * sequencer pseudo-device but exclude any midi device.  How do they
+ * even link??
+ */
+extern struct cfdriver midi_cd;
+#ifdef _MODULE
+extern struct cfdriver sequencer_cd;
+#endif
 
 #define ADDTIMEVAL(a, b) ( \
 	(a)->tv_sec += (b)->tv_sec, \
@@ -355,8 +373,6 @@ sequenceropen(dev_t dev, int flags, int ifmt, struct lwp *l)
 
 	/* Only now redirect input from MIDI devices. */
 	for (mdno = 0; mdno < sc->nmidi; mdno++) {
-		extern struct cfdriver midi_cd;
-
 		msc = device_lookup_private(&midi_cd, sc->devs[mdno]->unit);
 		if (msc) {
 			mutex_enter(msc->lock);
@@ -453,8 +469,6 @@ sequencerclose(dev_t dev, int flags, int ifmt, struct lwp *l)
 	}
 	/* Bin input from MIDI devices. */
 	for (unit = 0; unit < sc->nmidi; unit++) {
-		extern struct cfdriver midi_cd;
-
 		msc = device_lookup_private(&midi_cd, unit);
 		if (msc) {
 			mutex_enter(msc->lock);
@@ -912,8 +926,12 @@ filt_sequencerread(struct knote *kn, long hint)
 	return rv;
 }
 
-static const struct filterops sequencerread_filtops =
-	{ 1, NULL, filt_sequencerrdetach, filt_sequencerread };
+static const struct filterops sequencerread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_sequencerrdetach,
+	.f_event = filt_sequencerread,
+};
 
 static void
 filt_sequencerwdetach(struct knote *kn)
@@ -946,8 +964,12 @@ filt_sequencerwrite(struct knote *kn, long hint)
 	return rv;
 }
 
-static const struct filterops sequencerwrite_filtops =
-	{ 1, NULL, filt_sequencerwdetach, filt_sequencerwrite };
+static const struct filterops sequencerwrite_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_sequencerwdetach,
+	.f_event = filt_sequencerwrite,
+};
 
 static int
 sequencerkqfilter(dev_t dev, struct knote *kn)
@@ -1399,7 +1421,6 @@ midiseq_in(struct midi_dev *md, u_char *msg, int len)
 static struct midi_dev *
 midiseq_open(int unit, int flags)
 {
-	extern struct cfdriver midi_cd;
 	int error;
 	struct midi_dev *md;
 	struct midi_softc *sc;
@@ -1666,7 +1687,6 @@ midi_writebytes(int unit, u_char *bf, int cc)
 #endif /* NMIDI == 0 */
 
 #ifdef _MODULE
-extern struct cfdriver sequencer_cd;
 #include "ioconf.c"
 
 devmajor_t sequencer_bmajor = -1, sequencer_cmajor = -1;

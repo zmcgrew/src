@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.h,v 1.33 2017/01/04 21:25:41 christos Exp $	*/
+/*	$NetBSD: db_interface.h,v 1.35 2017/10/27 12:25:15 joerg Exp $	*/
 
 /*-
  * Copyright (c) 1995 The NetBSD Foundation, Inc.

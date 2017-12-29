@@ -1,6 +1,6 @@
-/*	$NetBSD: machdep.c,v 1.260 2017/07/25 17:43:44 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.279 2017/12/01 21:22:45 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -73,10 +73,9 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
-/*-
+/*
  * Copyright (c) 1982, 1987, 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -111,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.260 2017/07/25 17:43:44 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.279 2017/12/01 21:22:45 maxv Exp $");
 
 /* #define XENDEBUG_LOW  */
 
@@ -123,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.260 2017/07/25 17:43:44 maxv Exp $");
 #include "opt_mtrr.h"
 #include "opt_realmem.h"
 #include "opt_xen.h"
+#include "opt_kaslr.h"
 #ifndef XEN
 #include "opt_physmem.h"
 #endif
@@ -232,8 +232,6 @@ int cpu_class = CPUCLASS_686;
 struct mtrr_funcs *mtrr_funcs;
 #endif
 
-uint64_t dumpmem_low;
-uint64_t dumpmem_high;
 int cpu_class;
 int use_pae;
 
@@ -265,6 +263,7 @@ paddr_t ldt_paddr;
 vaddr_t module_start, module_end;
 static struct vm_map module_map_store;
 extern struct vm_map *module_map;
+extern struct bootspace bootspace;
 vaddr_t kern_end;
 
 struct vm_map *phys_map = NULL;
@@ -322,6 +321,7 @@ int dump_header_finish(void);
 int dump_seg_count_range(paddr_t, paddr_t);
 int dumpsys_seg(paddr_t, paddr_t);
 
+void init_bootspace(void);
 void init_x86_64(paddr_t);
 
 /*
@@ -429,6 +429,7 @@ x86_64_tls_switch(struct lwp *l)
 	struct cpu_info *ci = curcpu();
 	struct pcb *pcb = lwp_getpcb(l);
 	struct trapframe *tf = l->l_md.md_regs;
+	uint64_t zero = 0;
 
 	/*
 	 * Raise the IPL to IPL_HIGH.
@@ -444,13 +445,19 @@ x86_64_tls_switch(struct lwp *l)
 		HYPERVISOR_fpu_taskswitch(1);
 	}
 
-	/* Update TLS segment pointers */
+	/* Update segment registers */
 	if (pcb->pcb_flags & PCB_COMPAT32) {
 		update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &pcb->pcb_fs);
 		update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &pcb->pcb_gs);
-		setfs(tf->tf_fs);
+		setds(GSEL(GUDATA32_SEL, SEL_UPL));
+		setes(GSEL(GUDATA32_SEL, SEL_UPL));
+		setfs(GSEL(GUDATA32_SEL, SEL_UPL));
 		HYPERVISOR_set_segment_base(SEGBASE_GS_USER_SEL, tf->tf_gs);
 	} else {
+		update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &zero);
+		update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &zero);
+		setds(GSEL(GUDATA_SEL, SEL_UPL));
+		setes(GSEL(GUDATA_SEL, SEL_UPL));
 		setfs(0);
 		HYPERVISOR_set_segment_base(SEGBASE_GS_USER_SEL, 0);
 		HYPERVISOR_set_segment_base(SEGBASE_FS, pcb->pcb_fs);
@@ -1326,9 +1333,9 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	l->l_md.md_flags = MDL_IRET;
 
 	tf = l->l_md.md_regs;
-	tf->tf_ds = LSEL(LUDATA_SEL, SEL_UPL);
-	tf->tf_es = LSEL(LUDATA_SEL, SEL_UPL);
-	cpu_fsgs_zero(l);
+	tf->tf_ds = GSEL(GUDATA_SEL, SEL_UPL);
+	tf->tf_es = GSEL(GUDATA_SEL, SEL_UPL);
+	cpu_segregs64_zero(l);
 	tf->tf_rdi = 0;
 	tf->tf_rsi = 0;
 	tf->tf_rbp = 0;
@@ -1439,7 +1446,7 @@ cpu_init_idt(void)
 	struct region_descriptor region;
 
 	setregion(&region, idt, NIDT * sizeof(idt[0]) - 1);
-	lidt(&region); 
+	lidt(&region);
 #else
 	if (HYPERVISOR_set_trap_table(xen_idt))
 		panic("HYPERVISOR_set_trap_table() failed");
@@ -1471,8 +1478,13 @@ init_x86_64_ksyms(void)
 #ifndef XEN
 	symtab = lookup_bootinfo(BTINFO_SYMTAB);
 	if (symtab) {
+#ifdef KASLR
+		tssym = bootspace.head.va;
+		tesym = bootspace.head.va; /* (unused...) */
+#else
 		tssym = (vaddr_t)symtab->ssym + KERNBASE;
 		tesym = (vaddr_t)symtab->esym + KERNBASE;
+#endif
 		ksyms_addsyms_elf(symtab->nsym, (void *)tssym, (void *)tesym);
 	} else
 		ksyms_addsyms_elf(*(long *)(void *)&end,
@@ -1488,6 +1500,52 @@ init_x86_64_ksyms(void)
 }
 
 void
+init_bootspace(void)
+{
+	extern char __rodata_start;
+	extern char __data_start;
+	extern char __kernel_end;
+	size_t i = 0;
+
+	memset(&bootspace, 0, sizeof(bootspace));
+
+	bootspace.head.va = KERNTEXTOFF;
+	bootspace.head.pa = KERNTEXTOFF - KERNBASE;
+	bootspace.head.sz = 0;
+
+	bootspace.segs[i].type = BTSEG_TEXT;
+	bootspace.segs[i].va = KERNTEXTOFF;
+	bootspace.segs[i].pa = KERNTEXTOFF - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__rodata_start - KERNTEXTOFF;
+	i++;
+
+	bootspace.segs[i].type = BTSEG_RODATA;
+	bootspace.segs[i].va = (vaddr_t)&__rodata_start;
+	bootspace.segs[i].pa = (paddr_t)&__rodata_start - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__data_start - (size_t)&__rodata_start;
+	i++;
+
+	bootspace.segs[i].type = BTSEG_DATA;
+	bootspace.segs[i].va = (vaddr_t)&__data_start;
+	bootspace.segs[i].pa = (paddr_t)&__data_start - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__kernel_end - (size_t)&__data_start;
+	i++;
+
+	bootspace.boot.va = (vaddr_t)&__kernel_end;
+	bootspace.boot.pa = (paddr_t)&__kernel_end - KERNBASE;
+	bootspace.boot.sz = (size_t)(atdevbase + IOM_SIZE) -
+	    (size_t)&__kernel_end;
+
+	/* In locore.S, we allocated a tmp va. We will use it now. */
+	bootspace.spareva = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
+
+	/* Virtual address of the L4 page */
+	bootspace.pdir = (vaddr_t)(PDPpaddr + KERNBASE);
+
+	bootspace.emodule = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
+}
+
+void
 init_x86_64(paddr_t first_avail)
 {
 	extern void consinit(void);
@@ -1495,6 +1553,7 @@ init_x86_64(paddr_t first_avail)
 	struct mem_segment_descriptor *ldt_segp;
 	int x;
 	struct pcb *pcb;
+	extern vaddr_t lwp0uarea;
 #ifndef XEN
 	extern paddr_t local_apic_pa;
 	int ist;
@@ -1505,9 +1564,9 @@ init_x86_64(paddr_t first_avail)
 #ifdef XEN
 	KASSERT(HYPERVISOR_shared_info != NULL);
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
+#endif
 
-	__PRINTK(("init_x86_64(0x%lx)\n", first_avail));
-#endif /* XEN */
+	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
 	cpu_probe(&cpu_info_primary);
 	cpu_init_msrs(&cpu_info_primary, true);
@@ -1518,7 +1577,8 @@ init_x86_64(paddr_t first_avail)
 #ifdef XEN
 	mutex_init(&pte_lock, MUTEX_DEFAULT, IPL_VM);
 	pcb->pcb_cr3 = xen_start_info.pt_base - KERNBASE;
-	__PRINTK(("pcb_cr3 0x%lx\n", xen_start_info.pt_base - KERNBASE));
+#else
+	pcb->pcb_cr3 = PDPpaddr;
 #endif
 
 #if NISA > 0 || NPCI > 0
@@ -1566,7 +1626,7 @@ init_x86_64(paddr_t first_avail)
 
 	/* The area for the module map. */
 	module_start = kern_end;
-	module_end = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
+	module_end = bootspace.emodule;
 
 	/*
 	 * Call pmap initialization to make new kernel address space.
@@ -1692,6 +1752,7 @@ init_x86_64(paddr_t first_avail)
 		    GSEL(GCODE_SEL, SEL_KPL));
 #else /* XEN */
 		pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
+		idt_vec_reserve(x);
 		xen_idt[xen_idt_idx].vector = x;
 
 		switch (x) {
@@ -1721,6 +1782,7 @@ init_x86_64(paddr_t first_avail)
 	setgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
 	    GSEL(GCODE_SEL, SEL_KPL));
 #else
+	idt_vec_reserve(128);
 	xen_idt[xen_idt_idx].vector = 128;
 	xen_idt[xen_idt_idx].flags = SEL_KPL;
 	xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
@@ -1790,7 +1852,7 @@ cpu_reset(void)
 	 * invalid and causing a fault.
 	 */
 	kpreempt_disable();
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);           
+	pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
 	memset((void *)idt, 0, NIDT * sizeof(idt[0]));
 	kpreempt_enable();
 	breakpoint();
@@ -1801,7 +1863,7 @@ cpu_reset(void)
 	 * entire address space and doing a TLB flush.
 	 */
 	memset((void *)PTD, 0, PAGE_SIZE);
-	tlbflush(); 
+	tlbflush();
 #endif
 #endif	/* XEN */
 
@@ -1814,10 +1876,33 @@ cpu_getmcontext(struct lwp *l, mcontext_t *mcp, unsigned int *flags)
 	const struct trapframe *tf = l->l_md.md_regs;
 	__greg_t ras_rip;
 
-	/* Copy general registers member by member */
-#define copy_from_tf(reg, REG, idx) mcp->__gregs[_REG_##REG] = tf->tf_##reg;
-	_FRAME_GREG(copy_from_tf)
-#undef copy_from_tf
+	mcp->__gregs[_REG_RDI] = tf->tf_rdi;
+	mcp->__gregs[_REG_RSI] = tf->tf_rsi;
+	mcp->__gregs[_REG_RDX] = tf->tf_rdx;
+	mcp->__gregs[_REG_R10] = tf->tf_r10;
+	mcp->__gregs[_REG_R8]  = tf->tf_r8;
+	mcp->__gregs[_REG_R9]  = tf->tf_r9;
+	/* argX not touched */
+	mcp->__gregs[_REG_RCX] = tf->tf_rcx;
+	mcp->__gregs[_REG_R11] = tf->tf_r11;
+	mcp->__gregs[_REG_R12] = tf->tf_r12;
+	mcp->__gregs[_REG_R13] = tf->tf_r13;
+	mcp->__gregs[_REG_R14] = tf->tf_r14;
+	mcp->__gregs[_REG_R15] = tf->tf_r15;
+	mcp->__gregs[_REG_RBP] = tf->tf_rbp;
+	mcp->__gregs[_REG_RBX] = tf->tf_rbx;
+	mcp->__gregs[_REG_RAX] = tf->tf_rax;
+	mcp->__gregs[_REG_GS]  = 0;
+	mcp->__gregs[_REG_FS]  = 0;
+	mcp->__gregs[_REG_ES]  = GSEL(GUDATA_SEL, SEL_UPL);
+	mcp->__gregs[_REG_DS]  = GSEL(GUDATA_SEL, SEL_UPL);
+	mcp->__gregs[_REG_TRAPNO] = tf->tf_trapno;
+	mcp->__gregs[_REG_ERR] = tf->tf_err;
+	mcp->__gregs[_REG_RIP] = tf->tf_rip;
+	mcp->__gregs[_REG_CS]  = LSEL(LUCODE_SEL, SEL_UPL);
+	mcp->__gregs[_REG_RFLAGS] = tf->tf_rflags;
+	mcp->__gregs[_REG_RSP] = tf->tf_rsp;
+	mcp->__gregs[_REG_SS]  = LSEL(LUDATA_SEL, SEL_UPL);
 
 	if ((ras_rip = (__greg_t)ras_lookup(l->l_proc,
 	    (void *) mcp->__gregs[_REG_RIP])) != -1)
@@ -1839,7 +1924,6 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 	const __greg_t *gr = mcp->__gregs;
 	struct proc *p = l->l_proc;
 	int error;
-	int err, trapno;
 	int64_t rflags;
 
 	CTASSERT(sizeof (mcontext_t) == 26 * 8 + 8 + 512);
@@ -1848,33 +1932,44 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		error = cpu_mcontext_validate(l, mcp);
 		if (error != 0)
 			return error;
-		/*
-		 * save and restore some values we don't want to change.
-		 * _FRAME_GREG(copy_to_tf) below overwrites them.
-		 *
-		 * XXX maybe inline this.
-		 */
-		rflags = tf->tf_rflags;
-		err = tf->tf_err;
-		trapno = tf->tf_trapno;
 
-		/* Copy general registers member by member */
-#define copy_to_tf(reg, REG, idx) tf->tf_##reg = gr[_REG_##REG];
-		_FRAME_GREG(copy_to_tf)
-#undef copy_to_tf
+		tf->tf_rdi  = gr[_REG_RDI];
+		tf->tf_rsi  = gr[_REG_RSI];
+		tf->tf_rdx  = gr[_REG_RDX];
+		tf->tf_r10  = gr[_REG_R10];
+		tf->tf_r8   = gr[_REG_R8];
+		tf->tf_r9   = gr[_REG_R9];
+		/* argX not touched */
+		tf->tf_rcx  = gr[_REG_RCX];
+		tf->tf_r11  = gr[_REG_R11];
+		tf->tf_r12  = gr[_REG_R12];
+		tf->tf_r13  = gr[_REG_R13];
+		tf->tf_r14  = gr[_REG_R14];
+		tf->tf_r15  = gr[_REG_R15];
+		tf->tf_rbp  = gr[_REG_RBP];
+		tf->tf_rbx  = gr[_REG_RBX];
+		tf->tf_rax  = gr[_REG_RAX];
+		tf->tf_gs   = 0;
+		tf->tf_fs   = 0;
+		tf->tf_es   = GSEL(GUDATA_SEL, SEL_UPL);
+		tf->tf_ds   = GSEL(GUDATA_SEL, SEL_UPL);
+		/* trapno, err not touched */
+		tf->tf_rip  = gr[_REG_RIP];
+		tf->tf_cs   = LSEL(LUCODE_SEL, SEL_UPL);
+		rflags = tf->tf_rflags;
+		rflags &= ~PSL_USER;
+		tf->tf_rflags = rflags | (gr[_REG_RFLAGS] & PSL_USER);
+		tf->tf_rsp  = gr[_REG_RSP];
+		tf->tf_ss   = LSEL(LUDATA_SEL, SEL_UPL);
 
 #ifdef XEN
 		/*
 		 * Xen has its own way of dealing with %cs and %ss,
-		 * reset it to proper values.
+		 * reset them to proper values.
 		 */
 		tf->tf_ss = GSEL(GUDATA_SEL, SEL_UPL);
 		tf->tf_cs = GSEL(GUCODE_SEL, SEL_UPL);
 #endif
-		rflags &= ~PSL_USER;
-		tf->tf_rflags = rflags | (gr[_REG_RFLAGS] & PSL_USER);
-		tf->tf_err = err;
-		tf->tf_trapno = trapno;
 
 		l->l_md.md_flags |= MDL_IRET;
 	}
@@ -1950,16 +2045,38 @@ cpu_initclocks(void)
 int
 mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 {
-	extern int start, __data_start;
 	const vaddr_t v = (vaddr_t)ptr;
+	vaddr_t kva, kva_end;
+	size_t i;
 
-	if (v >= (vaddr_t)&start && v < (vaddr_t)kern_end) {
+	kva = bootspace.head.va;
+	kva_end = kva + bootspace.head.sz;
+	if (v >= kva && v < kva_end) {
 		*handled = true;
-		/* Either the text or rodata segment */
-		if (v < (vaddr_t)&__data_start && (prot & VM_PROT_WRITE))
-			return EFAULT;
+		return 0;
+	}
 
-	} else if (v >= module_start && v < module_end) {
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		kva = bootspace.segs[i].va;
+		kva_end = kva + bootspace.segs[i].sz;
+		*handled = true;
+		if (bootspace.segs[i].type == BTSEG_TEXT ||
+		    bootspace.segs[i].type == BTSEG_RODATA) {
+			if (prot & VM_PROT_WRITE) {
+				return EFAULT;
+			}
+		}
+		return 0;
+	}
+
+	kva = bootspace.boot.va;
+	kva_end = kva + bootspace.boot.sz;
+	if (v >= kva && v < kva_end) {
+		*handled = true;
+		return 0;
+	}
+
+	if (v >= module_start && v < module_end) {
 		*handled = true;
 		if (!uvm_map_checkprot(module_map, v, v + 1, prot))
 			return EFAULT;
@@ -1970,17 +2087,17 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 }
 
 /*
- * Zero out an LWP's TLS context (%fs and %gs and associated stuff).
- * Used when exec'ing a new program.
+ * Zero out a 64bit LWP's segments registers. Used when exec'ing a new
+ * 64bit program.
  */
-
 void
-cpu_fsgs_zero(struct lwp *l)
+cpu_segregs64_zero(struct lwp *l)
 {
 	struct trapframe * const tf = l->l_md.md_regs;
 	struct pcb *pcb;
 	uint64_t zero = 0;
 
+	KASSERT((l->l_proc->p_flag & PK_32) == 0);
 	KASSERT(l == curlwp);
 
 	pcb = lwp_getpcb(l);
@@ -1988,21 +2105,49 @@ cpu_fsgs_zero(struct lwp *l)
 	kpreempt_disable();
 	tf->tf_fs = 0;
 	tf->tf_gs = 0;
+	setds(GSEL(GUDATA_SEL, SEL_UPL));
+	setes(GSEL(GUDATA_SEL, SEL_UPL));
 	setfs(0);
-#ifndef XEN
 	setusergs(0);
-#else
-	HYPERVISOR_set_segment_base(SEGBASE_GS_USER_SEL, 0);
-#endif
-	if ((l->l_proc->p_flag & PK_32) == 0) {
+
 #ifndef XEN
-		wrmsr(MSR_FSBASE, 0);
-		wrmsr(MSR_KERNELGSBASE, 0);
+	wrmsr(MSR_FSBASE, 0);
+	wrmsr(MSR_KERNELGSBASE, 0);
 #else
-		HYPERVISOR_set_segment_base(SEGBASE_FS, 0);
-		HYPERVISOR_set_segment_base(SEGBASE_GS_USER, 0);
+	HYPERVISOR_set_segment_base(SEGBASE_FS, 0);
+	HYPERVISOR_set_segment_base(SEGBASE_GS_USER, 0);
 #endif
-	}
+
+	pcb->pcb_fs = 0;
+	pcb->pcb_gs = 0;
+	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &zero);
+	update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &zero);
+	kpreempt_enable();
+}
+
+/*
+ * Zero out a 32bit LWP's segments registers. Used when exec'ing a new
+ * 32bit program.
+ */
+void
+cpu_segregs32_zero(struct lwp *l)
+{
+	struct trapframe * const tf = l->l_md.md_regs;
+	struct pcb *pcb;
+	uint64_t zero = 0;
+
+	KASSERT(l->l_proc->p_flag & PK_32);
+	KASSERT(l == curlwp);
+
+	pcb = lwp_getpcb(l);
+
+	kpreempt_disable();
+	tf->tf_fs = 0;
+	tf->tf_gs = 0;
+	setds(GSEL(GUDATA32_SEL, SEL_UPL));
+	setes(GSEL(GUDATA32_SEL, SEL_UPL));
+	setfs(0);
+	setusergs(0);
 	pcb->pcb_fs = 0;
 	pcb->pcb_gs = 0;
 	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &zero);
@@ -2014,7 +2159,6 @@ cpu_fsgs_zero(struct lwp *l)
  * Load an LWP's TLS context, possibly changing the %fs and %gs selectors.
  * Used only for 32-bit processes.
  */
-
 void
 cpu_fsgs_reload(struct lwp *l, int fssel, int gssel)
 {
@@ -2025,22 +2169,22 @@ cpu_fsgs_reload(struct lwp *l, int fssel, int gssel)
 	KASSERT(l == curlwp);
 
 	tf = l->l_md.md_regs;
+	fssel &= 0xFFFF;
+	gssel &= 0xFFFF;
 
 	pcb = lwp_getpcb(l);
 	kpreempt_disable();
 	update_descriptor(&curcpu()->ci_gdt[GUFS_SEL], &pcb->pcb_fs);
 	update_descriptor(&curcpu()->ci_gdt[GUGS_SEL], &pcb->pcb_gs);
-	setfs(fssel);
-#ifndef XEN
+
+#ifdef XEN
 	setusergs(gssel);
-#else
-	HYPERVISOR_set_segment_base(SEGBASE_GS_USER_SEL, gssel);
 #endif
+
 	tf->tf_fs = fssel;
 	tf->tf_gs = gssel;
 	kpreempt_enable();
 }
-
 
 #ifdef __HAVE_DIRECT_MAP
 bool

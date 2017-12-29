@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_machdep.c,v 1.52 2017/07/14 13:21:29 maxv Exp $ */
+/*	$NetBSD: linux_machdep.c,v 1.55 2017/10/21 07:24:26 maxv Exp $ */
 
 /*-
  * Copyright (c) 2005 Emmanuel Dreyfus, all rights reserved.
@@ -33,7 +33,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: linux_machdep.c,v 1.52 2017/07/14 13:21:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_machdep.c,v 1.55 2017/10/21 07:24:26 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -57,8 +57,10 @@ __KERNEL_RCSID(0, "$NetBSD: linux_machdep.c,v 1.52 2017/07/14 13:21:29 maxv Exp 
  * To see whether wscons is configured (for virtual console ioctl calls).
  */
 #if defined(_KERNEL_OPT)
+#include "opt_user_ldt.h"
 #include "wsdisplay.h"
 #endif
+
 #if (NWSDISPLAY > 0)
 #include <dev/wscons/wsconsio.h>
 #include <dev/wscons/wsdisplay_usl_io.h>
@@ -118,7 +120,7 @@ linux_setregs(struct lwp *l, struct exec_package *epp, vaddr_t stack)
 	tf->tf_ss = GSEL(GUDATA_SEL, SEL_UPL);
 	tf->tf_ds = GSEL(GUDATA_SEL, SEL_UPL);
 	tf->tf_es = 0;
-	cpu_fsgs_zero(l);
+	cpu_segregs64_zero(l);
 
 	return;
 }
@@ -366,15 +368,15 @@ linux_sys_rt_sigreturn(struct lwp *l, const void *v, register_t *retval)
 	mctx->__gregs[_REG_RCX] = lsigctx->rcx;
 	mctx->__gregs[_REG_RIP] = lsigctx->rip;
 	mctx->__gregs[_REG_RFLAGS] = lsigctx->eflags;
-	mctx->__gregs[_REG_CS] = lsigctx->cs;
-	mctx->__gregs[_REG_GS] = lsigctx->gs;
-	mctx->__gregs[_REG_FS] = lsigctx->fs;
+	mctx->__gregs[_REG_CS] = lsigctx->cs & 0xFFFF;
+	mctx->__gregs[_REG_GS] = lsigctx->gs & 0xFFFF;
+	mctx->__gregs[_REG_FS] = lsigctx->fs & 0xFFFF;
 	mctx->__gregs[_REG_ERR] = lsigctx->err;
 	mctx->__gregs[_REG_TRAPNO] = lsigctx->trapno;
-	mctx->__gregs[_REG_ES] = tf->tf_es;
-	mctx->__gregs[_REG_DS] = tf->tf_ds;
+	mctx->__gregs[_REG_ES] = tf->tf_es & 0xFFFF;
+	mctx->__gregs[_REG_DS] = tf->tf_ds & 0xFFFF;
 	mctx->__gregs[_REG_RSP] = lsigctx->rsp; /* XXX */
-	mctx->__gregs[_REG_SS] = tf->tf_ss;
+	mctx->__gregs[_REG_SS] = tf->tf_ss & 0xFFFF;
 
 	/*
 	 * FPU state 

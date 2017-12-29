@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.263 2017/06/01 02:45:09 chs Exp $	*/
+/*	$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,7 +100,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.263 2017/06/01 02:45:09 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $");
 
 #include "opt_acpi.h"
 #include "opt_pcifixup.h"
@@ -127,6 +127,8 @@ __KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.263 2017/06/01 02:45:09 chs Exp $");
 
 #include <machine/acpi_machdep.h>
 
+#include "ioconf.h"
+
 #define _COMPONENT	ACPI_BUS_COMPONENT
 ACPI_MODULE_NAME	("acpi")
 
@@ -143,7 +145,6 @@ int		acpi_verbose_loaded = 0;
 struct acpi_softc	*acpi_softc = NULL;
 static uint64_t		 acpi_root_pointer;
 extern kmutex_t		 acpi_interrupt_list_mtx;
-extern struct		 cfdriver acpi_cd;
 static ACPI_HANDLE	 acpi_scopes[4];
 ACPI_TABLE_HEADER	*madt_header;
 
@@ -712,6 +713,8 @@ acpi_make_devnode(ACPI_HANDLE handle, uint32_t level,
 
 	case ACPI_TYPE_DEVICE:
 		acpi_activate_device(handle, &devinfo);
+		/* FALLTHROUGH */
+
 	case ACPI_TYPE_PROCESSOR:
 	case ACPI_TYPE_THERMAL:
 	case ACPI_TYPE_POWER:

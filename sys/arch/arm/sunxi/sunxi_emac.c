@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_emac.c,v 1.7 2017/09/19 17:26:45 jmcneill Exp $ */
+/* $NetBSD: sunxi_emac.c,v 1.12 2017/12/22 13:39:57 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.7 2017/09/19 17:26:45 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.12 2017/12/22 13:39:57 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -95,26 +95,26 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.7 2017/09/19 17:26:45 jmcneill Exp 
 #define	BURST_LEN_DEFAULT	8
 #define	RX_TX_PRI_DEFAULT	0
 #define	PAUSE_TIME_DEFAULT	0x400
-#define	TX_INTERVAL_DEFAULT	64
 
 /* syscon EMAC clock register */
-#define	EMAC_CLK_EPHY_ADDR	(0x1f << 20)	/* H3 */
-#define	EMAC_CLK_EPHY_ADDR_SHIFT 20
-#define	EMAC_CLK_EPHY_LED_POL	(1 << 17)	/* H3 */
-#define	EMAC_CLK_EPHY_SHUTDOWN	(1 << 16)	/* H3 */
-#define	EMAC_CLK_EPHY_SELECT	(1 << 15)	/* H3 */
-#define	EMAC_CLK_RMII_EN	(1 << 13)
-#define	EMAC_CLK_ETXDC		(0x7 << 10)
-#define	EMAC_CLK_ETXDC_SHIFT	10
-#define	EMAC_CLK_ERXDC		(0x1f << 5)
-#define	EMAC_CLK_ERXDC_SHIFT	5
-#define	EMAC_CLK_PIT		(0x1 << 2)
-#define	 EMAC_CLK_PIT_MII	(0 << 2)
-#define	 EMAC_CLK_PIT_RGMII	(1 << 2)
-#define	EMAC_CLK_SRC		(0x3 << 0)
-#define	 EMAC_CLK_SRC_MII	(0 << 0)
-#define	 EMAC_CLK_SRC_EXT_RGMII	(1 << 0)
-#define	 EMAC_CLK_SRC_RGMII	(2 << 0)
+#define	EMAC_CLK_REG		0x30
+#define	 EMAC_CLK_EPHY_ADDR		(0x1f << 20)	/* H3 */
+#define	 EMAC_CLK_EPHY_ADDR_SHIFT	20
+#define	 EMAC_CLK_EPHY_LED_POL		(1 << 17)	/* H3 */
+#define	 EMAC_CLK_EPHY_SHUTDOWN		(1 << 16)	/* H3 */
+#define	 EMAC_CLK_EPHY_SELECT		(1 << 15)	/* H3 */
+#define	 EMAC_CLK_RMII_EN		(1 << 13)
+#define	 EMAC_CLK_ETXDC			(0x7 << 10)
+#define	 EMAC_CLK_ETXDC_SHIFT		10
+#define	 EMAC_CLK_ERXDC			(0x1f << 5)
+#define	 EMAC_CLK_ERXDC_SHIFT		5
+#define	 EMAC_CLK_PIT			(0x1 << 2)
+#define	  EMAC_CLK_PIT_MII		(0 << 2)
+#define	  EMAC_CLK_PIT_RGMII		(1 << 2)
+#define	 EMAC_CLK_SRC			(0x3 << 0)
+#define	  EMAC_CLK_SRC_MII		(0 << 0)
+#define	  EMAC_CLK_SRC_EXT_RGMII	(1 << 0)
+#define	  EMAC_CLK_SRC_RGMII		(2 << 0)
 
 /* Burst length of RX and TX DMA transfers */
 static int sunxi_emac_burst_len = BURST_LEN_DEFAULT;
@@ -124,9 +124,6 @@ static int sunxi_emac_rx_tx_pri = RX_TX_PRI_DEFAULT;
 
 /* Pause time field in the transmitted control frame */
 static int sunxi_emac_pause_time = PAUSE_TIME_DEFAULT;
-
-/* Request a TX interrupt every <n> descriptors */
-static int sunxi_emac_tx_interval = TX_INTERVAL_DEFAULT;
 
 enum sunxi_emac_type {
 	EMAC_A83T = 1,
@@ -337,8 +334,6 @@ sunxi_emac_setup_txdesc(struct sunxi_emac_softc *sc, int index, int flags,
 	} else {
 		status = TX_DESC_CTL;
 		size = flags | len;
-		if ((index & (sunxi_emac_tx_interval - 1)) == 0)
-			size |= TX_INT_CTL;
 		++sc->tx.queued;
 	}
 
@@ -380,7 +375,7 @@ sunxi_emac_setup_txbuf(struct sunxi_emac_softc *sc, int index, struct mbuf *m)
 	for (cur = index, i = 0; i < nsegs; i++) {
 		sc->tx.buf_map[cur].mbuf = (i == 0 ? m : NULL);
 		if (i == nsegs - 1)
-			flags |= TX_LAST_DESC;
+			flags |= TX_LAST_DESC | TX_INT_CTL;
 
 		sunxi_emac_setup_txdesc(sc, cur, flags, segs[i].ds_addr,
 		    segs[i].ds_len);
@@ -740,15 +735,14 @@ sunxi_emac_rxintr(struct sunxi_emac_softc *sc)
 
 			if ((ifp->if_capenable & IFCAP_CSUM_IPv4_Rx) != 0 &&
 			    (status & RX_FRM_TYPE) != 0) {
-				m->m_pkthdr.csum_flags = M_CSUM_IPv4;
+				m->m_pkthdr.csum_flags = M_CSUM_IPv4 |
+				    M_CSUM_TCPv4 | M_CSUM_UDPv4;
 				if ((status & RX_HEADER_ERR) != 0)
 					m->m_pkthdr.csum_flags |=
 					    M_CSUM_IPv4_BAD;
-				if ((status & RX_PAYLOAD_ERR) == 0) {
+				if ((status & RX_PAYLOAD_ERR) != 0)
 					m->m_pkthdr.csum_flags |=
-					    M_CSUM_DATA;
-					m->m_pkthdr.csum_data = 0xffff;
-				}
+					    M_CSUM_TCP_UDP_BAD;
 			}
 
 			++npkt;
@@ -896,6 +890,27 @@ sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	return error;
 }
 
+static bool
+sunxi_emac_has_internal_phy(struct sunxi_emac_softc *sc)
+{
+	const char * mdio_internal_compat[] = {
+		"allwinner,sun8i-h3-mdio-internal",
+		NULL
+	};
+	int phy;
+
+	/* Non-standard property, for compatible with old dts files */
+	if (of_hasprop(sc->phandle, "allwinner,use-internal-phy"))
+		return true;
+
+	phy = fdtbus_get_phandle(sc->phandle, "phy-handle");
+	if (phy == -1)
+		return false;
+
+	/* For internal PHY, check compatible string of parent node */
+	return of_compatible(OF_parent(phy), mdio_internal_compat) >= 0;
+}
+
 static int
 sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 {
@@ -928,7 +943,7 @@ sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 	}
 
 	if (sc->type == EMAC_H3) {
-		if (of_hasprop(sc->phandle, "allwinner,use-internal-phy")) {
+		if (sunxi_emac_has_internal_phy(sc)) {
 			reg |= EMAC_CLK_EPHY_SELECT;
 			reg &= ~EMAC_CLK_EPHY_SHUTDOWN;
 			if (of_hasprop(sc->phandle,
@@ -1269,25 +1284,53 @@ sunxi_emac_get_resources(struct sunxi_emac_softc *sc)
 {
 	const int phandle = sc->phandle;
 	bus_addr_t addr, size;
-	u_int n;
 
-	/* Map registers */
-	for (n = 0; n < _RES_NITEMS; n++) {
-		if (fdtbus_get_reg(phandle, n, &addr, &size) != 0)
+	/* Map EMAC registers */
+	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0)
+		return ENXIO;
+	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh[_RES_EMAC]) != 0)
+		return ENXIO;
+
+	/* Map SYSCON registers */
+	if (of_hasprop(phandle, "syscon")) {
+		const int syscon_phandle = fdtbus_get_phandle(phandle,
+		    "syscon");
+		if (syscon_phandle == -1)
 			return ENXIO;
-		if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh[n]) != 0)
+		if (fdtbus_get_reg(syscon_phandle, 0, &addr, &size) != 0)
+			return ENXIO;
+		if (size < EMAC_CLK_REG + 4)
+			return ENXIO;
+		addr += EMAC_CLK_REG;
+		size -= EMAC_CLK_REG;
+	} else {
+		if (fdtbus_get_reg(phandle, 1, &addr, &size) != 0)
 			return ENXIO;
 	}
-
-	/* Get clocks and resets. "ahb" is required, "ephy" is optional. */
-
-	if ((sc->clk_ahb = fdtbus_clock_get(phandle, "ahb")) == NULL)
+	if (bus_space_map(sc->bst, addr, size, 0, &sc->bsh[_RES_SYSCON]) != 0)
 		return ENXIO;
+
+	/* The "ahb"/"stmmaceth" clock and reset is required */
+	if ((sc->clk_ahb = fdtbus_clock_get(phandle, "ahb")) == NULL &&
+	    (sc->clk_ahb = fdtbus_clock_get(phandle, "stmmaceth")) == NULL)
+		return ENXIO;
+	if ((sc->rst_ahb = fdtbus_reset_get(phandle, "ahb")) == NULL &&
+	    (sc->rst_ahb = fdtbus_reset_get(phandle, "stmmaceth")) == NULL)
+		return ENXIO;
+
+	/* Internal PHY clock and reset are optional properties. */
 	sc->clk_ephy = fdtbus_clock_get(phandle, "ephy");
-
-	if ((sc->rst_ahb = fdtbus_reset_get(phandle, "ahb")) == NULL)
-		return ENXIO;
+	if (sc->clk_ephy == NULL) {
+		int phy_phandle = fdtbus_get_phandle(phandle, "phy-handle");
+		if (phy_phandle != -1)
+			sc->clk_ephy = fdtbus_clock_get_index(phy_phandle, 0);
+	}
 	sc->rst_ephy = fdtbus_reset_get(phandle, "ephy");
+	if (sc->rst_ephy == NULL) {
+		int phy_phandle = fdtbus_get_phandle(phandle, "phy-handle");
+		if (phy_phandle != -1)
+			sc->rst_ephy = fdtbus_reset_get_index(phy_phandle, 0);
+	}
 
 	/* Regulator is optional */
 	sc->reg_phy = fdtbus_regulator_acquire(phandle, "phy-supply");
@@ -1303,8 +1346,11 @@ static int
 sunxi_emac_get_phyid(struct sunxi_emac_softc *sc)
 {
 	bus_addr_t addr;
+	int phy_phandle;
 
-	const int phy_phandle = fdtbus_get_phandle(sc->phandle, "phy");
+	phy_phandle = fdtbus_get_phandle(sc->phandle, "phy");
+	if (phy_phandle == -1)
+		phy_phandle = fdtbus_get_phandle(sc->phandle, "phy-handle");
 	if (phy_phandle == -1)
 		return MII_PHY_ANY;
 
@@ -1388,7 +1434,7 @@ sunxi_emac_attach(device_t parent, device_t self, void *aux)
 	snprintf(ifp->if_xname, IFNAMSIZ, EMAC_IFNAME, device_unit(self));
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef EMAC_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_start = sunxi_emac_start;
 	ifp->if_ioctl = sunxi_emac_ioctl;

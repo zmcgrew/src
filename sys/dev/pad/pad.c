@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.42 2017/07/30 00:50:52 nat Exp $ */
+/* $NetBSD: pad.c,v 1.49 2017/12/17 21:57:11 pgoyette Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.42 2017/07/30 00:50:52 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.49 2017/12/17 21:57:11 pgoyette Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -172,6 +172,7 @@ const struct cdevsw pad_cdevsw = {
 };
 
 const struct fileops pad_fileops = {
+	.fo_name = "pad",
 	.fo_read = fops_pad_read,
 	.fo_write = pad_write,
 	.fo_ioctl = pad_ioctl,
@@ -345,10 +346,11 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	cf->cf_unit = i;
 	cf->cf_fstate = FSTATE_STAR;
 
-	if (device_lookup(&pad_cd, minor(dev)) == NULL)
+	paddev = device_lookup(&pad_cd, minor(dev));
+	if (paddev == NULL)
 		paddev = config_attach_pseudo(cf);
-	else
-		paddev = device_lookup(&pad_cd, minor(dev));
+	if (paddev == NULL)
+		return ENXIO;
 
 	sc = device_private(paddev);
 	if (sc == NULL)
@@ -898,98 +900,71 @@ pad_swvol_dtor(stream_filter_t *this)
 		kmem_free(this, sizeof(auvolconv_filter_t));
 }
 
-#ifdef _MODULE
-
 MODULE(MODULE_CLASS_DRIVER, pad, "audio");
 
-static const struct cfiattrdata audiobuscf_iattrdata = {
-	"audiobus", 0, { { NULL, NULL, 0 }, }
-};
-static const struct cfiattrdata * const pad_attrs[] = {
-	&audiobuscf_iattrdata, NULL
-};
+#ifdef _MODULE
 
-CFDRIVER_DECL(pad, DV_DULL, pad_attrs);
-extern struct cfattach pad_ca;
-static int padloc[] = { -1, -1 };
+#include "ioconf.c"
 
-static struct cfdata pad_cfdata[] = {
-	{
-		.cf_name = "pad",
-		.cf_atname = "pad",
-		.cf_unit = 0,
-		.cf_fstate = FSTATE_STAR,
-		.cf_loc = padloc,
-		.cf_flags = 0,
-		.cf_pspec = NULL,
-	},
-	{ NULL, NULL, 0, 0, NULL, 0, NULL }
+devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
+
+/*
+ * We need our own version of cfattach since config(1)'s ioconf does not
+ * generate what we need
+ */
+
+static struct cfattach *pad_cfattachinit[] = { &pad_ca, NULL };
+
+static struct cfattachinit pad_cfattach[] = {
+	{ "pad", pad_cfattachinit },
+	{ NULL, NULL }
 };
+#endif
 
 static int
 pad_modcmd(modcmd_t cmd, void *arg)
 {
-	devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
-	int error;
+	int error = 0;
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		error = config_cfdriver_attach(&pad_cd);
-		if (error) {
-			return error;
-		}
-
-		error = config_cfattach_attach(pad_cd.cd_name, &pad_ca);
-		if (error) {
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfattach\n",
-				pad_cd.cd_name);
-
-			return error;
-		}
-
-		error = config_cfdata_attach(pad_cfdata, 1);
-		if (error) {
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfdata\n",
-				pad_cd.cd_name);
-
-			return error;
-		}
+#ifdef _MODULE
+		pad_cfattach[1] = cfattach_ioconf_pad[0];
+		error = config_init_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
+		if (error)
+			break;
 
 		error = devsw_attach(pad_cd.cd_name, NULL, &bmajor,
-		    &pad_cdevsw, &cmajor);
+			    &pad_cdevsw, &cmajor);
 		if (error) {
-			error = config_cfdata_detach(pad_cfdata);
-			if (error) {
-				return error;
-			}
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register devsw\n",
-				pad_cd.cd_name);
-
-			return error;
+			config_fini_component(cfdriver_ioconf_pad,
+			    pad_cfattach, cfdata_ioconf_pad);
+			break;
 		}
-
-		(void)config_attach_pseudo(pad_cfdata);
-
-		return 0;
-	case MODULE_CMD_FINI:
-		error = config_cfdata_detach(pad_cfdata);
-		if (error) {
-			return error;
-		}
-
-		config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-		config_cfdriver_detach(&pad_cd);
-		devsw_detach(NULL, &pad_cdevsw);
-
-		return 0;
-	default:
-		return ENOTTY;
-	}
-}
 
 #endif
+		break;
+
+	case MODULE_CMD_FINI:
+#ifdef _MODULE
+		error = devsw_detach(NULL, &pad_cdevsw);
+		if (error)
+			break;
+
+		error = config_fini_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
+		if (error) {
+			devsw_attach(pad_cd.cd_name, NULL, &bmajor,
+			    &pad_cdevsw, &cmajor);
+			break;
+		}
+#endif
+		break;
+
+	default:
+		error = ENOTTY;
+	}
+
+	return error;
+}

@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_com.c,v 1.2 2017/06/29 17:05:26 jmcneill Exp $ */
+/* $NetBSD: sunxi_com.c,v 1.4 2017/10/29 14:07:11 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: sunxi_com.c,v 1.2 2017/06/29 17:05:26 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: sunxi_com.c,v 1.4 2017/10/29 14:07:11 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -106,15 +106,23 @@ sunxi_com_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 
 	ssc->ssc_clk = fdtbus_clock_get_index(faa->faa_phandle, 0);
-	ssc->ssc_rst = fdtbus_reset_get_index(faa->faa_phandle, 0);
-
 	if (ssc->ssc_clk == NULL) {
-		aprint_error(": couldn't get frequency\n");
+		aprint_error(": couldn't get clock\n");
+		return;
+	}
+	if (clk_enable(ssc->ssc_clk) != 0) {
+		aprint_error(": couldn't enable clock\n");
+		return;
+	}
+
+	ssc->ssc_rst = fdtbus_reset_get_index(faa->faa_phandle, 0);
+	if (ssc->ssc_rst && fdtbus_reset_deassert(ssc->ssc_rst) != 0) {
+		aprint_error(": couldn't de-assert reset\n");
 		return;
 	}
 
 	sc->sc_frequency = clk_get_rate(ssc->ssc_clk);
-	sc->sc_type = COM_TYPE_NORMAL;
+	sc->sc_type = COM_TYPE_SUNXI;
 
 	error = bus_space_map(bst, addr, size, 0, &bsh);
 	if (error) {
@@ -166,7 +174,7 @@ sunxi_com_console_consinit(struct fdt_attach_args *faa, u_int uart_freq)
 		speed = 115200;	/* default */
 	flags = fdtbus_get_stdout_flags();
 
-	if (comcnattach(bst, addr, speed, uart_freq, COM_TYPE_NORMAL, flags))
+	if (comcnattach(bst, addr, speed, uart_freq, COM_TYPE_SUNXI, flags))
 		panic("Cannot initialize sunxi com console");
 }
 

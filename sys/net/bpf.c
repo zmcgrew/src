@@ -1,4 +1,4 @@
-/*	$NetBSD: bpf.c,v 1.216 2017/02/20 03:08:38 ozaki-r Exp $	*/
+/*	$NetBSD: bpf.c,v 1.222 2017/12/15 07:29:11 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.216 2017/02/20 03:08:38 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.222 2017/12/15 07:29:11 ozaki-r Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_bpf.h"
@@ -271,6 +271,7 @@ static int	bpf_kqfilter(struct file *, struct knote *);
 static void	bpf_softintr(void *);
 
 static const struct fileops bpf_fileops = {
+	.fo_name = "bpf",
 	.fo_read = bpf_read,
 	.fo_write = bpf_write,
 	.fo_ioctl = bpf_ioctl,
@@ -296,7 +297,7 @@ const struct cdevsw bpf_cdevsw = {
 	.d_mmap = nommap,
 	.d_kqfilter = nokqfilter,
 	.d_discard = nodiscard,
-	.d_flag = D_OTHER
+	.d_flag = D_OTHER | D_MPSAFE
 };
 
 bpfjit_func_t
@@ -484,13 +485,9 @@ bpf_detachd(struct bpf_d *d)
 		 * the interface was configured down, so only panic
 		 * if we don't get an unexpected error.
 		 */
-#ifndef NET_MPSAFE
-		KERNEL_LOCK(1, NULL);
-#endif
+		KERNEL_LOCK_UNLESS_NET_MPSAFE();
   		error = ifpromisc(bp->bif_ifp, 0);
-#ifndef NET_MPSAFE
-		KERNEL_UNLOCK_ONE(NULL);
-#endif
+		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 #ifdef DIAGNOSTIC
 		if (error)
 			printf("%s: ifpromisc failed: %d", __func__, error);
@@ -564,9 +561,10 @@ bpfopen(dev_t dev, int flag, int mode, struct lwp *l)
 #endif
 	getnanotime(&d->bd_btime);
 	d->bd_atime = d->bd_mtime = d->bd_btime;
-	callout_init(&d->bd_callout, 0);
+	callout_init(&d->bd_callout, CALLOUT_MPSAFE);
 	selinit(&d->bd_sel);
-	d->bd_sih = softint_establish(SOFTINT_CLOCK, bpf_softintr, d);
+	d->bd_sih = softint_establish(SOFTINT_CLOCK|SOFTINT_MPSAFE,
+	    bpf_softintr, d);
 	d->bd_jitcode = NULL;
 	d->bd_filter = NULL;
 	BPF_DLIST_ENTRY_INIT(d);
@@ -665,7 +663,7 @@ bpf_read(struct file *fp, off_t *offp, struct uio *uio,
 
 	mutex_enter(d->bd_mtx);
 	if (d->bd_state == BPF_WAITING)
-		callout_halt(&d->bd_callout, d->bd_buf_mtx);
+		callout_halt(&d->bd_callout, d->bd_mtx);
 	timed_out = (d->bd_state == BPF_TIMED_OUT);
 	d->bd_state = BPF_IDLE;
 	mutex_exit(d->bd_mtx);
@@ -768,8 +766,10 @@ bpf_softintr(void *cookie)
 	struct bpf_d *d;
 
 	d = cookie;
+	mutex_enter(d->bd_mtx);
 	if (d->bd_async)
 		fownsignal(d->bd_pgid, SIGIO, 0, 0, NULL);
+	mutex_exit(d->bd_mtx);
 }
 
 static void
@@ -1022,13 +1022,9 @@ bpf_ioctl(struct file *fp, u_long cmd, void *addr)
 			break;
 		}
 		if (d->bd_promisc == 0) {
-#ifndef NET_MPSAFE
-			KERNEL_LOCK(1, NULL);
-#endif
+			KERNEL_LOCK_UNLESS_NET_MPSAFE();
 			error = ifpromisc(d->bd_bif->bif_ifp, 1);
-#ifndef NET_MPSAFE
-			KERNEL_UNLOCK_ONE(NULL);
-#endif
+			KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 			if (error == 0)
 				d->bd_promisc = 1;
 		}
@@ -1238,7 +1234,9 @@ bpf_ioctl(struct file *fp, u_long cmd, void *addr)
 		break;
 
 	case FIOASYNC:		/* Send signal on receive packets */
+		mutex_enter(d->bd_mtx);
 		d->bd_async = *(int *)addr;
+		mutex_exit(d->bd_mtx);
 		break;
 
 	case TIOCSPGRP:		/* Process or group to send signals to */
@@ -1496,8 +1494,12 @@ filt_bpfread(struct knote *kn, long hint)
 	return rv;
 }
 
-static const struct filterops bpfread_filtops =
-	{ 1, NULL, filt_bpfrdetach, filt_bpfread };
+static const struct filterops bpfread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_bpfrdetach,
+	.f_event = filt_bpfread,
+};
 
 static int
 bpf_kqfilter(struct file *fp, struct knote *kn)
@@ -2245,13 +2247,9 @@ bpf_setdlt(struct bpf_d *d, u_int dlt)
 	bpf_attachd(d, bp);
 	reset_d(d);
 	if (opromisc) {
-#ifndef NET_MPSAFE
-		KERNEL_LOCK(1, NULL);
-#endif
+		KERNEL_LOCK_UNLESS_NET_MPSAFE();
 		error = ifpromisc(bp->bif_ifp, 1);
-#ifndef NET_MPSAFE
-		KERNEL_UNLOCK_ONE(NULL);
-#endif
+		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 		if (error)
 			printf("%s: bpf_setdlt: ifpromisc failed (%d)\n",
 			    bp->bif_ifp->if_xname, error);

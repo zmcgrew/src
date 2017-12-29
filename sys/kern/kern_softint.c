@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_softint.c,v 1.43 2016/07/04 04:20:14 knakahara Exp $	*/
+/*	$NetBSD: kern_softint.c,v 1.45 2017/12/28 03:39:48 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008 The NetBSD Foundation, Inc.
@@ -170,13 +170,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.43 2016/07/04 04:20:14 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.45 2017/12/28 03:39:48 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/intr.h>
 #include <sys/ipi.h>
 #include <sys/mutex.h>
+#include <sys/kernel.h>
 #include <sys/kthread.h>
 #include <sys/evcnt.h>
 #include <sys/cpu.h>
@@ -217,7 +218,7 @@ typedef struct softcpu {
 
 static void	softint_thread(void *);
 
-u_int		softint_bytes = 8192;
+u_int		softint_bytes = 32768;
 u_int		softint_timing;
 static u_int	softint_max;
 static kmutex_t	softint_lock;
@@ -430,8 +431,10 @@ softint_disestablish(void *arg)
 	 * it again.  So, we are only looking for handler records with
 	 * SOFTINT_ACTIVE already set.
 	 */
-	where = xc_broadcast(0, (xcfunc_t)nullop, NULL, NULL);
-	xc_wait(where);
+	if (__predict_true(mp_online)) {
+		where = xc_broadcast(0, (xcfunc_t)nullop, NULL, NULL);
+		xc_wait(where);
+	}
 
 	for (;;) {
 		/* Collect flag values from each CPU. */

@@ -108,7 +108,7 @@ tre_new_item(tre_mem_t mem, int min, int max, int *i, int *max_i,
       if (*max_i > 1024)
 	return REG_ESPACE;
       *max_i *= 2;
-      new_items = xrealloc(array, sizeof(*items) * *max_i);
+      new_items = xrealloc(array, sizeof(*array) * *max_i);
       if (new_items == NULL)
 	return REG_ESPACE;
       *items = array = new_items;
@@ -133,7 +133,7 @@ tre_expand_ctype(tre_mem_t mem, tre_ctype_t class, tre_ast_node_t ***items,
   DPRINT(("  expanding class to character ranges\n"));
   for (j = 0; (j < 256) && (status == REG_OK); j++)
     {
-      c = j;
+      c = (tre_cint_t) j;
       if (tre_isctype(c, class)
 	  || ((cflags & REG_ICASE)
 	      && (tre_isctype(tre_tolower(c), class)
@@ -346,7 +346,7 @@ tre_parse_bracket_items(tre_parse_ctx_t *ctx, int negate,
 		  if (!class)
 		    status = REG_ECTYPE;
 		  /* Optimize character classes for 8 bit character sets. */
-		  /* CONSTCOND */if (status == REG_OK && TRE_MB_CUR_MAX == 1)
+		  if (status == REG_OK && ctx->cur_max == 1)
 		    {
 		      status = tre_expand_ctype(ctx->mem, class, items,
 						&i, &max_i, ctx->cflags);
@@ -509,7 +509,7 @@ tre_parse_bracket(tre_parse_ctx_t *ctx, tre_ast_node_t **result)
 	  if (num_neg_classes > 0)
 	    {
 	      l->neg_classes = tre_mem_alloc(ctx->mem,
-					     (sizeof(l->neg_classes)
+					     (sizeof(*l->neg_classes)
 					      * (num_neg_classes + 1)));
 	      if (l->neg_classes == NULL)
 		{
@@ -550,7 +550,7 @@ tre_parse_bracket(tre_parse_ctx_t *ctx, tre_ast_node_t **result)
 	  if (num_neg_classes > 0)
 	    {
 	      l->neg_classes = tre_mem_alloc(ctx->mem,
-					     (sizeof(l->neg_classes)
+					     (sizeof(*l->neg_classes)
 					      * (num_neg_classes + 1)));
 	      if (l->neg_classes == NULL)
 		{
@@ -1224,7 +1224,7 @@ tre_parse(tre_parse_ctx_t *ctx)
 		  DPRINT(("tre_parse:	extension: '%.*" STRF "\n",
 			  REST(ctx->re)));
 		  ctx->re += 2;
-		  while (/*CONSTCOND*/1)
+		  while (/*CONSTCOND*/(void)1,1)
 		    {
 		      if (*ctx->re == L'i')
 			{

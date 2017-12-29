@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.762 2017/09/20 09:36:20 ozaki-r Exp $
+# $NetBSD: mi,v 1.771 2017/12/10 15:39:37 christos Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 #
@@ -162,6 +162,7 @@
 ./usr/libdata/debug/usr/tests/net/if					tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/if_loop				tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/in_cksum				tests-net-debug		compattestfile,atf
+./usr/libdata/debug/usr/tests/net/ipsec					tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/mcast					tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/net					tests-net-debug		compattestfile,atf
 ./usr/libdata/debug/usr/tests/net/sys					tests-net-debug		compattestfile,atf
@@ -1554,6 +1555,7 @@
 ./usr/tests/fs/vfs/t_full				tests-fs-tests		atf,rump
 ./usr/tests/fs/vfs/t_io					tests-fs-tests		atf,rump
 ./usr/tests/fs/vfs/t_mtime_otrunc			tests-fs-tests		atf,rump
+./usr/tests/fs/vfs/t_mtime_write			tests-fs-tests		atf,rump
 ./usr/tests/fs/vfs/t_renamerace				tests-fs-tests		atf,rump
 ./usr/tests/fs/vfs/t_rmdirrace				tests-fs-tests		atf,rump
 ./usr/tests/fs/vfs/t_ro					tests-fs-tests		atf,rump
@@ -1589,6 +1591,7 @@
 ./usr/tests/include/sys/t_bitops		tests-include-tests	compattestfile,atf
 ./usr/tests/include/sys/t_bootblock		tests-include-tests	compattestfile,atf
 ./usr/tests/include/sys/t_cdefs			tests-include-tests	compattestfile,atf
+./usr/tests/include/sys/t_list			tests-include-tests	compattestfile,atf
 ./usr/tests/include/sys/t_pslist		tests-include-tests	compattestfile,atf
 ./usr/tests/include/sys/t_socket		tests-include-tests	atf,rump
 ./usr/tests/include/sys/t_tree			tests-include-tests	compattestfile,atf
@@ -2115,8 +2118,11 @@
 ./usr/tests/kernel/arch/i386/t_ptrace_waitid	tests-obsolete		obsolete
 ./usr/tests/kernel/arch/i386/t_ptrace_waitpid	tests-obsolete		obsolete
 ./usr/tests/kernel/arch/x86			tests-obsolete		obsolete
+./usr/tests/kernel/h_getprocpath		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/h_interpreter		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings1		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/h_ps_strings2		tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/h_segv			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue/Atffile		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/kqueue/Kyuafile		tests-kernel-tests	compattestfile,atf,kyua
@@ -2153,6 +2159,7 @@
 ./usr/tests/kernel/t_extattrctl			tests-kernel-tests	atf,rump
 ./usr/tests/kernel/t_extent			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_filedesc			tests-kernel-tests	atf,rump
+./usr/tests/kernel/t_interp			tests-kernel-tests	atf
 ./usr/tests/kernel/t_kauth_pr_47598		tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_lock			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_lockf			tests-kernel-tests	compattestfile,atf
@@ -2164,6 +2171,7 @@
 ./usr/tests/kernel/t_pollts			tests-obsolete		obsolete
 ./usr/tests/kernel/t_posix_fadvise		tests-obsolete		obsolete
 ./usr/tests/kernel/t_posix_fallocate		tests-obsolete		obsolete
+./usr/tests/kernel/t_procpath			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_ps_strings			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_ptrace			tests-obsolete		obsolete
 ./usr/tests/kernel/t_ptrace_wait		tests-obsolete		obsolete
@@ -2174,6 +2182,8 @@
 ./usr/tests/kernel/t_ptrace_waitpid		tests-obsolete		obsolete
 ./usr/tests/kernel/t_pty			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_rnd			tests-kernel-tests	atf,rump
+./usr/tests/kernel/t_timeleft			tests-kernel-tests	compattestfile,atf
+./usr/tests/kernel/t_trapsignal			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sigaction			tests-obsolete		obsolete
 ./usr/tests/kernel/t_subr_prf			tests-kernel-tests	compattestfile,atf
 ./usr/tests/kernel/t_sysctl			tests-kernel-tests	compattestfile,atf
@@ -3318,11 +3328,13 @@
 ./usr/tests/net/ipsec				tests-net-tests		compattestfile,atf
 ./usr/tests/net/ipsec/Atffile			tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/Kyuafile			tests-net-tests		atf,rump,kyua
+./usr/tests/net/ipsec/natt_terminator		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_ah_keys		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_esp_keys		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_gif		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_l2tp		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_misc		tests-net-tests		atf,rump
+./usr/tests/net/ipsec/t_ipsec_natt		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_sockopt		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_sysctl		tests-net-tests		atf,rump
 ./usr/tests/net/ipsec/t_ipsec_tcp		tests-net-tests		atf,rump
@@ -3416,6 +3428,7 @@
 ./usr/tests/rump/rumpkern/t_sp			tests-rump-tests	atf,rump
 ./usr/tests/rump/rumpkern/t_threads		tests-rump-tests	atf,rump
 ./usr/tests/rump/rumpkern/t_tsleep		tests-rump-tests	atf,rump
+./usr/tests/rump/rumpkern/t_workqueue		tests-rump-tests	atf,rump
 ./usr/tests/rump/rumpkern/t_vm			tests-rump-tests	atf,rump
 ./usr/tests/rump/rumpnet			tests-rump-tests	compattestfile,atf
 ./usr/tests/rump/rumpnet/Atffile		tests-rump-tests	atf,rump

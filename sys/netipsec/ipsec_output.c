@@ -1,4 +1,4 @@
-/*	$NetBSD: ipsec_output.c,v 1.60 2017/08/10 06:11:24 ozaki-r Exp $	*/
+/*	$NetBSD: ipsec_output.c,v 1.65 2017/11/17 07:37:12 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2003 Sam Leffler, Errno Consulting
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec_output.c,v 1.60 2017/08/10 06:11:24 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec_output.c,v 1.65 2017/11/17 07:37:12 ozaki-r Exp $");
 
 /*
  * IPsec output processing.
@@ -117,9 +117,7 @@ ipsec_reinject_ipstack(struct mbuf *m, int af)
 
 	KASSERT(af == AF_INET || af == AF_INET6);
 
-#ifndef NET_MPSAFE
-	KERNEL_LOCK(1, NULL);
-#endif
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	ro = percpu_getref(ipsec_rtcache_percpu);
 	switch (af) {
 #ifdef INET
@@ -139,15 +137,13 @@ ipsec_reinject_ipstack(struct mbuf *m, int af)
 #endif
 	}
 	percpu_putref(ipsec_rtcache_percpu);
-#ifndef NET_MPSAFE
-	KERNEL_UNLOCK_ONE(NULL);
-#endif
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 
 	return rv;
 }
 
 int
-ipsec_process_done(struct mbuf *m, struct ipsecrequest *isr,
+ipsec_process_done(struct mbuf *m, const struct ipsecrequest *isr,
     struct secasvar *sav)
 {
 	struct secasindex *saidx;
@@ -283,6 +279,76 @@ bad:
 	return (error);
 }
 
+static void
+ipsec_fill_saidx_bymbuf(struct secasindex *saidx, const struct mbuf *m,
+    const int af)
+{
+
+	if (af == AF_INET) {
+		struct sockaddr_in *sin;
+		struct ip *ip = mtod(m, struct ip *);
+
+		if (saidx->src.sa.sa_len == 0) {
+			sin = &saidx->src.sin;
+			sin->sin_len = sizeof(*sin);
+			sin->sin_family = AF_INET;
+			sin->sin_port = IPSEC_PORT_ANY;
+			sin->sin_addr = ip->ip_src;
+		}
+		if (saidx->dst.sa.sa_len == 0) {
+			sin = &saidx->dst.sin;
+			sin->sin_len = sizeof(*sin);
+			sin->sin_family = AF_INET;
+			sin->sin_port = IPSEC_PORT_ANY;
+			sin->sin_addr = ip->ip_dst;
+		}
+	} else {
+		struct sockaddr_in6 *sin6;
+		struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
+
+		if (saidx->src.sin6.sin6_len == 0) {
+			sin6 = (struct sockaddr_in6 *)&saidx->src;
+			sin6->sin6_len = sizeof(*sin6);
+			sin6->sin6_family = AF_INET6;
+			sin6->sin6_port = IPSEC_PORT_ANY;
+			sin6->sin6_addr = ip6->ip6_src;
+			if (IN6_IS_SCOPE_LINKLOCAL(&ip6->ip6_src)) {
+				/* fix scope id for comparing SPD */
+				sin6->sin6_addr.s6_addr16[1] = 0;
+				sin6->sin6_scope_id =
+				    ntohs(ip6->ip6_src.s6_addr16[1]);
+			}
+		}
+		if (saidx->dst.sin6.sin6_len == 0) {
+			sin6 = (struct sockaddr_in6 *)&saidx->dst;
+			sin6->sin6_len = sizeof(*sin6);
+			sin6->sin6_family = AF_INET6;
+			sin6->sin6_port = IPSEC_PORT_ANY;
+			sin6->sin6_addr = ip6->ip6_dst;
+			if (IN6_IS_SCOPE_LINKLOCAL(&ip6->ip6_dst)) {
+				/* fix scope id for comparing SPD */
+				sin6->sin6_addr.s6_addr16[1] = 0;
+				sin6->sin6_scope_id =
+				    ntohs(ip6->ip6_dst.s6_addr16[1]);
+			}
+		}
+	}
+}
+
+struct secasvar *
+ipsec_lookup_sa(const struct ipsecrequest *isr, const struct mbuf *m)
+{
+	struct secasindex saidx;
+
+	saidx = isr->saidx;
+	if (isr->saidx.mode == IPSEC_MODE_TRANSPORT) {
+		/* Fillin unspecified SA peers only for transport mode */
+		ipsec_fill_saidx_bymbuf(&saidx, m, isr->saidx.dst.sa.sa_family);
+	}
+
+	return key_lookup_sa_bysaidx(&saidx);
+}
+
 /*
  * ipsec_nextisr can return :
  * - isr == NULL and error != 0 => something is bad : the packet must be
@@ -291,10 +357,10 @@ bad:
  *   is done, reinject it in ip stack
  * - isr != NULL (error == 0) => we need to apply one rule to the packet
  */
-static struct ipsecrequest *
+static const struct ipsecrequest *
 ipsec_nextisr(
 	struct mbuf *m,
-	struct ipsecrequest *isr,
+	const struct ipsecrequest *isr,
 	int af,
 	int *error,
 	struct secasvar **ret
@@ -316,7 +382,7 @@ do {									\
 } while (/*CONSTCOND*/0)
 
 	struct secasvar *sav = NULL;
-	struct secasindex *saidx;
+	struct secasindex saidx;
 
 	IPSEC_SPLASSERT_SOFTNET("ipsec_nextisr");
 	KASSERTMSG(af == AF_INET || af == AF_INET6,
@@ -327,64 +393,16 @@ again:
 	 * we only fillin unspecified SA peers for transport
 	 * mode; for tunnel mode they must already be filled in.
 	 */
-	saidx = &isr->saidx;
+	saidx = isr->saidx;
 	if (isr->saidx.mode == IPSEC_MODE_TRANSPORT) {
 		/* Fillin unspecified SA peers only for transport mode */
-		if (af == AF_INET) {
-			struct sockaddr_in *sin;
-			struct ip *ip = mtod(m, struct ip *);
-
-			if (saidx->src.sa.sa_len == 0) {
-				sin = &saidx->src.sin;
-				sin->sin_len = sizeof(*sin);
-				sin->sin_family = AF_INET;
-				sin->sin_port = IPSEC_PORT_ANY;
-				sin->sin_addr = ip->ip_src;
-			}
-			if (saidx->dst.sa.sa_len == 0) {
-				sin = &saidx->dst.sin;
-				sin->sin_len = sizeof(*sin);
-				sin->sin_family = AF_INET;
-				sin->sin_port = IPSEC_PORT_ANY;
-				sin->sin_addr = ip->ip_dst;
-			}
-		} else {
-			struct sockaddr_in6 *sin6;
-			struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
-
-			if (saidx->src.sin6.sin6_len == 0) {
-				sin6 = (struct sockaddr_in6 *)&saidx->src;
-				sin6->sin6_len = sizeof(*sin6);
-				sin6->sin6_family = AF_INET6;
-				sin6->sin6_port = IPSEC_PORT_ANY;
-				sin6->sin6_addr = ip6->ip6_src;
-				if (IN6_IS_SCOPE_LINKLOCAL(&ip6->ip6_src)) {
-					/* fix scope id for comparing SPD */
-					sin6->sin6_addr.s6_addr16[1] = 0;
-					sin6->sin6_scope_id =
-					    ntohs(ip6->ip6_src.s6_addr16[1]);
-				}
-			}
-			if (saidx->dst.sin6.sin6_len == 0) {
-				sin6 = (struct sockaddr_in6 *)&saidx->dst;
-				sin6->sin6_len = sizeof(*sin6);
-				sin6->sin6_family = AF_INET6;
-				sin6->sin6_port = IPSEC_PORT_ANY;
-				sin6->sin6_addr = ip6->ip6_dst;
-				if (IN6_IS_SCOPE_LINKLOCAL(&ip6->ip6_dst)) {
-					/* fix scope id for comparing SPD */
-					sin6->sin6_addr.s6_addr16[1] = 0;
-					sin6->sin6_scope_id =
-					    ntohs(ip6->ip6_dst.s6_addr16[1]);
-				}
-			}
-		}
+		ipsec_fill_saidx_bymbuf(&saidx, m, af);
 	}
 
 	/*
 	 * Lookup SA and validate it.
 	 */
-	*error = key_checkrequest(isr, &sav);
+	*error = key_checkrequest(isr, &saidx, &sav);
 	if (*error != 0) {
 		/*
 		 * IPsec processing is required, but no SA found.
@@ -446,7 +464,7 @@ bad:
  * IPsec output logic for IPv4.
  */
 int
-ipsec4_process_packet(struct mbuf *m, struct ipsecrequest *isr,
+ipsec4_process_packet(struct mbuf *m, const struct ipsecrequest *isr,
     u_long *mtu)
 {
 	struct secasvar *sav = NULL;
@@ -698,7 +716,7 @@ in6_sa_equal_addrwithscope(const struct sockaddr_in6 *sa, const struct in6_addr 
 int
 ipsec6_process_packet(
 	struct mbuf *m,
- 	struct ipsecrequest *isr
+ 	const struct ipsecrequest *isr
     )
 {
 	struct secasvar *sav = NULL;

@@ -1,4 +1,4 @@
-$NetBSD: TODO.smpnet,v 1.13 2017/08/10 09:26:55 ozaki-r Exp $
+$NetBSD: TODO.smpnet,v 1.18 2017/12/05 03:23:29 ozaki-r Exp $
 
 MP-safe components
 ==================
@@ -51,6 +51,7 @@ Non MP-safe components and kernel options
    - MROUTING
    - PIM
    - MPLS (mpls(4))
+   - IPv6 address selection policy
  - Layer 4
    - DCCP
    - SCTP
@@ -83,6 +84,14 @@ Non MP-safe components and kernel options
 
 Know issues
 ===========
+
+NOMPSAFE
+--------
+
+We use "NOMPSAFE" as a mark that indicates that the code around it isn't MP-safe
+yet.  We use it in comments and also use as part of function names, for example
+m_get_rcvif_NOMPSAFE.  Let's use "NOMPSAFE" to make it easy to find non-MP-safe
+codes by grep.
 
 bpf
 ---
@@ -153,3 +162,23 @@ Scalability
    flows per CPU
  - ipsec(4) isn't scalable on the number of SA/SP; the cost of a look-up
    is O(n)
+ - opencrypto(9)'s crypto_newsession()/crypto_freesession() aren't scalable
+   as they are serialized by one mutex
+
+ec_multi* of ethercom
+---------------------
+
+ec_multiaddrs and ec_multicnt of struct ethercom and items listed in
+ec_multiaddrs must be protected by ec_lock.  The core of ethernet subsystem is
+already MP-safe, however, device drivers that use the data should also be fixed.
+A typical change should be to protect manipulations of the data via ETHER_*
+macros such as ETHER_FIRST_MULTI by ETHER_LOCK and ETHER_UNLOCK.
+
+ALTQ
+----
+
+If ALTQ is enabled in the kernel, it enforces to use just one Tx queue (if_snd)
+for packet transmissions, resulting in serializing all Tx packet processing on
+the queue.  We should probably design and implement an alternative queuing
+mechanism that deals with multi-core systems at the first place, not making the
+existing ALTQ MP-safe because it's just annoying.

@@ -103,12 +103,17 @@ struct priv {
 	struct iovec sndrcv_iov[1];
 };
 
+/* We need this to send a broadcast for InfiniBand.
+ * Our old code used sendto, but our new code writes to a raw BPF socket.
+ * What header structure does IPoIB use? */
+#if 0
 /* Broadcast address for IPoIB */
 static const uint8_t ipv4_bcast_addr[] = {
 	0x00, 0xff, 0xff, 0xff,
 	0xff, 0x12, 0x40, 0x1b, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff
 };
+#endif
 
 #define PROC_INET6	"/proc/net/if_inet6"
 #define PROC_PROMOTE	"/proc/sys/net/ipv4/conf/%s/promote_secondaries"
@@ -1216,6 +1221,16 @@ if_route(unsigned char cmd, const struct rt *rt)
 	} else {
 		/* Address generated routes are RTPROT_KERNEL,
 		 * otherwise RTPROT_BOOT */
+#ifdef RTPROT_RA
+		if (rt->rt_dflags & RTDF_RA)
+			nlm.rt.rtm_protocol = RTPROT_RA;
+		else
+#endif
+#ifdef RTPROT_DHCP
+		if (rt->rt_dflags & RTDF_DHCP)
+			nlm.rt.rtm_protocol = RTPROT_DHCP;
+		else
+#endif
 		if (rt->rt_dflags & RTDF_IFA_ROUTE)
 			nlm.rt.rtm_protocol = RTPROT_KERNEL;
 		else
@@ -1361,8 +1376,10 @@ bpf_open(struct interface *ifp, int (*filter)(struct interface *, int))
 	return s;
 
 eexit:
-	free(state->buffer);
-	state->buffer = NULL;
+	if (state != NULL) {
+		free(state->buffer);
+		state->buffer = NULL;
+	}
 	close(s);
 	return -1;
 }
@@ -1370,7 +1387,8 @@ eexit:
 /* BPF requires that we read the entire buffer.
  * So we pass the buffer in the API so we can loop on >1 packet. */
 ssize_t
-bpf_read(struct interface *ifp, int s, void *data, size_t len, int *flags)
+bpf_read(struct interface *ifp, int s, void *data, size_t len,
+    unsigned int *flags)
 {
 	ssize_t bytes;
 	struct ipv4_state *state = IPV4_STATE(ifp);
@@ -1394,7 +1412,8 @@ bpf_read(struct interface *ifp, int s, void *data, size_t len, int *flags)
 	bytes = recvmsg(s, &msg, 0);
 	if (bytes == -1)
 		return -1;
-	*flags = BPF_EOF; /* We only ever read one packet. */
+	*flags |= BPF_EOF; /* We only ever read one packet. */
+	*flags &= ~BPF_PARTIALCSUM;
 	if (bytes) {
 		ssize_t fl = (ssize_t)bpf_frame_header_len(ifp);
 

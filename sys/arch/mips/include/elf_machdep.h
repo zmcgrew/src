@@ -1,4 +1,4 @@
-/*	$NetBSD: elf_machdep.h,v 1.18 2013/05/23 21:39:49 christos Exp $	*/
+/*	$NetBSD: elf_machdep.h,v 1.20 2017/11/06 19:17:43 christos Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -29,8 +29,10 @@
 #define	_MIPS_ELF_MACHDEP_H_
 
 #ifdef _LP64
+#define	KERN_ELFSIZE		64
 #define	ARCH_ELFSIZE		64	/* MD native binary size */
 #else
+#define	KERN_ELFSIZE		32
 #define	ARCH_ELFSIZE		32	/* MD native binary size */
 #endif
 

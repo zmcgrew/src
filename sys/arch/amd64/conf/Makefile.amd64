@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.amd64,v 1.58 2017/08/09 19:11:13 maxv Exp $
+#	$NetBSD: Makefile.amd64,v 1.64 2017/11/15 18:02:37 maxv Exp $
 
 # Makefile for NetBSD
 #
@@ -61,9 +61,14 @@ KERN_AS=	library
 ## (5) link settings
 ##
 TEXTADDR?=	0xffffffff80200000
+.if defined(KASLR)
+EXTRA_LINKFLAGS=	--split-by-file=0x100000 -r -d
+KERNLDSCRIPT?= ${AMD64}/conf/kern.ldscript.kaslr
+.else
 EXTRA_LINKFLAGS=	-z max-page-size=0x200000
-LINKFLAGS_NORMAL=	-X
 KERNLDSCRIPT?= ${AMD64}/conf/kern.ldscript
+.endif
+LINKFLAGS_NORMAL=	-X
 
 ##
 ## (6) port specific target dependencies
@@ -73,7 +78,7 @@ KERNLDSCRIPT?= ${AMD64}/conf/kern.ldscript
 locore.o machdep.o: Makefile
 
 acpi_wakeup_low.o amd64func.o busfunc.o cpufunc.o cpu_in_cksum.o: assym.h
-linux32_sigcode.o lock_stubs.o mptramp.o: assym.h
+linux_sigcode.o linux32_sigcode.o lock_stubs.o mptramp.o: assym.h
 netbsd32_sigcode.o: assym.h
 
 ##

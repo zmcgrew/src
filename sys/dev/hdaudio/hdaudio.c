@@ -1,4 +1,4 @@
-/* $NetBSD: hdaudio.c,v 1.5 2017/06/04 23:34:55 pgoyette Exp $ */
+/* $NetBSD: hdaudio.c,v 1.8 2017/11/24 17:51:10 jmcneill Exp $ */
 
 /*
  * Copyright (c) 2009 Precedence Technologies Ltd <support@precedence.co.uk>
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hdaudio.c,v 1.5 2017/06/04 23:34:55 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hdaudio.c,v 1.8 2017/11/24 17:51:10 jmcneill Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -347,6 +347,9 @@ hdaudio_command_unlocked(struct hdaudio_codec *co, int nid, uint32_t control,
 	hdaudio_corb_enqueue(sc, co->co_addr, nid, control, param);
 	result = hdaudio_rirb_dequeue(sc, false);
 
+	/* Clear response interrupt status */
+	hda_write1(sc, HDAUDIO_MMIO_RIRBSTS, hda_read1(sc, HDAUDIO_MMIO_RIRBSTS));
+
 	return result;
 }
 
@@ -428,10 +431,10 @@ hdaudio_corb_stop(struct hdaudio_softc *sc)
 	corbctl = hda_read1(sc, HDAUDIO_MMIO_CORBCTL);
 	if (corbctl & HDAUDIO_CORBCTL_RUN) {
 		corbctl &= ~HDAUDIO_CORBCTL_RUN;
-		hda_write4(sc, HDAUDIO_MMIO_CORBCTL, corbctl);
+		hda_write1(sc, HDAUDIO_MMIO_CORBCTL, corbctl);
 		do {
 			hda_delay(10);
-			corbctl = hda_read4(sc, HDAUDIO_MMIO_CORBCTL);
+			corbctl = hda_read1(sc, HDAUDIO_MMIO_CORBCTL);
 		} while (--retry > 0 && (corbctl & HDAUDIO_CORBCTL_RUN) != 0);
 		if (retry == 0) {
 			hda_error(sc, "timeout stopping CORB\n");
@@ -452,10 +455,10 @@ hdaudio_corb_start(struct hdaudio_softc *sc)
 	corbctl = hda_read1(sc, HDAUDIO_MMIO_CORBCTL);
 	if ((corbctl & HDAUDIO_CORBCTL_RUN) == 0) {
 		corbctl |= HDAUDIO_CORBCTL_RUN;
-		hda_write4(sc, HDAUDIO_MMIO_CORBCTL, corbctl);
+		hda_write1(sc, HDAUDIO_MMIO_CORBCTL, corbctl);
 		do {
 			hda_delay(10);
-			corbctl = hda_read4(sc, HDAUDIO_MMIO_CORBCTL);
+			corbctl = hda_read1(sc, HDAUDIO_MMIO_CORBCTL);
 		} while (--retry > 0 && (corbctl & HDAUDIO_CORBCTL_RUN) == 0);
 		if (retry == 0) {
 			hda_error(sc, "timeout starting CORB\n");
@@ -497,20 +500,21 @@ hdaudio_rirb_start(struct hdaudio_softc *sc)
 	uint8_t rirbctl;
 	int retry = HDAUDIO_RIRB_TIMEOUT;
 
-	/* Start the RIRB if necessary */
+	/* Set the RIRB interrupt count */
+	hda_write2(sc, HDAUDIO_MMIO_RINTCNT, 1);
+
+	/* Start the RIRB */
 	rirbctl = hda_read1(sc, HDAUDIO_MMIO_RIRBCTL);
-	if ((rirbctl & (HDAUDIO_RIRBCTL_RUN|HDAUDIO_RIRBCTL_INT_EN)) == 0) {
-		rirbctl |= HDAUDIO_RIRBCTL_RUN;
-		rirbctl |= HDAUDIO_RIRBCTL_INT_EN;
-		hda_write1(sc, HDAUDIO_MMIO_RIRBCTL, rirbctl);
-		do {
-			hda_delay(10);
-			rirbctl = hda_read1(sc, HDAUDIO_MMIO_RIRBCTL);
-		} while (--retry > 0 && (rirbctl & HDAUDIO_RIRBCTL_RUN) == 0);
-		if (retry == 0) {
-			hda_error(sc, "timeout starting RIRB\n");
-			return ETIME;
-		}
+	rirbctl |= HDAUDIO_RIRBCTL_RUN;
+	rirbctl |= HDAUDIO_RIRBCTL_INT_EN;
+	hda_write1(sc, HDAUDIO_MMIO_RIRBCTL, rirbctl);
+	do {
+		hda_delay(10);
+		rirbctl = hda_read1(sc, HDAUDIO_MMIO_RIRBCTL);
+	} while (--retry > 0 && (rirbctl & HDAUDIO_RIRBCTL_RUN) == 0);
+	if (retry == 0) {
+		hda_error(sc, "timeout starting RIRB\n");
+		return ETIME;
 	}
 
 	return 0;
@@ -558,8 +562,6 @@ static int
 hdaudio_rirb_config(struct hdaudio_softc *sc)
 {
 	uint32_t rirbubase, rirblbase;
-	uint32_t rirbwp;
-	int retry = HDAUDIO_RIRB_TIMEOUT;
 
 	/* Program command buffer base address and size */
 	rirblbase = (uint32_t)DMA_DMAADDR(&sc->sc_rirb);
@@ -570,15 +572,6 @@ hdaudio_rirb_config(struct hdaudio_softc *sc)
 
 	/* Clear the write pointer */
 	hda_write2(sc, HDAUDIO_MMIO_RIRBWP, HDAUDIO_RIRBWP_WP_RESET);
-	hda_write2(sc, HDAUDIO_MMIO_RIRBWP, 0);
-	do {
-		hda_delay(10);
-		rirbwp = hda_read2(sc, HDAUDIO_MMIO_RIRBWP);
-	} while (--retry > 0 && (rirbwp & HDAUDIO_RIRBWP_WP_RESET) != 0);
-	if (retry == 0) {
-		hda_error(sc, "timeout resetting RIRB\n");
-		return ETIME;
-	}
 	sc->sc_rirbrp = 0;
 
 	return 0;
@@ -612,20 +605,20 @@ hdaudio_reset(struct hdaudio_softc *sc)
 	hda_write1(sc, HDAUDIO_MMIO_RIRBSTS,
 	    hda_read1(sc, HDAUDIO_MMIO_RIRBSTS));
 
-	/* If the controller isn't in reset state, initiate the transition */
+	/* Put the controller into reset state */
 	gctl = hda_read4(sc, HDAUDIO_MMIO_GCTL);
-	if (gctl & HDAUDIO_GCTL_CRST) {
-		gctl &= ~HDAUDIO_GCTL_CRST;
-		hda_write4(sc, HDAUDIO_MMIO_GCTL, gctl);
-		do {
-			hda_delay(10);
-			gctl = hda_read4(sc, HDAUDIO_MMIO_GCTL);
-		} while (--retry > 0 && (gctl & HDAUDIO_GCTL_CRST) != 0);
-		if (retry == 0) {
-			hda_error(sc, "timeout entering reset state\n");
-			return ETIME;
-		}
+	gctl &= ~HDAUDIO_GCTL_CRST;
+	hda_write4(sc, HDAUDIO_MMIO_GCTL, gctl);
+	do {
+		hda_delay(10);
+		gctl = hda_read4(sc, HDAUDIO_MMIO_GCTL);
+	} while (--retry > 0 && (gctl & HDAUDIO_GCTL_CRST) != 0);
+	if (retry == 0) {
+		hda_error(sc, "timeout entering reset state\n");
+		return ETIME;
 	}
+
+	hda_delay(1000);
 
 	/* Now the controller is in reset state, so bring it out */
 	retry = HDAUDIO_RESET_TIMEOUT;
@@ -638,6 +631,8 @@ hdaudio_reset(struct hdaudio_softc *sc)
 		hda_error(sc, "timeout leaving reset state\n");
 		return ETIME;
 	}
+
+	hda_delay(2000);
 
 	/* Accept unsolicited responses */
 	hda_write4(sc, HDAUDIO_MMIO_GCTL, gctl | HDAUDIO_GCTL_UNSOL_EN);

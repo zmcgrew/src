@@ -1,4 +1,4 @@
-/*	$NetBSD: ataconf.h,v 1.3 2009/02/13 22:41:04 apb Exp $	*/
+/*	$NetBSD: ataconf.h,v 1.5 2017/10/10 17:19:38 jdolecek Exp $	*/
 
 /*
  * Written in 2006 by ITOH Yasufumi.

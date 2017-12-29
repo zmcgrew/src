@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.248 2017/06/22 09:53:25 ozaki-r Exp $	*/
+/*	$NetBSD: in6.c,v 1.256 2017/12/25 04:41:49 ozaki-r Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.248 2017/06/22 09:53:25 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.256 2017/12/25 04:41:49 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -767,13 +767,9 @@ in6_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 	}
 
 	s = splsoftnet();
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-#endif
+	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
 	error = in6_control1(so , cmd, data, ifp);
-#ifndef NET_MPSAFE
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 	splx(s);
 	return error;
 }
@@ -1191,7 +1187,7 @@ in6_update_ifa1(struct ifnet *ifp, struct in6_aliasreq *ifra,
 				error = EINVAL;
 				if (hostIsNew)
 					free(ia, M_IFADDR);
-				goto exit;
+				return error;
 			}
 
 			if (!IN6_ARE_ADDR_EQUAL(&ia->ia_prefixmask.sin6_addr,
@@ -1262,29 +1258,35 @@ in6_update_ifa1(struct ifnet *ifp, struct in6_aliasreq *ifra,
 		 */
 		ifaref(&ia->ia_ifa);
 	}
+
+	/* Must execute in6_ifinit and ifa_insert atomically */
+	mutex_enter(&in6_ifaddr_lock);
+
 	/* reset the interface and routing table appropriately. */
 	error = in6_ifinit(ifp, ia, &ifra->ifra_addr, hostIsNew);
 	if (error != 0) {
 		if (hostIsNew)
 			free(ia, M_IFADDR);
-		goto exit;
+		mutex_exit(&in6_ifaddr_lock);
+		return error;
 	}
 
 	/*
 	 * We are done if we have simply modified an existing address.
 	 */
-	if (!hostIsNew)
+	if (!hostIsNew) {
+		mutex_exit(&in6_ifaddr_lock);
 		return error;
+	}
 
 	/*
 	 * Insert ia to the global list and ifa to the interface's list.
 	 * A reference to it is already gained above.
 	 */
-	mutex_enter(&in6_ifaddr_lock);
 	IN6_ADDRLIST_WRITER_INSERT_TAIL(ia);
-	mutex_exit(&in6_ifaddr_lock);
-
 	ifa_insert(ifp, &ia->ia_ifa);
+
+	mutex_exit(&in6_ifaddr_lock);
 
 	/*
 	 * Beyond this point, we should call in6_purgeaddr upon an error,
@@ -1361,7 +1363,6 @@ in6_update_ifa1(struct ifnet *ifp, struct in6_aliasreq *ifra,
 
   cleanup:
 	in6_purgeaddr(&ia->ia_ifa);
-  exit:
 	return error;
 }
 
@@ -1383,7 +1384,8 @@ in6_purgeaddr(struct ifaddr *ifa)
 	struct in6_ifaddr *ia = (struct in6_ifaddr *) ifa;
 	struct in6_multi_mship *imm;
 
-	KASSERT(!ifa_held(ifa));
+	/* KASSERT(!ifa_held(ifa)); XXX need ifa_not_held (psref_not_held) */
+	KASSERT(IFNET_LOCKED(ifp));
 
 	ifa->ifa_flags |= IFA_DESTROYING;
 
@@ -1399,12 +1401,14 @@ in6_purgeaddr(struct ifaddr *ifa)
 	/*
 	 * leave from multicast groups we have joined for the interface
 	 */
+    again:
 	mutex_enter(&in6_ifaddr_lock);
 	while ((imm = LIST_FIRST(&ia->ia6_memberships)) != NULL) {
 		LIST_REMOVE(imm, i6mm_chain);
 		mutex_exit(&in6_ifaddr_lock);
+		KASSERT(imm->i6mm_maddr->in6m_ifp == ifp);
 		in6_leavegroup(imm);
-		mutex_enter(&in6_ifaddr_lock);
+		goto again;
 	}
 	mutex_exit(&in6_ifaddr_lock);
 
@@ -1455,7 +1459,9 @@ void
 in6_purgeif(struct ifnet *ifp)
 {
 
+	IFNET_LOCK(ifp);
 	in6_ifdetach(ifp);
+	IFNET_UNLOCK(ifp);
 }
 
 void
@@ -1760,28 +1766,30 @@ in6_ifinit(struct ifnet *ifp, struct in6_ifaddr *ia,
 	const struct sockaddr_in6 *sin6, int newhost)
 {
 	int	error = 0, ifacount = 0;
-	int	s = splsoftnet();
+	int s;
 	struct ifaddr *ifa;
+
+	KASSERT(mutex_owned(&in6_ifaddr_lock));
 
 	/*
 	 * Give the interface a chance to initialize
 	 * if this is its first address,
 	 * and to validate the address if necessary.
 	 */
+	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, ifp) {
 		if (ifa->ifa_addr->sa_family != AF_INET6)
 			continue;
 		ifacount++;
 	}
+	pserialize_read_exit(s);
 
 	ia->ia_addr = *sin6;
 
-	if (ifacount <= 0 &&
+	if (ifacount == 0 &&
 	    (error = if_addr_init(ifp, &ia->ia_ifa, true)) != 0) {
-		splx(s);
 		return error;
 	}
-	splx(s);
 
 	ia->ia_ifa.ifa_metric = ifp->if_metric;
 
@@ -2458,17 +2466,11 @@ in6_lltable_free_entry(struct lltable *llt, struct llentry *lle)
 }
 
 static int
-in6_lltable_rtcheck(struct ifnet *ifp,
-		    u_int flags,
-		    const struct sockaddr *l3addr)
+in6_lltable_rtcheck(struct ifnet *ifp, u_int flags,
+    const struct sockaddr *l3addr, const struct rtentry *rt)
 {
-	struct rtentry *rt;
 	char ip6buf[INET6_ADDRSTRLEN];
 
-	KASSERTMSG(l3addr->sa_family == AF_INET6,
-	    "sin_family %d", l3addr->sa_family);
-
-	rt = rtalloc1(l3addr, 0);
 	if (rt == NULL || (rt->rt_flags & RTF_GATEWAY) || rt->rt_ifp != ifp) {
 		int s;
 		struct ifaddr *ifa;
@@ -2481,19 +2483,14 @@ in6_lltable_rtcheck(struct ifnet *ifp,
 		ifa = ifaof_ifpforaddr(l3addr, ifp);
 		if (ifa != NULL) {
 			pserialize_read_exit(s);
-			if (rt != NULL)
-				rt_unref(rt);
 			return 0;
 		}
 		pserialize_read_exit(s);
 		log(LOG_INFO, "IPv6 address: \"%s\" is not on the network\n",
 		    IN6_PRINT(ip6buf,
 		    &((const struct sockaddr_in6 *)l3addr)->sin6_addr));
-		if (rt != NULL)
-			rt_unref(rt);
 		return EINVAL;
 	}
-	rt_unref(rt);
 	return 0;
 }
 
@@ -2585,7 +2582,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 
 static struct llentry *
 in6_lltable_create(struct lltable *llt, u_int flags,
-	const struct sockaddr *l3addr)
+    const struct sockaddr *l3addr, const struct rtentry *rt)
 {
 	const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)l3addr;
 	struct ifnet *ifp = llt->llt_ifp;
@@ -2608,7 +2605,7 @@ in6_lltable_create(struct lltable *llt, u_int flags,
 	 * verify this.
 	 */
 	if (!(flags & LLE_IFADDR) &&
-	    in6_lltable_rtcheck(ifp, flags, l3addr) != 0)
+	    in6_lltable_rtcheck(ifp, flags, l3addr, rt) != 0)
 		return NULL;
 
 	lle = in6_lltable_new(&sin6->sin6_addr, flags);
@@ -2720,13 +2717,9 @@ in6_domifdetach(struct ifnet *ifp, void *aux)
 
 	lltable_free(ext->lltable);
 	ext->lltable = NULL;
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-#endif
+	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
 	nd6_ifdetach(ifp, ext);
-#ifndef NET_MPSAFE
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 	free(ext->in6_ifstat, M_IFADDR);
 	free(ext->icmp6_ifstat, M_IFADDR);
 	scope6_ifdetach(ext->scope6_id);

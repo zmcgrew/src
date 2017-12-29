@@ -1,4 +1,4 @@
-/*	$NetBSD: regcomp.c,v 1.5 2014/01/26 21:47:00 christos Exp $ */
+/*	$NetBSD: regcomp.c,v 1.7 2017/11/12 16:33:31 christos Exp $ */
 /*-
  * Copyright (c) 1992, 1993, 1994 Henry Spencer.
  * Copyright (c) 1992, 1993, 1994
@@ -44,7 +44,7 @@
 static char sccsid[] = "@(#)regcomp.c	8.4 (Berkeley) 3/19/94";
 #endif /* LIBC_SCCS and not lint */
 #else
-__RCSID("$NetBSD: regcomp.c,v 1.5 2014/01/26 21:47:00 christos Exp $");
+__RCSID("$NetBSD: regcomp.c,v 1.7 2017/11/12 16:33:31 christos Exp $");
 #endif
 
 #include <sys/types.h>
@@ -98,7 +98,7 @@ static void p_b_cclass __P((struct parse *p, cset *cs));
 static void p_b_eclass __P((struct parse *p, cset *cs));
 static char p_b_symbol __P((struct parse *p));
 static char p_b_coll_elem __P((struct parse *p, int endc));
-static char othercase __P((int ch));
+static RCHAR_T othercase __P((int ch));
 static void bothcases __P((struct parse *p, int ch));
 static void ordinary __P((struct parse *p, int ch));
 static void nonnewline __P((struct parse *p));
@@ -752,7 +752,7 @@ p_bracket(struct parse *p)
 		int ci;
 
 		for (i = p->g->csetsize - 1; i >= 0; i--)
-			if (CHIN(cs, i) && isalpha(i)) {
+			if (CHIN(cs, i) && ISALPHA2(i)) {
 				ci = othercase(i);
 				if (ci != i)
 					CHadd(cs, ci);
@@ -860,7 +860,7 @@ p_b_cclass(struct parse *p, cset *cs)
 	const char *u;
 	char c;
 
-	while (MORE() && isalpha(PEEK()))
+	while (MORE() && ISALPHA2(PEEK()))
 		NEXT();
 	len = p->next - sp;
 	for (cp = cclasses; cp->name != NULL; cp++)
@@ -946,14 +946,14 @@ p_b_coll_elem(struct parse *p, int endc)
  - othercase - return the case counterpart of an alphabetic
  == static char othercase(int ch);
  */
-static char			/* if no counterpart, return ch */
+static RCHAR_T			/* if no counterpart, return ch */
 othercase(int ch)
 {
-	assert(isalpha(ch));
-	if (isupper(ch))
-		return(tolower(ch));
-	else if (islower(ch))
-		return(toupper(ch));
+	assert(ISALPHA2(ch));
+	if (ISUPPER(ch))
+		return(TOLOWER(ch));
+	else if (ISLOWER(ch))
+		return(TOUPPER(ch));
 	else			/* peculiar, but could happen */
 		return(ch);
 }
@@ -994,7 +994,7 @@ ordinary(struct parse *p, int ch)
 	cat_t *cap = p->g->categories;
 */
 
-	if ((p->g->cflags&REG_ICASE) && isalpha(ch) && othercase(ch) != ch)
+	if ((p->g->cflags&REG_ICASE) && ISALPHA2(ch) && othercase(ch) != ch)
 		bothcases(p, ch);
 	else {
 		EMIT(OCHAR, (UCHAR_T)ch);

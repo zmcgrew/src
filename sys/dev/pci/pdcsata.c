@@ -1,4 +1,4 @@
-/*	$NetBSD: pdcsata.c,v 1.27 2014/03/29 19:28:25 christos Exp $	*/
+/*	$NetBSD: pdcsata.c,v 1.29 2017/10/20 07:06:08 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2004, Manuel Bouyer.
@@ -25,10 +25,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pdcsata.c,v 1.27 2014/03/29 19:28:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pdcsata.c,v 1.29 2017/10/20 07:06:08 jdolecek Exp $");
 
 #include <sys/types.h>
-#include <sys/malloc.h>
 #include <sys/param.h>
 #include <sys/systm.h>
 
@@ -375,15 +374,7 @@ pdcsata_chip_map(struct pciide_softc *sc, const struct pci_attach_args *pa)
 		cp->name = NULL;
 		cp->ata_channel.ch_channel = channel;
 		cp->ata_channel.ch_atac = &sc->sc_wdcdev.sc_atac;
-		cp->ata_channel.ch_queue =
-		    malloc(sizeof(struct ata_queue), M_DEVBUF, M_NOWAIT);
-		if (cp->ata_channel.ch_queue == NULL) {
-			aprint_error("%s channel %d: "
-			    "can't allocate memory for command queue\n",
-			    device_xname(sc->sc_wdcdev.sc_atac.atac_dev),
-			    channel);
-			goto next_channel;
-		}
+
 		wdc_cp = &cp->ata_channel;
 		wdr = CHAN_TO_WDC_REGS(wdc_cp);
 
@@ -406,7 +397,7 @@ pdcsata_chip_map(struct pciide_softc *sc, const struct pci_attach_args *pa)
 				goto next_channel;
 			}
 		}
-		wdc_init_shadow_regs(wdc_cp);
+		wdc_init_shadow_regs(wdr);
 
 		/*
 		 * subregion de busmaster registers. They're spread all over

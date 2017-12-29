@@ -1,4 +1,4 @@
-/*	$NetBSD: defs.h,v 1.99 2017/06/16 00:10:09 christos Exp $	*/
+/*	$NetBSD: defs.h,v 1.102 2017/11/27 00:25:46 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -107,7 +107,7 @@ extern const char *progname;
  * The next two lines define the current version of the config(1) binary,
  * and the minimum version of the configuration files it supports.
  */
-#define CONFIG_VERSION		20170615
+#define CONFIG_VERSION		20171118
 #define CONFIG_MINVERSION	0
 
 /*
@@ -236,6 +236,7 @@ struct pspec {
 	struct	nvlist *p_devs;		/* children using it */
 	int	p_inst;			/* parent spec instance */
 	int	p_active;		/* parent spec is actively used */
+	int	p_ref;			/* refcount */
 };
 
 /*
@@ -264,6 +265,8 @@ struct pspec {
 struct devbase {
 	const char *d_name;		/* e.g., "sd" */
 	TAILQ_ENTRY(devbase) d_next;
+	int 	d_level;
+	struct devbase *d_levelparent;
 	int	d_isdef;		/* set once properly defined */
 	int	d_ispseudo;		/* is a pseudo-device */
 	devmajor_t d_major;		/* used for "root on sd0", e.g. */

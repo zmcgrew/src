@@ -1,8 +1,8 @@
-#	$NetBSD: list,v 1.20 2017/02/08 16:12:59 rin Exp $
+#	$NetBSD: list,v 1.22 2017/11/25 09:40:17 tsutsui Exp $
 
 PROG	bin/cat
 PROG	bin/chmod
-#PROG	bin/cp
+PROG	bin/cp
 PROG	bin/dd
 PROG	bin/df
 PROG	bin/ln
@@ -25,6 +25,7 @@ PROG	sbin/mknod
 PROG	sbin/mount
 PROG	sbin/mount_cd9660
 PROG	sbin/mount_ffs
+PROG	sbin/mount_kernfs
 PROG	sbin/mount_msdos
 PROG	sbin/mount_nfs
 PROG	sbin/newfs	sbin/mount_mfs

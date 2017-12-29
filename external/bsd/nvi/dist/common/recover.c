@@ -1,4 +1,4 @@
-/*	$NetBSD: recover.c,v 1.5 2014/01/26 21:43:45 christos Exp $ */
+/*	$NetBSD: recover.c,v 1.11 2017/11/10 20:01:11 christos Exp $ */
 /*-
  * Copyright (c) 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -16,12 +16,13 @@
 static const char sccsid[] = "Id: recover.c,v 10.31 2001/11/01 15:24:44 skimo Exp  (Berkeley) Date: 2001/11/01 15:24:44 ";
 #endif /* not lint */
 #else
-__RCSID("$NetBSD: recover.c,v 1.5 2014/01/26 21:43:45 christos Exp $");
+__RCSID("$NetBSD: recover.c,v 1.11 2017/11/10 20:01:11 christos Exp $");
 #endif
 
 #include <sys/param.h>
 #include <sys/types.h>		/* XXX: param.h may not have included types.h */
 #include <sys/queue.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 
 /*
@@ -115,17 +116,21 @@ __RCSID("$NetBSD: recover.c,v 1.5 2014/01/26 21:43:45 christos Exp $");
 #define	VI_FHEADER	"X-vi-recover-file: "
 #define	VI_PHEADER	"X-vi-recover-path: "
 
-static int	 rcv_copy __P((SCR *, int, char *));
-static void	 rcv_email __P((SCR *, char *));
-static char	*rcv_gets __P((char *, size_t, int));
-static int	 rcv_mailfile __P((SCR *, int, char *));
-static int	 rcv_mktemp __P((SCR *, char *, const char *, int));
+static int	 rcv_copy(SCR *, int, char *);
+static void	 rcv_email(SCR *, int fd);
+static char	*rcv_gets(char *, size_t, int);
+static int	 rcv_mailfile(SCR *, int, char *);
+static int	 rcv_mktemp(SCR *, char *, const char *, int);
+
+#ifndef O_REGULAR
+#define O_REGULAR O_NONBLOCK
+#endif
 
 /*
  * rcv_tmp --
  *	Build a file name that will be used as the recovery file.
  *
- * PUBLIC: int rcv_tmp __P((SCR *, EXF *, char *));
+ * PUBLIC: int rcv_tmp(SCR *, EXF *, char *);
  */
 int
 rcv_tmp(SCR *sp, EXF *ep, char *name)
@@ -186,7 +191,7 @@ err:		msgq(sp, M_ERR,
  * rcv_init --
  *	Force the file to be snapshotted for recovery.
  *
- * PUBLIC: int rcv_init __P((SCR *));
+ * PUBLIC: int rcv_init(SCR *);
  */
 int
 rcv_init(SCR *sp)
@@ -248,7 +253,7 @@ err:	msgq(sp, M_ERR,
  *		sending email to the user if the file was modified
  *		ending the file session
  *
- * PUBLIC: int rcv_sync __P((SCR *, u_int));
+ * PUBLIC: int rcv_sync(SCR *, u_int);
  */
 int
 rcv_sync(SCR *sp, u_int flags)
@@ -286,7 +291,7 @@ rcv_sync(SCR *sp, u_int flags)
 
 		/* REQUEST: send email. */
 		if (LF_ISSET(RCV_EMAIL))
-			rcv_email(sp, ep->rcv_mpath);
+			rcv_email(sp, ep->rcv_fd);
 	}
 
 	/*
@@ -466,7 +471,7 @@ wout:		*t2++ = '\n';
 	}
 
 	if (issync) {
-		rcv_email(sp, mpath);
+		rcv_email(sp, fd);
 		if (close(fd)) {
 werr:			msgq(sp, M_SYSERR, "065|Recovery file");
 			goto err;
@@ -482,6 +487,27 @@ err:	if (!issync)
 }
 
 /*
+ * Since vi creates recovery files only accessible by the user, files
+ * accessible by group or others are probably malicious so avoid them.
+ * This is simpler than checking for getuid() == st.st_uid and we want
+ * to preserve the functionality that root can recover anything which
+ * means that root should know better and be careful.
+ *
+ * Checking the mode is racy though (someone can chmod between the
+ * open and the stat call, so also check for uid match or root.
+ */
+static int
+checkok(int fd)
+{
+	struct stat sb;
+	uid_t uid = getuid();
+
+	return fstat(fd, &sb) != -1 && S_ISREG(sb.st_mode) &&
+	    (sb.st_mode & (S_IRWXG|S_IRWXO)) == 0 &&
+	    (uid == 0 || uid == sb.st_uid);
+}
+
+/*
  *	people making love
  *	never exactly the same
  *	just like a snowflake
@@ -489,7 +515,7 @@ err:	if (!issync)
  * rcv_list --
  *	List the files that can be recovered by this user.
  *
- * PUBLIC: int rcv_list __P((SCR *));
+ * PUBLIC: int rcv_list(SCR *);
  */
 int
 rcv_list(SCR *sp)
@@ -525,8 +551,13 @@ rcv_list(SCR *sp)
 		 * if we're using fcntl(2), there's no way to lock a file
 		 * descriptor that's not open for writing.
 		 */
-		if ((fp = fopen(dp->d_name, "r+")) == NULL)
+		if ((fp = fopen(dp->d_name, "r+efl")) == NULL)
 			continue;
+
+		if (!checkok(fileno(fp))) {
+			(void)fclose(fp);
+			continue;
+		}
 
 		switch (file_lock(sp, NULL, NULL, fileno(fp), 1)) {
 		case LOCK_FAILED:
@@ -593,7 +624,7 @@ next:		(void)fclose(fp);
  * rcv_read --
  *	Start a recovered file as the file to edit.
  *
- * PUBLIC: int rcv_read __P((SCR *, FREF *));
+ * PUBLIC: int rcv_read(SCR *, FREF *);
  */
 int
 rcv_read(SCR *sp, FREF *frp)
@@ -638,8 +669,14 @@ rcv_read(SCR *sp, FREF *frp)
 		 * if we're using fcntl(2), there's no way to lock a file
 		 * descriptor that's not open for writing.
 		 */
-		if ((fd = open(recpath, O_RDWR, 0)) == -1)
+		if ((fd = open(recpath, O_RDWR|O_REGULAR|O_NOFOLLOW|O_CLOEXEC,
+		    0)) == -1)
 			continue;
+
+		if (!checkok(fd)) {
+			(void)close(fd);
+			continue;
+		}
 
 		switch (file_lock(sp, NULL, NULL, fd, 1)) {
 		case LOCK_FAILED:
@@ -849,24 +886,44 @@ rcv_mktemp(SCR *sp, char *path, const char *dname, int perms)
  *	Send email.
  */
 static void
-rcv_email(SCR *sp, char *fname)
+rcv_email(SCR *sp, int fd)
 {
 	struct stat sb;
-	char buf[MAXPATHLEN * 2 + 20];
+	pid_t pid;
 
-	if (_PATH_SENDMAIL[0] != '/' || stat(_PATH_SENDMAIL, &sb))
+	if (_PATH_SENDMAIL[0] != '/' || stat(_PATH_SENDMAIL, &sb) == -1) {
 		msgq_str(sp, M_SYSERR,
 		    _PATH_SENDMAIL, "071|not sending email: %s");
-	else {
-		/*
-		 * !!!
-		 * If you need to port this to a system that doesn't have
-		 * sendmail, the -t flag causes sendmail to read the message
-		 * for the recipients instead of specifying them some other
-		 * way.
-		 */
-		(void)snprintf(buf, sizeof(buf),
-		    "%s -t < %s", _PATH_SENDMAIL, fname);
-		(void)system(buf);
+		return;
 	}
+
+	/*
+	 * !!!
+	 * If you need to port this to a system that doesn't have
+	 * sendmail, the -t flag causes sendmail to read the message
+	 * for the recipients instead of specifying them some other
+	 * way.
+	 */
+	switch (pid = fork()) {
+	case -1:                /* Error. */
+		msgq(sp, M_SYSERR, "fork");
+		break;
+	case 0:                 /* Sendmail. */
+		if (lseek(fd, 0, SEEK_SET) == -1) {
+			msgq(sp, M_SYSERR, "lseek");
+			_exit(127);
+		}
+		if (fd != STDIN_FILENO) {
+			(void)dup2(fd, STDIN_FILENO);
+			(void)close(fd);
+		}
+		execl(_PATH_SENDMAIL, "sendmail", "-t", NULL);
+		msgq(sp, M_SYSERR, _PATH_SENDMAIL);
+		_exit(127);
+	default:                /* Parent. */
+		while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
+			continue;
+		break;
+	}
+
 }

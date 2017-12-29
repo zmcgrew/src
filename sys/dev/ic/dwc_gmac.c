@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac.c,v 1.40 2017/02/20 07:43:29 ozaki-r Exp $ */
+/* $NetBSD: dwc_gmac.c,v 1.45 2017/12/21 12:09:43 martin Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.40 2017/02/20 07:43:29 ozaki-r Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.45 2017/12/21 12:09:43 martin Exp $");
 
 /* #define	DWC_GMAC_DEBUG	1 */
 
@@ -146,6 +146,7 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 	struct mii_data * const mii = &sc->sc_mii;
 	struct ifnet * const ifp = &sc->sc_ec.ec_if;
 	prop_dictionary_t dict;
+	int rv;
 
 	mutex_init(&sc->sc_mdio_lock, MUTEX_DEFAULT, IPL_NET);
 	sc->sc_mii_clk = mii_clk & 7;
@@ -222,7 +223,9 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 	ifp->if_softc = sc;
 	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	ifp->if_extflags = IFEF_START_MPSAFE;
+#ifdef DWCGMAC_MPSAFE
+	ifp->if_extflags = IFEF_MPSAFE;
+#endif
 	ifp->if_ioctl = dwc_gmac_ioctl;
 	ifp->if_start = dwc_gmac_start;
 	ifp->if_init = dwc_gmac_init;
@@ -259,7 +262,9 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 	 * Ready, attach interface
 	 */
 	/* Attach the interface. */
-	if_initialize(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0)
+		goto fail_2;
 	sc->sc_ipq = if_percpuq_create(&sc->sc_ec.ec_if);
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
@@ -277,10 +282,17 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 	mutex_exit(sc->sc_lock);
 
 	return;
-
+fail_2:
+	ifmedia_removeall(&mii->mii_media);
+	mii_detach(mii, MII_PHY_ANY, MII_OFFSET_ANY);
+	mutex_destroy(&sc->sc_txq.t_mtx);
+	mutex_destroy(&sc->sc_rxq.r_mtx);
+	mutex_obj_free(sc->sc_lock);
 fail:
 	dwc_gmac_free_rx_ring(sc, &sc->sc_rxq);
 	dwc_gmac_free_tx_ring(sc, &sc->sc_txq);
+	dwc_gmac_free_dma_rings(sc);
+	mutex_destroy(&sc->sc_mdio_lock);
 }
 
 
@@ -826,7 +838,9 @@ static void
 dwc_gmac_start(struct ifnet *ifp)
 {
 	struct dwc_gmac_softc *sc = ifp->if_softc;
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+#ifdef DWCGMAC_MPSAFE
+	KASSERT(if_is_mpsafe(ifp));
+#endif
 
 	mutex_enter(sc->sc_lock);
 	if (!sc->sc_stopping) {

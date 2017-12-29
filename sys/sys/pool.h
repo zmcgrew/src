@@ -1,4 +1,4 @@
-/*	$NetBSD: pool.h,v 1.79 2015/07/29 00:10:25 christos Exp $	*/
+/*	$NetBSD: pool.h,v 1.82 2017/12/16 03:13:29 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2000, 2007 The NetBSD Foundation, Inc.
@@ -147,6 +147,8 @@ struct pool {
 #define PR_NOTOUCH	0x400	/* don't use free items to keep internal state*/
 #define PR_NOALIGN	0x800	/* don't assume backend alignment */
 #define	PR_LARGECACHE	0x1000	/* use large cache groups */
+#define	PR_GROWING	0x2000	/* pool_grow in progress */
+#define	PR_GROWINGNOWAIT 0x4000	/* pool_grow in progress by PR_NOWAIT alloc */
 
 	/*
 	 * `pr_lock' protects the pool's data structures when removing
@@ -306,6 +308,7 @@ void		pool_setlowat(struct pool *, int);
 void		pool_sethiwat(struct pool *, int);
 void		pool_sethardlimit(struct pool *, int, const char *, int);
 bool		pool_drain(struct pool **);
+int		pool_totalpages(void);
 
 /*
  * Debugging and diagnostic aides.

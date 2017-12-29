@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock.c,v 1.227 2017/07/01 16:59:12 christos Exp $	*/
+/*	$NetBSD: rtsock.c,v 1.236 2017/12/18 05:35:36 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.227 2017/07/01 16:59:12 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.236 2017/12/18 05:35:36 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -184,6 +184,11 @@ struct routecb {
 };
 #define sotoroutecb(so)	((struct routecb *)(so)->so_pcb)
 
+static struct rawcbhead rt_rawcb;
+#ifdef NET_MPSAFE
+static kmutex_t *rt_so_mtx;
+#endif
+
 static void
 rt_adjustcount(int af, int cnt)
 {
@@ -239,6 +244,13 @@ COMPATNAME(route_filter)(struct mbuf *m, struct sockproto *proto,
 	return 0;
 }
 
+static void
+rt_pr_init(void)
+{
+
+	LIST_INIT(&rt_rawcb);
+}
+
 static int
 COMPATNAME(route_attach)(struct socket *so, int proto)
 {
@@ -253,7 +265,15 @@ COMPATNAME(route_attach)(struct socket *so, int proto)
 	so->so_pcb = rp;
 
 	s = splsoftnet();
-	if ((error = raw_attach(so, proto)) == 0) {
+
+#ifdef NET_MPSAFE
+	KASSERT(so->so_lock == NULL);
+	mutex_obj_hold(rt_so_mtx);
+	so->so_lock = rt_so_mtx;
+	solock(so);
+#endif
+
+	if ((error = raw_attach(so, proto, &rt_rawcb)) == 0) {
 		rt_adjustcount(rp->rcb_proto.sp_protocol, 1);
 		rp->rcb_laddr = &COMPATNAME(route_info).ri_src;
 		rp->rcb_faddr = &COMPATNAME(route_info).ri_dst;
@@ -588,7 +608,7 @@ route_output_report(struct rtentry *rt, struct rt_addrinfo *info,
 
 static struct ifaddr *
 route_output_get_ifa(const struct rt_addrinfo info, const struct rtentry *rt,
-    struct ifnet **ifp, struct psref *psref)
+    struct ifnet **ifp, struct psref *psref_ifp, struct psref *psref)
 {
 	struct ifaddr *ifa = NULL;
 
@@ -598,9 +618,11 @@ route_output_get_ifa(const struct rt_addrinfo info, const struct rtentry *rt,
 		if (ifa == NULL)
 			goto next;
 		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
 		if (info.rti_info[RTAX_IFA] == NULL &&
 		    info.rti_info[RTAX_GATEWAY] == NULL)
 			goto next;
+		ifa_release(ifa, psref);
 		if (info.rti_info[RTAX_IFA] == NULL) {
 			/* route change <dst> <gw> -ifp <if> */
 			ifa = ifaof_ifpforaddr_psref(info.rti_info[RTAX_GATEWAY],
@@ -628,8 +650,14 @@ next:
 		    info.rti_info[RTAX_GATEWAY], psref);
 	}
 out:
-	if (ifa != NULL && *ifp == NULL)
+	if (ifa != NULL && *ifp == NULL) {
 		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
+	}
+	if (ifa == NULL && *ifp != NULL) {
+		if_put(*ifp, psref_ifp);
+		*ifp = NULL;
+	}
 	return ifa;
 }
 
@@ -638,9 +666,9 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
     struct rt_xmsghdr *rtm)
 {
 	int error = 0;
-	struct ifnet *ifp = NULL, *new_ifp;
+	struct ifnet *ifp = NULL, *new_ifp = NULL;
 	struct ifaddr *ifa = NULL, *new_ifa;
-	struct psref psref_ifa, psref_new_ifa, psref_ifp;
+	struct psref psref_ifa, psref_new_ifa, psref_ifp, psref_new_ifp;
 	bool newgw, ifp_changed = false;
 
 	/*
@@ -654,6 +682,7 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	if (newgw || info->rti_info[RTAX_IFP] != NULL ||
 	    info->rti_info[RTAX_IFA] != NULL) {
 		ifp = rt_getifp(info, &psref_ifp);
+		/* info refers ifp so we need to keep a reference */
 		ifa = rt_getifa(info, &psref_ifa);
 		if (ifa == NULL) {
 			error = ENETUNREACH;
@@ -678,7 +707,8 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	 * flags may also be different; ifp may be specified
 	 * by ll sockaddr when protocol address is ambiguous
 	 */
-	new_ifa = route_output_get_ifa(*info, rt, &new_ifp, &psref_new_ifa);
+	new_ifa = route_output_get_ifa(*info, rt, &new_ifp, &psref_new_ifp,
+	    &psref_new_ifa);
 	if (new_ifa != NULL) {
 		ifa_release(ifa, &psref_ifa);
 		ifa = new_ifa;
@@ -716,6 +746,7 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	(void)ifp_changed; /* XXX gcc */
 #endif
 out:
+	if_put(new_ifp, &psref_new_ifp);
 	if_put(ifp, &psref_ifp);
 
 	return error;
@@ -801,8 +832,13 @@ COMPATNAME(route_output)(struct mbuf *m, struct socket *so)
 	 * (padded with 0's). We keep the original length of the sockaddr.
 	 */
 	if (info.rti_info[RTAX_NETMASK]) {
+		/*
+		 * Use the family of RTAX_DST, because RTAX_NETMASK
+		 * can have a zero family if it comes from the radix
+		 * tree via rt_mask().
+		 */
 		socklen_t sa_len = sockaddr_getsize_by_family(
-		    info.rti_info[RTAX_NETMASK]->sa_family);
+		    info.rti_info[RTAX_DST]->sa_family);
 		socklen_t masklen = sockaddr_getlen(
 		    info.rti_info[RTAX_NETMASK]);
 		if (sa_len != 0 && sa_len > masklen) {
@@ -1045,7 +1081,7 @@ flush:
 		proto.sp_protocol = family;
 	if (m)
 		raw_input(m, &proto, &COMPATNAME(route_info).ri_src,
-		    &COMPATNAME(route_info).ri_dst);
+		    &COMPATNAME(route_info).ri_dst, &rt_rawcb);
 	if (rp)
 		rp->rcb_proto.sp_family = PF_XROUTE;
     }
@@ -2018,8 +2054,7 @@ COMPATNAME(route_intr)(void *cookie)
 	struct route_info * const ri = &COMPATNAME(route_info);
 	struct mbuf *m;
 
-	mutex_enter(softnet_lock);
-	KERNEL_LOCK(1, NULL);
+	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	for (;;) {
 		IFQ_LOCK(&ri->ri_intrq);
 		IF_DEQUEUE(&ri->ri_intrq, m);
@@ -2027,10 +2062,15 @@ COMPATNAME(route_intr)(void *cookie)
 		if (m == NULL)
 			break;
 		proto.sp_protocol = M_GETCTX(m, uintptr_t);
-		raw_input(m, &proto, &ri->ri_src, &ri->ri_dst);
+#ifdef NET_MPSAFE
+		mutex_enter(rt_so_mtx);
+#endif
+		raw_input(m, &proto, &ri->ri_src, &ri->ri_dst, &rt_rawcb);
+#ifdef NET_MPSAFE
+		mutex_exit(rt_so_mtx);
+#endif
 	}
-	KERNEL_UNLOCK_ONE(NULL);
-	mutex_exit(softnet_lock);
+	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 /*
@@ -2067,6 +2107,9 @@ COMPATNAME(route_init)(void)
 
 #ifndef COMPAT_RTSOCK
 	rt_init();
+#endif
+#ifdef NET_MPSAFE
+	rt_so_mtx = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
 #endif
 
 	sysctl_net_route_setup(NULL);
@@ -2116,7 +2159,7 @@ static const struct protosw COMPATNAME(route_protosw)[] = {
 		.pr_ctlinput = raw_ctlinput,
 		.pr_ctloutput = route_ctloutput,
 		.pr_usrreqs = &route_usrreqs,
-		.pr_init = raw_init,
+		.pr_init = rt_pr_init,
 	},
 };
 

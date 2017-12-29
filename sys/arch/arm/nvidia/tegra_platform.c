@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_platform.c,v 1.7 2017/07/20 01:46:15 jmcneill Exp $ */
+/* $NetBSD: tegra_platform.c,v 1.9 2017/12/19 09:04:18 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.7 2017/07/20 01:46:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.9 2017/12/19 09:04:18 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -62,18 +62,6 @@ __KERNEL_RCSID(0, "$NetBSD: tegra_platform.c,v 1.7 2017/07/20 01:46:15 jmcneill 
 
 #define	PLLP_OUT0_FREQ	408000000
 
-#define	DEVMAP_ALIGN(a)	((a) & ~L1_S_OFFSET)
-#define	DEVMAP_SIZE(s)	roundup2((s), L1_S_SIZE)
-#define	DEVMAP_ENTRY(va, pa, sz)			\
-	{						\
-		.pd_va = DEVMAP_ALIGN(va),		\
-		.pd_pa = DEVMAP_ALIGN(pa),		\
-		.pd_size = DEVMAP_SIZE(sz),		\
-		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
-		.pd_cache = PTE_NOCACHE			\
-	}
-#define	DEVMAP_ENTRY_END	{ 0 }
-
 static const struct pmap_devmap *
 tegra_platform_devmap(void)
 {
@@ -91,7 +79,7 @@ tegra_platform_devmap(void)
 			     TEGRA_AHB_A2_BASE,
 			     TEGRA_AHB_A2_SIZE),
 		DEVMAP_ENTRY_END
-	};	
+	};
 
 	return devmap;
 }

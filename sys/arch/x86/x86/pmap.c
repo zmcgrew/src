@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.257 2017/09/12 01:01:25 mrg Exp $	*/
+/*	$NetBSD: pmap.c,v 1.270 2017/12/28 14:34:39 maxv Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -51,7 +51,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
 /*
@@ -171,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.257 2017/09/12 01:01:25 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.270 2017/12/28 14:34:39 maxv Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -369,6 +368,8 @@ static bool cpu_pat_enabled __read_mostly = false;
 static struct pmap kernel_pmap_store;	/* the kernel's pmap (proc0) */
 struct pmap *const kernel_pmap_ptr = &kernel_pmap_store;
 
+struct bootspace bootspace __read_mostly;
+
 /*
  * pmap_pg_nx: if our processor supports PG_NX in the PTE then we
  * set pmap_pg_nx to PG_NX (otherwise it is zero).
@@ -494,6 +495,13 @@ static struct pool_cache pmap_cache;
  */
 static struct pool_cache pmap_pv_cache;
 
+#ifdef __HAVE_DIRECT_MAP
+vaddr_t pmap_direct_base __read_mostly;
+vaddr_t pmap_direct_end __read_mostly;
+size_t pmap_direct_pdpe __read_mostly;
+size_t pmap_direct_npdp __read_mostly;
+#endif
+
 #ifndef __HAVE_DIRECT_MAP
 /*
  * Special VAs and the PTEs that map them
@@ -547,6 +555,7 @@ static void pmap_init_directmap(struct pmap *);
 #endif
 #ifndef XEN
 static void pmap_init_lapic(void);
+static void pmap_remap_global(void);
 static void pmap_remap_largepages(void);
 #endif
 
@@ -1208,10 +1217,6 @@ pmap_bootstrap(vaddr_t kva_start)
 	struct pmap *kpm;
 	int i;
 	vaddr_t kva;
-#ifndef XEN
-	unsigned long p1i;
-	vaddr_t kva_end;
-#endif
 
 	pmap_pg_nx = (cpu_feature[2] & CPUID_NOX ? PG_NX : 0);
 
@@ -1255,7 +1260,7 @@ pmap_bootstrap(vaddr_t kva_start)
 	}
 	memset(&kpm->pm_list, 0, sizeof(kpm->pm_list));  /* pm_list not used */
 
-	kpm->pm_pdir = (pd_entry_t *)(PDPpaddr + KERNBASE);
+	kpm->pm_pdir = (pd_entry_t *)bootspace.pdir;
 	for (i = 0; i < PDP_SIZE; i++)
 		kpm->pm_pdirpa[i] = PDPpaddr + PAGE_SIZE * i;
 
@@ -1285,21 +1290,7 @@ pmap_bootstrap(vaddr_t kva_start)
 		pmap_pg_g = PG_G;		/* enable software */
 
 		/* add PG_G attribute to already mapped kernel pages */
-
-		if (KERNBASE == VM_MIN_KERNEL_ADDRESS) {
-			/* i386 only */
-			kva_end = virtual_avail;
-		} else {
-			/* amd64 only */
-			extern vaddr_t kern_end;
-			kva_end = kern_end;
-		}
-
-		for (kva = KERNBASE; kva < kva_end; kva += PAGE_SIZE) {
-			p1i = pl1_i(kva);
-			if (pmap_valid_entry(PTE_BASE[p1i]))
-				PTE_BASE[p1i] |= PG_G;
-		}
+		pmap_remap_global();
 	}
 
 	/*
@@ -1341,7 +1332,7 @@ pmap_bootstrap(vaddr_t kva_start)
 #ifdef XEN
 		/* early_zerop initialized in xen_locore() */
 #else
-		early_zerop = (void *)(KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2);
+		early_zerop = (void *)bootspace.spareva;
 #endif
 		early_zero_pte = PTE_BASE + pl1_i((vaddr_t)early_zerop);
 	}
@@ -1434,8 +1425,19 @@ pmap_init_lapic(void)
 #endif
 
 #ifdef __HAVE_DIRECT_MAP
+static size_t
+pmap_dmap_nentries_range(vaddr_t startva, vaddr_t endva, size_t pgsz)
+{
+	size_t npages;
+	npages = (roundup(endva, pgsz) / pgsz) -
+	    (rounddown(startva, pgsz) / pgsz);
+	return npages;
+}
+
 /*
- * Create the amd64 direct map. Called only once at boot time.
+ * Create the amd64 direct map. Called only once at boot time. We map all of
+ * the physical memory contiguously using 2MB large pages, with RW permissions.
+ * However there is a hole: the kernel is mapped with RO permissions.
  */
 static void
 pmap_init_directmap(struct pmap *kpm)
@@ -1443,18 +1445,24 @@ pmap_init_directmap(struct pmap *kpm)
 	extern phys_ram_seg_t mem_clusters[];
 	extern int mem_cluster_cnt;
 
-	paddr_t lastpa, L2page_pa, L3page_pa, pdp;
+	const vaddr_t startva = PMAP_DIRECT_DEFAULT_BASE;
+	size_t nL4e, nL3e, nL2e;
+	size_t L4e_idx, L3e_idx, L2e_idx;
+	size_t spahole, epahole;
+	paddr_t lastpa, pa;
+	vaddr_t endva;
 	vaddr_t tmpva;
 	pt_entry_t *pte;
-	pd_entry_t *pde;
 	phys_ram_seg_t *mc;
-	size_t nL4e, nL3e, nL2e;
-	size_t pn, npd;
-	int i, n;
+	int i;
 
 	const pd_entry_t pteflags = PG_V | PG_KW | pmap_pg_nx;
+	const pd_entry_t holepteflags = PG_V | pmap_pg_nx;
 
 	CTASSERT(NL4_SLOT_DIRECT * NBPD_L4 == MAXPHYSMEM);
+
+	spahole = roundup(bootspace.head.pa, NBPD_L2);
+	epahole = rounddown(bootspace.boot.pa, NBPD_L2);
 
 	/* Get the last physical address available */
 	lastpa = 0;
@@ -1469,94 +1477,63 @@ pmap_init_directmap(struct pmap *kpm)
 	if (lastpa > MAXPHYSMEM) {
 		panic("pmap_init_directmap: lastpa incorrect");
 	}
+	endva = startva + lastpa;
 
-	/* In locore.S, we allocated a tmp va. We will use it now. */
-	tmpva = (KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2);
+	/* We will use this temporary va. */
+	tmpva = bootspace.spareva;
 	pte = PTE_BASE + pl1_i(tmpva);
 
-	/* Number of L4 entries. */
-	nL4e = (lastpa + NBPD_L4 - 1) >> L4_SHIFT;
+	/* Build L4 */
+	L4e_idx = pl4_i(startva);
+	nL4e = pmap_dmap_nentries_range(startva, endva, NBPD_L4);
 	KASSERT(nL4e <= NL4_SLOT_DIRECT);
-
-	/* Allocate L3, and zero it out. */
-	L3page_pa = pmap_bootstrap_palloc(nL4e);
 	for (i = 0; i < nL4e; i++) {
-		pdp = L3page_pa + i * PAGE_SIZE;
-		*pte = (pdp & PG_FRAME) | pteflags;
+		KASSERT(L4_BASE[L4e_idx+i] == 0);
+
+		pa = pmap_bootstrap_palloc(1);
+		*pte = (pa & PG_FRAME) | pteflags;
 		pmap_update_pg(tmpva);
 		memset((void *)tmpva, 0, PAGE_SIZE);
+
+		L4_BASE[L4e_idx+i] = pa | pteflags | PG_U;
 	}
 
-	/* Number of L3 entries. */
-	nL3e = (lastpa + NBPD_L3 - 1) >> L3_SHIFT;
+	/* Build L3 */
+	L3e_idx = pl3_i(startva);
+	nL3e = pmap_dmap_nentries_range(startva, endva, NBPD_L3);
+	for (i = 0; i < nL3e; i++) {
+		KASSERT(L3_BASE[L3e_idx+i] == 0);
 
-	/*
-	 * Map the direct map RW. Use super pages (1GB) or large pages (2MB) if
-	 * they are supported. Note: PG_G is not allowed on non-leaf PTPs.
-	 */
-	if (cpu_feature[2] & CPUID_P1GB) {
-		/* Super pages are supported. Just create L3. */
-		for (i = 0; i < nL3e; i++) {
-			pdp = (paddr_t)&(((pd_entry_t *)L3page_pa)[i]);
-			*pte = (pdp & PG_FRAME) | pteflags;
-			pmap_update_pg(tmpva);
+		pa = pmap_bootstrap_palloc(1);
+		*pte = (pa & PG_FRAME) | pteflags;
+		pmap_update_pg(tmpva);
+		memset((void *)tmpva, 0, PAGE_SIZE);
 
-			pde = (pd_entry_t *)(tmpva + (pdp & ~PG_FRAME));
-			*pde = ((paddr_t)i << L3_SHIFT) | pteflags | PG_U |
-			    PG_PS | PG_G;
-		}
-	} else {
-		/* Allocate L2. */
-		L2page_pa = pmap_bootstrap_palloc(nL3e);
-
-		/* Number of L2 entries. */
-		nL2e = (lastpa + NBPD_L2 - 1) >> L2_SHIFT;
-
-		KASSERT(pmap_largepages != 0);
-
-		/* Large pages are supported. Just create L2. */
-		for (i = 0; i < nL3e; i++) {
-			pdp = L2page_pa + i * PAGE_SIZE;
-			*pte = (pdp & PG_FRAME) | pteflags;
-			pmap_update_pg(tmpva);
-
-			memset((void *)tmpva, 0, PAGE_SIZE);
-
-			pde = (pd_entry_t *)tmpva;
-			npd = ((i == nL3e - 1) && (nL2e % NPDPG != 0)) ?
-			    (nL2e % NPDPG) : NPDPG;
-			for (n = 0; n < npd; n++) {
-				pn = (i * NPDPG) + n;
-				pde[n] = ((paddr_t)pn << L2_SHIFT) | pteflags |
-					PG_U | PG_PS | PG_G;
-			}
-		}
-
-		/* Fill in the L3 entries, linked to L2. */
-		for (i = 0; i < nL4e; i++) {
-			pdp = L3page_pa + i * PAGE_SIZE;
-			*pte = (pdp & PG_FRAME) | pteflags;
-			pmap_update_pg(tmpva);
-
-			pde = (pd_entry_t *)tmpva;
-			npd = ((i == nL4e - 1) && (nL3e % NPDPG != 0)) ?
-			    (nL3e % NPDPG) : NPDPG;
-			for (n = 0; n < npd; n++) {
-				pn = (i * NPDPG) + n;
-				pde[n] = (L2page_pa + (pn << PAGE_SHIFT)) |
-				    pteflags | PG_U;
-			}
-		}
+		L3_BASE[L3e_idx+i] = pa | pteflags | PG_U;
 	}
 
-	/* Fill in the L4 entries, linked to L3. */
-	for (i = 0; i < nL4e; i++) {
-		kpm->pm_pdir[PDIR_SLOT_DIRECT + i] =
-		    (L3page_pa + (i << PAGE_SHIFT)) | pteflags | PG_U;
+	/* Build L2 */
+	L2e_idx = pl2_i(startva);
+	nL2e = pmap_dmap_nentries_range(startva, endva, NBPD_L2);
+	for (i = 0; i < nL2e; i++) {
+		KASSERT(L2_BASE[L2e_idx+i] == 0);
+
+		pa = (paddr_t)(i * NBPD_L2);
+
+		if (spahole <= pa && pa < epahole) {
+			L2_BASE[L2e_idx+i] = pa | holepteflags | PG_U | PG_PS;
+		} else {
+			L2_BASE[L2e_idx+i] = pa | pteflags | PG_U | PG_PS;
+		}
 	}
 
 	*pte = 0;
 	pmap_update_pg(tmpva);
+
+	pmap_direct_base = startva;
+	pmap_direct_end = endva;
+	pmap_direct_pdpe = L4e_idx;
+	pmap_direct_npdp = nL4e;
 
 	tlbflush();
 }
@@ -1564,53 +1541,106 @@ pmap_init_directmap(struct pmap *kpm)
 
 #ifndef XEN
 /*
+ * Remap all of the virtual pages created so far with the PG_G bit.
+ */
+static void
+pmap_remap_global(void)
+{
+	vaddr_t kva, kva_end;
+	unsigned long p1i;
+	size_t i;
+
+	/* head */
+	kva = bootspace.head.va;
+	kva_end = kva + bootspace.head.sz;
+	for ( ; kva < kva_end; kva += PAGE_SIZE) {
+		p1i = pl1_i(kva);
+		if (pmap_valid_entry(PTE_BASE[p1i]))
+			PTE_BASE[p1i] |= PG_G;
+	}
+
+	/* kernel segments */
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		if (bootspace.segs[i].type == BTSEG_NONE) {
+			continue;
+		}
+		kva = bootspace.segs[i].va;
+		kva_end = kva + bootspace.segs[i].sz;
+		for ( ; kva < kva_end; kva += PAGE_SIZE) {
+			p1i = pl1_i(kva);
+			if (pmap_valid_entry(PTE_BASE[p1i]))
+				PTE_BASE[p1i] |= PG_G;
+		}
+	}
+
+	/* boot space */
+	kva = bootspace.boot.va;
+	kva_end = kva + bootspace.boot.sz;
+	for ( ; kva < kva_end; kva += PAGE_SIZE) {
+		p1i = pl1_i(kva);
+		if (pmap_valid_entry(PTE_BASE[p1i]))
+			PTE_BASE[p1i] |= PG_G;
+	}
+}
+
+/*
  * Remap several kernel segments with large pages. We cover as many pages as we
  * can. Called only once at boot time, if the CPU supports large pages.
  */
 static void
 pmap_remap_largepages(void)
 {
-	extern char __rodata_start;
-	extern char __data_start;
-	extern char __kernel_end;
 	pd_entry_t *pde;
 	vaddr_t kva, kva_end;
 	paddr_t pa;
+	size_t i;
 
 	/* Remap the kernel text using large pages. */
-	kva = rounddown((vaddr_t)KERNTEXTOFF, NBPD_L2);
-	kva_end = rounddown((vaddr_t)&__rodata_start, NBPD_L1);
-	pa = kva - KERNBASE;
-	for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
-		pde = &L2_BASE[pl2_i(kva)];
-		*pde = pa | pmap_pg_g | PG_PS | PG_KR | PG_V;
-		tlbflushg();
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		if (bootspace.segs[i].type != BTSEG_TEXT) {
+			continue;
+		}
+		kva = roundup(bootspace.segs[i].va, NBPD_L2);
+		kva_end = rounddown(bootspace.segs[i].va +
+			bootspace.segs[i].sz, NBPD_L1);
+		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
+		for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
+			pde = &L2_BASE[pl2_i(kva)];
+			*pde = pa | pmap_pg_g | PG_PS | PG_KR | PG_V;
+			tlbflushg();
+		}
 	}
-#if defined(DEBUG)
-	aprint_normal("kernel text is mapped with %" PRIuPSIZE " large "
-	    "pages and %" PRIuPSIZE " normal pages\n",
-	    howmany(kva - KERNBASE, NBPD_L2),
-	    howmany((vaddr_t)&__rodata_start - kva, NBPD_L1));
-#endif /* defined(DEBUG) */
 
 	/* Remap the kernel rodata using large pages. */
-	kva = roundup((vaddr_t)&__rodata_start, NBPD_L2);
-	kva_end = rounddown((vaddr_t)&__data_start, NBPD_L1);
-	pa = kva - KERNBASE;
-	for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
-		pde = &L2_BASE[pl2_i(kva)];
-		*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_KR | PG_V;
-		tlbflushg();
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		if (bootspace.segs[i].type != BTSEG_RODATA) {
+			continue;
+		}
+		kva = roundup(bootspace.segs[i].va, NBPD_L2);
+		kva_end = rounddown(bootspace.segs[i].va +
+			bootspace.segs[i].sz, NBPD_L1);
+		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
+		for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
+			pde = &L2_BASE[pl2_i(kva)];
+			*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_KR | PG_V;
+			tlbflushg();
+		}
 	}
 
 	/* Remap the kernel data+bss using large pages. */
-	kva = roundup((vaddr_t)&__data_start, NBPD_L2);
-	kva_end = rounddown((vaddr_t)&__kernel_end, NBPD_L1);
-	pa = kva - KERNBASE;
-	for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
-		pde = &L2_BASE[pl2_i(kva)];
-		*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_KW | PG_V;
-		tlbflushg();
+	for (i = 0; i < BTSPACE_NSEGS; i++) {
+		if (bootspace.segs[i].type != BTSEG_DATA) {
+			continue;
+		}
+		kva = roundup(bootspace.segs[i].va, NBPD_L2);
+		kva_end = rounddown(bootspace.segs[i].va +
+			bootspace.segs[i].sz, NBPD_L1);
+		pa = roundup(bootspace.segs[i].pa, NBPD_L2);
+		for (/* */; kva + NBPD_L2 <= kva_end; kva += NBPD_L2, pa += NBPD_L2) {
+			pde = &L2_BASE[pl2_i(kva)];
+			*pde = pa | pmap_pg_g | PG_PS | pmap_pg_nx | PG_KW | PG_V;
+			tlbflushg();
+		}
 	}
 }
 #endif /* !XEN */
@@ -1752,6 +1782,20 @@ pmap_vpage_cpu_init(struct cpu_info *ci)
 /*
  * p v _ e n t r y   f u n c t i o n s
  */
+
+static bool
+pmap_pp_needs_pve(struct pmap_page *pp)
+{
+
+	/*
+	 * Adding a pv entry for this page only needs to allocate a pv_entry
+	 * structure if the page already has at least one pv entry,
+	 * since the first pv entry is stored in the pmap_page.
+	 */
+
+	return pp && ((pp->pp_flags & PP_EMBEDDED) != 0 ||
+	    !LIST_EMPTY(&pp->pp_head.pvh_list));
+}
 
 /*
  * pmap_free_pvs: free a list of pv_entrys
@@ -2181,8 +2225,8 @@ pmap_pdp_ctor(void *arg, void *v, int flags)
 	}
 
 #ifdef __HAVE_DIRECT_MAP
-	memcpy(&pdir[PDIR_SLOT_DIRECT], &PDP_BASE[PDIR_SLOT_DIRECT],
-	    NL4_SLOT_DIRECT * sizeof(pd_entry_t));
+	memcpy(&pdir[pmap_direct_pdpe], &PDP_BASE[pmap_direct_pdpe],
+	    pmap_direct_npdp * sizeof(pd_entry_t));
 #endif
 #endif /* XEN  && __x86_64__*/
 
@@ -4122,15 +4166,20 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 		new_pp = NULL;
 	}
 
-	/* get pves. */
-	new_pve = pool_cache_get(&pmap_pv_cache, PR_NOWAIT);
-	new_sparepve = pool_cache_get(&pmap_pv_cache, PR_NOWAIT);
-	if (new_pve == NULL || new_sparepve == NULL) {
-		if (flags & PMAP_CANFAIL) {
-			error = ENOMEM;
-			goto out2;
-		}
-		panic("%s: pve allocation failed", __func__);
+	/*
+	 * Try to get pves now if we might need them.
+	 * Keep going even if we fail, since we will not actually need them
+	 * if we are just changing the permissions on an existing mapping,
+	 * but we won't know if that's the case until later.
+	 */
+
+	bool needpves = pmap_pp_needs_pve(new_pp);
+	if (needpves) {
+		new_pve = pool_cache_get(&pmap_pv_cache, PR_NOWAIT);
+		new_sparepve = pool_cache_get(&pmap_pv_cache, PR_NOWAIT);
+	} else {
+		new_pve = NULL;
+		new_sparepve = NULL;
 	}
 
 	kpreempt_disable();
@@ -4150,10 +4199,31 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	}
 
 	/*
-	 * update the pte.
+	 * Check if there is an existing mapping.  If we are now sure that
+	 * we need pves and we failed to allocate them earlier, handle that.
+	 * Caching the value of oldpa here is safe because only the mod/ref bits
+	 * can change while the pmap is locked.
 	 */
 
 	ptep = &ptes[pl1_i(va)];
+	opte = *ptep;
+	bool have_oldpa = pmap_valid_entry(opte);
+	paddr_t oldpa = pmap_pte2pa(opte);
+
+	if (needpves && (!have_oldpa || oldpa != pa) &&
+	    (new_pve == NULL || new_sparepve == NULL)) {
+		pmap_unmap_ptes(pmap, pmap2);
+		if (flags & PMAP_CANFAIL) {
+			error = ENOMEM;
+			goto out;
+		}
+		panic("%s: pve allocation failed", __func__);
+	}
+
+	/*
+	 * update the pte.
+	 */
+
 	do {
 		opte = *ptep;
 
@@ -4191,7 +4261,7 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	 */
 
 	pmap_stats_update_bypte(pmap, npte, opte);
-	if (ptp != NULL && !pmap_valid_entry(opte)) {
+	if (ptp != NULL && !have_oldpa) {
 		ptp->wire_count++;
 	}
 	KASSERT(ptp == NULL || ptp->wire_count > 1);
@@ -4210,16 +4280,14 @@ pmap_enter_ma(struct pmap *pmap, vaddr_t va, paddr_t ma, paddr_t pa,
 	 */
 
 	if ((~opte & (PG_V | PG_PVLIST)) == 0) {
-		if ((old_pg = PHYS_TO_VM_PAGE(pmap_pte2pa(opte))) != NULL) {
+		if ((old_pg = PHYS_TO_VM_PAGE(oldpa)) != NULL) {
 			KASSERT(uvm_page_locked_p(old_pg));
 			old_pp = VM_PAGE_TO_PP(old_pg);
-		} else if ((old_pp = pmap_pv_tracked(pmap_pte2pa(opte)))
-		    == NULL) {
-			pa = pmap_pte2pa(opte);
+		} else if ((old_pp = pmap_pv_tracked(oldpa)) == NULL) {
 			panic("%s: PG_PVLIST with pv-untracked page"
 			    " va = %#"PRIxVADDR
 			    " pa = %#" PRIxPADDR " (%#" PRIxPADDR ")",
-			    __func__, va, pa, atop(pa));
+			    __func__, va, oldpa, atop(pa));
 		}
 
 		old_pve = pmap_remove_pv(old_pp, ptp, va);
@@ -4249,7 +4317,6 @@ same_pa:
 	error = 0;
 out:
 	kpreempt_enable();
-out2:
 	if (old_pve != NULL) {
 		pool_cache_put(&pmap_pv_cache, old_pve);
 	}

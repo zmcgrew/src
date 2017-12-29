@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.360 2017/08/03 06:32:51 ozaki-r Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.363 2017/11/15 09:56:31 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.360 2017/08/03 06:32:51 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.363 2017/11/15 09:56:31 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -248,6 +248,8 @@ static int tcp_rst_ppslim_count = 0;
 static struct timeval tcp_rst_ppslim_last;
 static int tcp_ackdrop_ppslim_count = 0;
 static struct timeval tcp_ackdrop_ppslim_last;
+
+static void syn_cache_timer(void *);
 
 #define TCP_PAWS_IDLE	(24U * 24 * 60 * 60 * PR_SLOWHZ)
 
@@ -3650,14 +3652,16 @@ static struct pool syn_cache_pool;
  * We don't estimate RTT with SYNs, so each packet starts with the default
  * RTT and each timer step has a fixed timeout value.
  */
-#define	SYN_CACHE_TIMER_ARM(sc)						\
-do {									\
-	TCPT_RANGESET((sc)->sc_rxtcur,					\
-	    TCPTV_SRTTDFLT * tcp_backoff[(sc)->sc_rxtshift], TCPTV_MIN,	\
-	    TCPTV_REXMTMAX);						\
-	callout_reset(&(sc)->sc_timer,					\
-	    (sc)->sc_rxtcur * (hz / PR_SLOWHZ), syn_cache_timer, (sc));	\
-} while (/*CONSTCOND*/0)
+static inline void
+syn_cache_timer_arm(struct syn_cache *sc)
+{
+
+	TCPT_RANGESET(sc->sc_rxtcur,
+	    TCPTV_SRTTDFLT * tcp_backoff[sc->sc_rxtshift], TCPTV_MIN,
+	    TCPTV_REXMTMAX);
+	callout_reset(&sc->sc_timer,
+	    sc->sc_rxtcur * (hz / PR_SLOWHZ), syn_cache_timer, sc);
+}
 
 #define	SYN_CACHE_TIMESTAMP(sc)	(tcp_now - (sc)->sc_timebase)
 
@@ -3780,7 +3784,7 @@ syn_cache_insert(struct syn_cache *sc, struct tcpcb *tp)
 	 */
 	sc->sc_rxttot = 0;
 	sc->sc_rxtshift = 0;
-	SYN_CACHE_TIMER_ARM(sc);
+	syn_cache_timer_arm(sc);
 
 	/* Link it from tcpcb entry */
 	LIST_INSERT_HEAD(&tp->t_sc, sc, sc_tpq);
@@ -3799,22 +3803,19 @@ syn_cache_insert(struct syn_cache *sc, struct tcpcb *tp)
  * If we have retransmitted an entry the maximum number of times, expire
  * that entry.
  */
-void
+static void
 syn_cache_timer(void *arg)
 {
 	struct syn_cache *sc = arg;
 
 	mutex_enter(softnet_lock);
 	KERNEL_LOCK(1, NULL);
+
 	callout_ack(&sc->sc_timer);
 
 	if (__predict_false(sc->sc_flags & SCF_DEAD)) {
 		TCP_STATINC(TCP_STAT_SC_DELAYED_FREE);
-		callout_destroy(&sc->sc_timer);
-		pool_put(&syn_cache_pool, sc);
-		KERNEL_UNLOCK_ONE(NULL);
-		mutex_exit(softnet_lock);
-		return;
+		goto free;
 	}
 
 	if (__predict_false(sc->sc_rxtshift == TCP_MAXRXTSHIFT)) {
@@ -3836,11 +3837,9 @@ syn_cache_timer(void *arg)
 
 	/* Advance the timer back-off. */
 	sc->sc_rxtshift++;
-	SYN_CACHE_TIMER_ARM(sc);
+	syn_cache_timer_arm(sc);
 
-	KERNEL_UNLOCK_ONE(NULL);
-	mutex_exit(softnet_lock);
-	return;
+	goto out;
 
  dropit:
 	TCP_STATINC(TCP_STAT_SC_TIMED_OUT);
@@ -3848,8 +3847,12 @@ syn_cache_timer(void *arg)
 	if (sc->sc_ipopts)
 		(void) m_free(sc->sc_ipopts);
 	rtcache_free(&sc->sc_route);
+
+ free:
 	callout_destroy(&sc->sc_timer);
 	pool_put(&syn_cache_pool, sc);
+
+ out:
 	KERNEL_UNLOCK_ONE(NULL);
 	mutex_exit(softnet_lock);
 }
@@ -4512,7 +4515,7 @@ syn_cache_add(struct sockaddr *src, struct sockaddr *dst, struct tcphdr *th,
 		 * syn_cache_put() will try to schedule the timer, so
 		 * we need to initialize it
 		 */
-		SYN_CACHE_TIMER_ARM(sc);
+		syn_cache_timer_arm(sc);
 		syn_cache_put(sc);
 		splx(s);
 		TCP_STATINC(TCP_STAT_SC_DROPPED);

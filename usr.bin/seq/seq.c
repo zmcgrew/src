@@ -31,7 +31,7 @@
 #ifndef lint
 __COPYRIGHT("@(#) Copyright (c) 2005\
  The NetBSD Foundation, Inc.  All rights reserved.");
-__RCSID("$NetBSD: seq.c,v 1.8 2016/09/05 00:40:29 sevan Exp $");
+__RCSID("$NetBSD: seq.c,v 1.10 2017/10/29 01:28:46 ginsbach Exp $");
 #endif /* not lint */
 
 #include <ctype.h>
@@ -211,10 +211,10 @@ numeric(const char *s)
 			}
 			if (ISEXP((unsigned char)*s)) {
 				s++;
-				if (ISSIGN((unsigned char)*s)) {
+				/* optional sign */
+				if (ISSIGN((unsigned char)*s))
 					s++;
-					continue;
-				}
+				continue;
 			}
 			break;
 		}
@@ -349,7 +349,7 @@ unescape(char *orig)
 			*orig = c;
 			--cp;
 			continue;
-		case 'x':	/* hexidecimal number */
+		case 'x':	/* hexadecimal number */
 			cp++;	/* skip 'x' */
 			for (i = 0, c = 0;
 			     isxdigit((unsigned char)*cp) && i < 2;
@@ -422,7 +422,7 @@ decimal_places(const char *number)
 /*
  * generate_format - create a format string
  *
- * XXX to be bug for bug compatable with Plan9 and GNU return "%g"
+ * XXX to be bug for bug compatible with Plan9 and GNU return "%g"
  * when "%g" prints as "%e" (this way no width adjustments are made)
  */
 char *

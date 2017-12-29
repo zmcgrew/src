@@ -3,6 +3,7 @@
 # Copyright (c) 2009 Ville Laurikari <ville@laurikari.net>
 #
 
+import distutils.sysconfig
 from distutils.core import setup, Extension
 import sys
 import os
@@ -14,7 +15,8 @@ include_dirs = ["../lib"]
 libraries = ["tre"]
 
 if sys.platform == "win32":
-    data_files = ["tre.dll"]
+    # Place tre.dll in site-packages, next to tre.pyd.
+    data_files = [(distutils.sysconfig.get_python_lib(), ["tre.dll"])]
     include_dirs += ["../win32"]
     shutil.copy("../win32/Release/tre.dll", ".")
     libraries = ["../win32/Release/tre"]

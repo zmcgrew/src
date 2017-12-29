@@ -1,4 +1,4 @@
-#	$NetBSD: mi,v 1.2146 2017/09/09 18:18:27 kamil Exp $
+#	$NetBSD: mi,v 1.2164 2017/12/20 00:07:55 kamil Exp $
 #
 # Note: don't delete entries from here - mark them as "obsolete" instead.
 ./etc/mtree/set.comp				comp-sys-root
@@ -413,6 +413,7 @@
 ./usr/include/dev/hdaudio/hdaudioio.h		comp-c-include
 ./usr/include/dev/hdaudio/hdaudioreg.h		comp-c-include
 ./usr/include/dev/hdmicec/hdmicecio.h		comp-c-include
+./usr/include/dev/hid/hid.h			comp-c-include
 ./usr/include/dev/hpc/hpcfbio.h			comp-c-include
 ./usr/include/dev/i2c/i2c_bus.h			comp-obsolete		obsolete
 ./usr/include/dev/i2c/i2c_eeprom.h		comp-obsolete		obsolete
@@ -514,6 +515,7 @@
 ./usr/include/dev/ic/pckbcvar.h			comp-obsolete		obsolete
 ./usr/include/dev/ic/pdqreg.h			comp-obsolete		obsolete
 ./usr/include/dev/ic/pdqvar.h			comp-obsolete		obsolete
+./usr/include/dev/ic/qemufwcfgio.h		comp-c-include
 ./usr/include/dev/ic/rrunnerreg.h		comp-c-include
 ./usr/include/dev/ic/rrunnervar.h		comp-c-include
 ./usr/include/dev/ic/smc83c170reg.h		comp-obsolete		obsolete
@@ -777,6 +779,7 @@
 ./usr/include/dns_sd.h				comp-mdns-include	mdns
 ./usr/include/dwarf.h				comp-c-include
 ./usr/include/elf.h				comp-c-include
+./usr/include/endian.h				comp-c-include
 ./usr/include/err.h				comp-c-include
 ./usr/include/errno.h				comp-c-include
 ./usr/include/eti.h				comp-c-include
@@ -1991,6 +1994,7 @@
 ./usr/include/gcc-4.8/omp.h			comp-gcc-include	gcc=48
 ./usr/include/gcc-5/omp.h			comp-gcc-include	gcc=53
 ./usr/include/gcc-5/openacc.h			comp-gcc-include	gcc=53
+./usr/include/gcc-5/stdatomic.h			comp-gcc-include	gcc=53,gcccmds
 ./usr/include/gelf.h				comp-c-include
 ./usr/include/getopt.h				comp-c-include
 ./usr/include/glob.h				comp-c-include
@@ -2944,6 +2948,7 @@
 ./usr/include/sys/semaphore.h			comp-c-include
 ./usr/include/sys/sha1.h			comp-c-include
 ./usr/include/sys/sha2.h			comp-c-include
+./usr/include/sys/sha3.h			comp-c-include
 ./usr/include/sys/shm.h				comp-c-include
 ./usr/include/sys/siginfo.h			comp-c-include
 ./usr/include/sys/signal.h			comp-c-include
@@ -2999,7 +3004,7 @@
 ./usr/include/sys/user.h			comp-obsolete		obsolete
 ./usr/include/sys/utsname.h			comp-c-include
 ./usr/include/sys/uuid.h			comp-c-include
-./usr/include/sys/vadvise.h			comp-c-include
+./usr/include/sys/vadvise.h			comp-obsolete		obsolete
 ./usr/include/sys/vcmd.h			comp-obsolete		obsolete
 ./usr/include/sys/verified_exec.h		comp-c-include
 ./usr/include/sys/videoio.h			comp-c-include
@@ -3597,6 +3602,8 @@
 ./usr/lib/librumpnet_virtif_p.a			comp-c-proflib		rump,profile
 ./usr/lib/librumpnet_vlan.a			comp-c-lib		rump
 ./usr/lib/librumpnet_vlan_p.a			comp-c-proflib		rump,profile
+./usr/lib/librumpres.a				comp-c-lib		compatfile,rump
+./usr/lib/librumpres_p.a			comp-c-proflib		compatfile,rump,profile
 ./usr/lib/librumpuser.a				comp-c-lib		compatfile,rump
 ./usr/lib/librumpuser_p.a			comp-c-proflib		compatfile,rump,profile
 ./usr/lib/librumpvfs.a				comp-c-lib		compatfile,rump
@@ -3779,6 +3786,7 @@
 ./usr/libdata/lint/llib-lrtld_db.ln		comp-c-lintlib		lint,dtrace
 ./usr/libdata/lint/llib-lrumpclient.ln		comp-c-lintlib		lint,rump
 ./usr/libdata/lint/llib-lrumphijack.ln		comp-c-lintlib		lint,rump
+./usr/libdata/lint/llib-lrumpres.ln		comp-c-lintlib		lint,rump
 ./usr/libdata/lint/llib-lrumpuser.ln		comp-c-lintlib		lint,rump
 ./usr/libdata/lint/llib-lsaslc.ln		comp-c-lintlib		lint
 ./usr/libdata/lint/llib-lsdp.ln			comp-obsolete		obsolete
@@ -6947,6 +6955,7 @@
 ./usr/share/man/cat3/humanize_number.0		comp-c-catman		.cat
 ./usr/share/man/cat3/hypot.0			comp-c-catman		.cat
 ./usr/share/man/cat3/hypotf.0			comp-c-catman		.cat
+./usr/share/man/cat3/hypotl.0			comp-c-catman		.cat
 ./usr/share/man/cat3/i2d_CMS_bio_stream.0	comp-c-catman		.cat
 ./usr/share/man/cat3/i2d_PKCS7_bio_stream.0	comp-c-catman		.cat
 ./usr/share/man/cat3/iconv.0			comp-c-catman		.cat
@@ -9564,9 +9573,11 @@
 ./usr/share/man/cat3/tcgetattr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/tcgetpgrp.0		comp-c-catman		.cat
 ./usr/share/man/cat3/tcgetsid.0			comp-c-catman		.cat
+./usr/share/man/cat3/tcgetwinsize.0		comp-c-catman		.cat
 ./usr/share/man/cat3/tcsendbreak.0		comp-c-catman		.cat
 ./usr/share/man/cat3/tcsetattr.0		comp-c-catman		.cat
 ./usr/share/man/cat3/tcsetpgrp.0		comp-c-catman		.cat
+./usr/share/man/cat3/tcsetwinsize.0		comp-c-catman		.cat
 ./usr/share/man/cat3/td_close.0			comp-obsolete		obsolete
 ./usr/share/man/cat3/td_map_pth2thr.0		comp-obsolete		obsolete
 ./usr/share/man/cat3/td_open.0			comp-obsolete		obsolete
@@ -10741,6 +10752,8 @@
 ./usr/share/man/cat9/kmem_intr_alloc.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/kmem_intr_free.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/kmem_intr_zalloc.0		comp-sys-catman		.cat
+./usr/share/man/cat9/kmem_strdupsize.0		comp-sys-catman		.cat
+./usr/share/man/cat9/kmem_strfree.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/kmem_zalloc.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/knote.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/kpause.0			comp-sys-catman		.cat
@@ -11101,7 +11114,7 @@
 ./usr/share/man/cat9/powerhook_disestablish.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/powerhook_establish.0	comp-sys-catman		.cat
 ./usr/share/man/cat9/powerof2.0			comp-sys-catman		.cat
-./usr/share/man/cat9/ppi.0			comp-sys-catman		.cat
+./usr/share/man/cat9/ppi.0			comp-obsolete		obsolete
 ./usr/share/man/cat9/ppsratecheck.0		comp-sys-catman		.cat
 ./usr/share/man/cat9/preempt.0			comp-sys-catman		.cat
 ./usr/share/man/cat9/printf.0			comp-sys-catman		.cat
@@ -14531,6 +14544,7 @@
 ./usr/share/man/html3/humanize_number.html	comp-c-htmlman		html
 ./usr/share/man/html3/hypot.html		comp-c-htmlman		html
 ./usr/share/man/html3/hypotf.html		comp-c-htmlman		html
+./usr/share/man/html3/hypotl.html		comp-c-htmlman		html
 ./usr/share/man/html3/i2d_CMS_bio_stream.html		comp-c-htmlman	html
 ./usr/share/man/html3/i2d_PKCS7_bio_stream.html		comp-c-htmlman	html
 ./usr/share/man/html3/iconv.html		comp-c-htmlman		html
@@ -17074,9 +17088,11 @@
 ./usr/share/man/html3/tcgetattr.html		comp-c-htmlman		html
 ./usr/share/man/html3/tcgetpgrp.html		comp-c-htmlman		html
 ./usr/share/man/html3/tcgetsid.html		comp-c-htmlman		html
+./usr/share/man/html3/tcgetwinsize.html		comp-c-htmlman		html
 ./usr/share/man/html3/tcsendbreak.html		comp-c-htmlman		html
 ./usr/share/man/html3/tcsetattr.html		comp-c-htmlman		html
 ./usr/share/man/html3/tcsetpgrp.html		comp-c-htmlman		html
+./usr/share/man/html3/tcsetwinsize.html		comp-c-htmlman		html
 ./usr/share/man/html3/td_close.html		comp-obsolete		obsolete
 ./usr/share/man/html3/td_map_pth2thr.html	comp-obsolete		obsolete
 ./usr/share/man/html3/td_open.html		comp-obsolete		obsolete
@@ -18205,6 +18221,8 @@
 ./usr/share/man/html9/kmem_intr_alloc.html	comp-sys-htmlman	html
 ./usr/share/man/html9/kmem_intr_free.html	comp-sys-htmlman	html
 ./usr/share/man/html9/kmem_intr_zalloc.html	comp-sys-htmlman	html
+./usr/share/man/html9/kmem_strdupsize.html	comp-sys-htmlman	html
+./usr/share/man/html9/kmem_strfree.html		comp-sys-htmlman	html
 ./usr/share/man/html9/kmem_zalloc.html		comp-sys-htmlman	html
 ./usr/share/man/html9/knote.html		comp-sys-htmlman	html
 ./usr/share/man/html9/kpause.html		comp-sys-htmlman	html
@@ -18560,7 +18578,7 @@
 ./usr/share/man/html9/powerhook_disestablish.html	comp-sys-htmlman	html
 ./usr/share/man/html9/powerhook_establish.html	comp-sys-htmlman	html
 ./usr/share/man/html9/powerof2.html		comp-sys-htmlman	html
-./usr/share/man/html9/ppi.html			comp-sys-htmlman	html
+./usr/share/man/html9/ppi.html			comp-obsolete		obsolete
 ./usr/share/man/html9/ppsratecheck.html		comp-sys-htmlman	html
 ./usr/share/man/html9/preempt.html		comp-sys-htmlman	html
 ./usr/share/man/html9/printf.html		comp-sys-htmlman	html
@@ -22032,6 +22050,7 @@
 ./usr/share/man/man3/humanize_number.3		comp-c-man		.man
 ./usr/share/man/man3/hypot.3			comp-c-man		.man
 ./usr/share/man/man3/hypotf.3			comp-c-man		.man
+./usr/share/man/man3/hypotl.3			comp-c-man		.man
 ./usr/share/man/man3/i2d_CMS_bio_stream.3		comp-c-man	.man
 ./usr/share/man/man3/i2d_PKCS7_bio_stream.3		comp-c-man	.man
 ./usr/share/man/man3/iconv.3			comp-c-man		.man
@@ -24645,9 +24664,11 @@
 ./usr/share/man/man3/tcgetattr.3		comp-c-man		.man
 ./usr/share/man/man3/tcgetpgrp.3		comp-c-man		.man
 ./usr/share/man/man3/tcgetsid.3			comp-c-man		.man
+./usr/share/man/man3/tcgetwinsize.3		comp-c-man		.man
 ./usr/share/man/man3/tcsendbreak.3		comp-c-man		.man
 ./usr/share/man/man3/tcsetattr.3		comp-c-man		.man
 ./usr/share/man/man3/tcsetpgrp.3		comp-c-man		.man
+./usr/share/man/man3/tcsetwinsize.3		comp-c-man		.man
 ./usr/share/man/man3/td_close.3			comp-obsolete		obsolete
 ./usr/share/man/man3/td_map_pth2thr.3		comp-obsolete		obsolete
 ./usr/share/man/man3/td_open.3			comp-obsolete		obsolete
@@ -25821,6 +25842,8 @@
 ./usr/share/man/man9/kmem_intr_alloc.9		comp-sys-man		.man
 ./usr/share/man/man9/kmem_intr_free.9		comp-sys-man		.man
 ./usr/share/man/man9/kmem_intr_zalloc.9		comp-sys-man		.man
+./usr/share/man/man9/kmem_strdupsize.9		comp-sys-man		.man
+./usr/share/man/man9/kmem_strfree.9		comp-sys-man		.man
 ./usr/share/man/man9/kmem_zalloc.9		comp-sys-man		.man
 ./usr/share/man/man9/knote.9			comp-sys-man		.man
 ./usr/share/man/man9/kpause.9			comp-sys-man		.man
@@ -26181,7 +26204,7 @@
 ./usr/share/man/man9/powerhook_disestablish.9	comp-sys-man		.man
 ./usr/share/man/man9/powerhook_establish.9	comp-sys-man		.man
 ./usr/share/man/man9/powerof2.9			comp-sys-man		.man
-./usr/share/man/man9/ppi.9			comp-sys-man		.man
+./usr/share/man/man9/ppi.9			comp-obsolete		obsolete
 ./usr/share/man/man9/ppsratecheck.9		comp-sys-man		.man
 ./usr/share/man/man9/preempt.9			comp-sys-man		.man
 ./usr/share/man/man9/printf.9			comp-sys-man		.man

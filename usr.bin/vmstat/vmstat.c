@@ -1,4 +1,4 @@
-/* $NetBSD: vmstat.c,v 1.218 2017/09/06 06:05:23 mlelstv Exp $ */
+/* $NetBSD: vmstat.c,v 1.224 2017/12/04 03:05:57 mrg Exp $ */
 
 /*-
  * Copyright (c) 1998, 2000, 2001, 2007 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@ __COPYRIGHT("@(#) Copyright (c) 1980, 1986, 1991, 1993\
 #if 0
 static char sccsid[] = "@(#)vmstat.c	8.2 (Berkeley) 3/1/95";
 #else
-__RCSID("$NetBSD: vmstat.c,v 1.218 2017/09/06 06:05:23 mlelstv Exp $");
+__RCSID("$NetBSD: vmstat.c,v 1.224 2017/12/04 03:05:57 mrg Exp $");
 #endif
 #endif /* not lint */
 
@@ -892,6 +892,12 @@ dosum(void)
 			warn("sysctl vm.uvmexp2 failed");
 	} else {
 		struct uvmexp uvmexp_kernel;
+		struct pool pool, *pp = &pool;
+		struct pool_allocator pa;
+		TAILQ_HEAD(,pool) pool_head;
+		void *addr;
+		uint64_t bytes;
+
 		kread(namelist, X_UVMEXP, &uvmexp_kernel, sizeof(uvmexp_kernel));
 #define COPY(field) uvmexp.field = uvmexp_kernel.field
 		COPY(pagesize);
@@ -955,7 +961,20 @@ dosum(void)
 		COPY(pdbusy);
 		COPY(pdpending);
 		COPY(pddeact);
+		COPY(bootpages);
 #undef COPY
+		kread(namelist, X_POOLHEAD, &pool_head, sizeof(pool_head));
+		addr = TAILQ_FIRST(&pool_head);
+		uvmexp.poolpages = 0;
+		for (; addr != NULL; addr = TAILQ_NEXT(pp, pr_poollist)) {
+			deref_kptr(addr, pp, sizeof(*pp), "pool chain trashed");
+			deref_kptr(pp->pr_alloc, &pa, sizeof(pa),
+			    "pool allocator trashed");
+			bytes = pp->pr_npages * pa.pa_pagesz;
+			if ((pp->pr_roflags & PR_RECURSIVE) != 0)
+				bytes -= (pp->pr_nout * pp->pr_size);
+			uvmexp.poolpages += bytes / uvmexp.pagesize;
+		}
 	}
 
 
@@ -976,6 +995,8 @@ dosum(void)
 	(void)printf("%9" PRIu64 " reserve pagedaemon pages\n",
 	    uvmexp.reserve_pagedaemon);
 	(void)printf("%9" PRIu64 " reserve kernel pages\n", uvmexp.reserve_kernel);
+	(void)printf("%9" PRIu64 " boot kernel pages\n", uvmexp.bootpages);
+	(void)printf("%9" PRIu64 " kernel pool pages\n", uvmexp.poolpages);
 	(void)printf("%9" PRIu64 " anonymous pages\n", uvmexp.anonpages);
 	(void)printf("%9" PRIu64 " cached file pages\n", uvmexp.filepages);
 	(void)printf("%9" PRIu64 " cached executable pages\n", uvmexp.execpages);
@@ -2166,7 +2187,8 @@ hist_dodump(struct kern_history *histp)
 			bintime2timeval(&e->bt, &tv);
 			(void)printf("%06ld.%06ld ", (long int)tv.tv_sec,
 			    (long int)tv.tv_usec);
-			(void)printf("%s#%ld@%d: ", fn, e->call, e->cpunum);
+			(void)printf("%s#%" PRId32 "@%" PRId32 "d: ",
+			    fn, e->call, e->cpunum);
 			(void)printf(fmt, e->v[0], e->v[1], e->v[2], e->v[3]);
 			(void)putchar('\n');
 		}
@@ -2243,14 +2265,16 @@ hist_traverse_sysctl(int todo, const char *histname)
  
  	if (todo & HISTLIST)
  		(void)putchar('\n');
+	else if (mib[2] == CTL_QUERY)
+		warnx("history %s not found", histname);
  }
  
  /*
   * Actually dump the history buffer at the specified KVA.
   */
- void
+void
 hist_dodump_sysctl(int mib[], unsigned int miblen)
- {
+{
 	struct sysctl_history *hist;
 	struct timeval tv;
 	struct sysctl_history_event *e;
@@ -2273,13 +2297,13 @@ hist_dodump_sysctl(int mib[], unsigned int miblen)
 	if (errno != 0)
 		err(1, "sysctl failed");
  
-	strp = (char *)(&hist->sh_events[hist->sh_listentry.shle_numentries]);
+	strp = (char *)(&hist->sh_events[hist->sh_numentries]);
  
 	(void)printf("%"PRIu32" entries, next is %"PRIu32"\n",
-	    hist->sh_listentry.shle_numentries,
-	    hist->sh_listentry.shle_nextfree);
+	    hist->sh_numentries,
+	    hist->sh_nextfree);
  
-	i = hist->sh_listentry.shle_nextfree;
+	i = hist->sh_nextfree;
 
 	do {
 		e = &hist->sh_events[i];
@@ -2287,15 +2311,15 @@ hist_dodump_sysctl(int mib[], unsigned int miblen)
 			fmt = &strp[e->she_fmtoffset];
 			fn = &strp[e->she_funcoffset];
 			bintime2timeval(&e->she_bintime, &tv);
-			(void)printf("%06ld.%06ld %s#%"PRIu64"@%"PRIu32": ",
+			(void)printf("%06ld.%06ld %s#%"PRIu32"@%"PRIu32": ",
 			    (long int)tv.tv_sec, (long int)tv.tv_usec,
 			    fn, e->she_callnumber, e->she_cpunum);
 			(void)printf(fmt, e->she_values[0], e->she_values[1],
 			     e->she_values[2], e->she_values[3]);
  			(void)putchar('\n');
  		}
-		i = (i + 1) % hist->sh_listentry.shle_numentries;
-	} while (i != hist->sh_listentry.shle_nextfree);
+		i = (i + 1) % hist->sh_numentries;
+	} while (i != hist->sh_nextfree);
  
 	free(hist);
  }

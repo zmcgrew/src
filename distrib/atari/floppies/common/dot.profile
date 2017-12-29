@@ -1,4 +1,4 @@
-# $NetBSD: dot.profile,v 1.5 2016/01/30 00:52:11 tsutsui Exp $
+# $NetBSD: dot.profile,v 1.7 2017/11/25 09:40:17 tsutsui Exp $
 #
 # Copyright (c) 1995 Jason R. Thorpe
 # Copyright (c) 1994 Christopher G. Demetriou
@@ -49,8 +49,7 @@ umask 022
 mount_gemdos() mount_msdos -G "$@"
 
 makerootwritable() {
-	# note, only handles up to partition 'j'
-	rootdev=/dev/$(sysctl -n kern.root_device)$(sysctl -n kern.root_partition | sed y/0123456789/abcdefghij/)
+	rootdev=/kern/rootdev
 	if ! mount -u $rootdev / ; then
 	    echo "Unable to mount $rootdev read-write"
 	    exit 1
@@ -66,6 +65,9 @@ if [ "X${DONEPROFILE}" = "X" ]; then
 	echo 'erase ^H, werase ^W, kill ^U, intr ^C'
 	stty newcrt werase ^W intr ^C kill ^U erase ^H 9600
 
+	# mount the kernfs so that we can check rootdev etc.
+	mount -t kernfs /kern /kern
+
 	# mount root read write
 	makerootwritable
 
@@ -79,7 +81,7 @@ if [ "X${DONEPROFILE}" = "X" ]; then
 		_num=0
 		for i in $_maps; do
 			echo "	$_num  $i"
-			_num=`expr $_num + 1`
+			_num=$(( $_num + 1 ))
 		done
 		echo
 		echo -n "Select the number of the map you want to activate: "

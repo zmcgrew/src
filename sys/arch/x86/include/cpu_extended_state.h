@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_extended_state.h,v 1.11 2017/08/10 12:46:31 maxv Exp $	*/
+/*	$NetBSD: cpu_extended_state.h,v 1.15 2017/11/08 17:55:54 maxv Exp $	*/
 
 #ifndef _X86_CPU_EXTENDED_STATE_H_
 #define _X86_CPU_EXTENDED_STATE_H_
@@ -106,6 +106,7 @@ struct fxsave {
 	uint16_t fx_cw;		/* FPU Control Word */
 	uint16_t fx_sw;		/* FPU Status Word */
 	uint8_t fx_tw;		/* FPU Tag Word (abridged) */
+	uint8_t fx_zero;	/* zero */
 	uint16_t fx_opcode;	/* FPU Opcode */
 	union fp_addr fx_ip;	/* FPU Instruction Pointer */
 	union fp_addr fx_dp;	/* FPU Data pointer */
@@ -113,28 +114,19 @@ struct fxsave {
 	uint32_t fx_mxcsr_mask;
 	struct fpaccfx fx_87_ac[8];	/* 8 x87 registers */
 	struct xmmreg fx_xmm[16];	/* XMM regs (8 in 32bit modes) */
-	uint8_t fx_rsvd[48];
-	uint8_t fx_kernel[48];	/* Not written by the hardware */
+	uint8_t fx_rsvd[96];
 } __aligned(16);
 __CTASSERT_NOLINT(sizeof(struct fxsave) == 512);
-
-/*
- * The end of the fsave buffer can be used by the operating system
- */
-struct fxsave_os {
-	uint8_t fxo_fxsave[512 - 48];
-	/* 48 bytes available, NB copied to/from userspace */
-	uint16_t fxo_dflt_cw;	/* Control word for signal handlers */
-};
 
 /*
  * For XSAVE, a 64byte header follows the fxsave data.
  */
 struct xsave_header {
-	uint64_t xsh_fxsave[64];	/* to align in the union */
+	uint8_t xsh_fxsave[512];	/* to align in the union */
 	uint64_t xsh_xstate_bv;		/* bitmap of saved sub structures */
-	uint64_t xsh_rsrvd[2];		/* must be zero */
-	uint64_t xsh_reserved[5];	/* best if zero */
+	uint64_t xsh_xcomp_bv;		/* bitmap of compact sub structures */
+	uint8_t xsh_rsrvd[8];		/* must be zero */
+	uint8_t xsh_reserved[40];	/* best if zero */
 };
 __CTASSERT(sizeof(struct xsave_header) == 512 + 64);
 
@@ -156,7 +148,6 @@ union savefpu {
 	struct save87		sv_87;
 	struct fxsave		sv_xmm;
 #ifdef _KERNEL
-	struct fxsave_os	sv_os;
 	struct xsave_header	sv_xsave_hdr;
 #endif
 };
@@ -211,12 +202,6 @@ union savefpu {
  * and then again when it is truncated to 53 bits.
  *
  * However the C language explicitly allows the extra precision.
- *
- * The iBCS control word has underflow, overflow, zero divide, and invalid
- * operation exceptions unmasked.  But that causes an unexpected exception
- * in the test program 'paranoia' and makes denormals useless (DBL_MIN / 2
- * underflows).  It doesn't make a lot of sense to trap underflow without
- * trapping denormals.
  */
 #define	__INITIAL_NPXCW__	0x037f
 /* Modern NetBSD uses the default control word.. */

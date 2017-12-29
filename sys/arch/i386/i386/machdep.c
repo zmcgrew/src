@@ -1,14 +1,14 @@
-/*	$NetBSD: machdep.c,v 1.794 2017/09/17 09:41:35 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $	*/
 
-/*-
- * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009
+/*
+ * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
  * by Charles M. Hannum, by Jason R. Thorpe of the Numerical Aerospace
  * Simulation Facility NASA Ames Research Center, by Julio M. Merino Vidal,
- * and by Andrew Doran.
+ * by Andrew Doran, and by Maxime Villard.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,7 +32,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/*-
+/*
  * Copyright (c) 1982, 1987, 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.794 2017/09/17 09:41:35 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -144,23 +144,12 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.794 2017/09/17 09:41:35 maxv Exp $");
 #include <x86/machdep.h>
 
 #include <machine/multiboot.h>
+
 #ifdef XEN
 #include <xen/evtchn.h>
 #include <xen/xen.h>
 #include <xen/hypervisor.h>
-
-/* #define	XENDEBUG */
-/* #define	XENDEBUG_LOW */
-
-#ifdef XENDEBUG
-#define	XENPRINTF(x) printf x
-#define	XENPRINTK(x) printk x
-#else
-#define	XENPRINTF(x)
-#define	XENPRINTK(x)
 #endif
-#define	PRINTK(x) printf x
-#endif /* XEN */
 
 #include <dev/isa/isareg.h>
 #include <machine/isa_machdep.h>
@@ -223,7 +212,6 @@ struct mtrr_funcs *mtrr_funcs;
 
 int cpu_class;
 int use_pae;
-int i386_fpu_present = 1;
 int i386_fpu_fdivbug;
 
 int i386_use_fxsave;
@@ -242,6 +230,8 @@ paddr_t ldt_paddr;
 vaddr_t pentium_idt_vaddr;
 
 struct vm_map *phys_map = NULL;
+
+extern struct bootspace bootspace;
 
 extern paddr_t lowmem_rsvd;
 extern paddr_t avail_start, avail_end;
@@ -265,6 +255,7 @@ void (*initclock_func)(void) = i8254_initclocks;
 phys_ram_seg_t mem_clusters[VM_PHYSSEG_MAX];
 int mem_cluster_cnt = 0;
 
+void init_bootspace(void);
 void init386(paddr_t);
 void initgdt(union descriptor *);
 
@@ -491,10 +482,6 @@ i386_proc0_pcb_ldt_init(void)
 	lldt(GSEL(GLDT_SEL, SEL_KPL));
 #else
 	HYPERVISOR_fpu_taskswitch(1);
-	XENPRINTF(("lwp tss sp %p ss %04x/%04x\n",
-	    (void *)pcb->pcb_esp0,
-	    GSEL(GDATA_SEL, SEL_KPL),
-	    IDXSEL(GSEL(GDATA_SEL, SEL_KPL))));
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), pcb->pcb_esp0);
 #endif
 }
@@ -547,7 +534,7 @@ i386_tls_switch(lwp_t *l)
 	/* Update TLS segment pointers */
 	update_descriptor(&ci->ci_gdt[GUFS_SEL],
 			  (union descriptor *) &pcb->pcb_fsd);
-	update_descriptor(&ci->ci_gdt[GUGS_SEL], 
+	update_descriptor(&ci->ci_gdt[GUGS_SEL],
 			  (union descriptor *) &pcb->pcb_gsd);
 
 }
@@ -944,7 +931,6 @@ unsetgate(struct gate_descriptor *gd)
 	gd->gd_dpl = 0;
 }
 
-
 void
 setregion(struct region_descriptor *rd, void *base, size_t limit)
 {
@@ -980,25 +966,24 @@ int xen_idt_idx;
 extern union descriptor tmpgdt[];
 #endif
 
-void 
+void
 cpu_init_idt(void)
 {
 #ifndef XEN
 	struct region_descriptor region;
 	setregion(&region, pentium_idt, NIDT * sizeof(idt[0]) - 1);
 	lidt(&region);
-#else /* XEN */
-	XENPRINTF(("HYPERVISOR_set_trap_table %p\n", xen_idt));
+#else
 	if (HYPERVISOR_set_trap_table(xen_idt))
 		panic("HYPERVISOR_set_trap_table %p failed\n", xen_idt);
-#endif /* !XEN */
+#endif
 }
 
 void
 initgdt(union descriptor *tgdt)
 {
 	KASSERT(tgdt != NULL);
-	
+
 	gdtstore = tgdt;
 #ifdef XEN
 	u_long	frames[16];
@@ -1059,11 +1044,8 @@ initgdt(union descriptor *tgdt)
 		    UVMF_INVLPG) < 0) {
 			panic("gdt page RO update failed.\n");
 		}
-
 	}
 
-	XENPRINTK(("loading gdt %lx, %d entries\n", frames[0] << PAGE_SHIFT,
-	    NGDT));
 	if (HYPERVISOR_set_gdt(frames, NGDT /* XXX is it right ? */))
 		panic("HYPERVISOR_set_gdt failed!\n");
 
@@ -1115,6 +1097,47 @@ init386_ksyms(void)
 }
 
 void
+init_bootspace(void)
+{
+	extern char __rodata_start;
+	extern char __data_start;
+	extern char __kernel_end;
+	size_t i = 0;
+
+	memset(&bootspace, 0, sizeof(bootspace));
+
+	bootspace.head.va = KERNTEXTOFF;
+	bootspace.head.pa = KERNTEXTOFF - KERNBASE;
+	bootspace.head.sz = 0;
+
+	bootspace.segs[i].type = BTSEG_TEXT;
+	bootspace.segs[i].va = KERNTEXTOFF;
+	bootspace.segs[i].pa = KERNTEXTOFF - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__rodata_start - KERNTEXTOFF;
+	i++;
+
+	bootspace.segs[i].type = BTSEG_RODATA;
+	bootspace.segs[i].va = (vaddr_t)&__rodata_start;
+	bootspace.segs[i].pa = (paddr_t)(vaddr_t)&__rodata_start - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__data_start - (size_t)&__rodata_start;
+	i++;
+
+	bootspace.segs[i].type = BTSEG_DATA;
+	bootspace.segs[i].va = (vaddr_t)&__data_start;
+	bootspace.segs[i].pa = (paddr_t)(vaddr_t)&__data_start - KERNBASE;
+	bootspace.segs[i].sz = (size_t)&__kernel_end - (size_t)&__data_start;
+	i++;
+
+	bootspace.boot.va = (vaddr_t)&__kernel_end;
+	bootspace.boot.pa = (paddr_t)(vaddr_t)&__kernel_end - KERNBASE;
+	bootspace.boot.sz = (size_t)(atdevbase + IOM_SIZE) -
+	    (size_t)&__kernel_end;
+
+	/* Virtual address of the top level page */
+	bootspace.pdir = (vaddr_t)(PDPpaddr + KERNBASE);
+}
+
+void
 init386(paddr_t first_avail)
 {
 	extern void consinit(void);
@@ -1133,8 +1156,6 @@ init386(paddr_t first_avail)
 	KASSERT(first_avail % PAGE_SIZE == 0);
 
 #ifdef XEN
-	XENPRINTK(("HYPERVISOR_shared_info %p (%x)\n", HYPERVISOR_shared_info,
-	    xen_start_info.shared_info));
 	KASSERT(HYPERVISOR_shared_info != NULL);
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
 #endif
@@ -1153,12 +1174,6 @@ init386(paddr_t first_avail)
 	pcb = lwp_getpcb(&lwp0);
 #ifdef XEN
 	pcb->pcb_cr3 = PDPpaddr;
-	__PRINTK(("pcb_cr3 0x%lx cr3 0x%lx\n",
-	    PDPpaddr, xpmap_ptom(PDPpaddr)));
-	XENPRINTK(("lwp0uarea %p first_avail %p\n",
-	    lwp0uarea, (void *)(long)first_avail));
-	XENPRINTK(("ptdpaddr %p atdevbase %p\n", (void *)PDPpaddr,
-	    (void *)atdevbase));
 #endif
 
 #if defined(PAE) && !defined(XEN)
@@ -1168,7 +1183,7 @@ init386(paddr_t first_avail)
 	 */
 	cpu_info_primary.ci_pae_l3_pdirpa = rcr3();
 	cpu_info_primary.ci_pae_l3_pdir = (pd_entry_t *)(rcr3() + KERNBASE);
-#endif /* PAE && !XEN */
+#endif
 
 	uvm_md_init();
 
@@ -1222,8 +1237,8 @@ init386(paddr_t first_avail)
 
 #if NISA > 0 || NPCI > 0
 	x86_bus_space_init();
-#endif /* NISA > 0 || NPCI > 0 */
-	
+#endif
+
 	consinit();	/* XXX SHOULD NOT BE DONE HERE */
 
 #ifdef DEBUG_MEMLOAD
@@ -1243,10 +1258,6 @@ init386(paddr_t first_avail)
 	/* Internalize the physical pages into the VM system. */
 	init_x86_vm(avail_start);
 #else /* !XEN */
-	XENPRINTK(("load the memory cluster 0x%" PRIx64 " (%" PRId64 ") - "
-	    "0x%" PRIx64 " (%" PRId64 ")\n",
-	    (uint64_t)avail_start, (uint64_t)atop(avail_start),
-	    (uint64_t)avail_end, (uint64_t)atop(avail_end)));
 	uvm_page_physload(atop(avail_start), atop(avail_end),
 	    atop(avail_start), atop(avail_end),
 	    VM_FREELIST_DEFAULT);
@@ -1263,7 +1274,6 @@ init386(paddr_t first_avail)
 			panic("tmpgdt page relaim RW update failed.\n");
 		}
 	}
-
 #endif /* !XEN */
 
 	init_x86_msgbuf();
@@ -1352,6 +1362,7 @@ init386(paddr_t first_avail)
 	xen_idt_idx = 0;
 	for (x = 0; x < 32; x++) {
 		KASSERT(xen_idt_idx < MAX_XEN_IDT);
+		idt_vec_reserve(x);
 		xen_idt[xen_idt_idx].vector = x;
 
 		switch (x) {
@@ -1374,6 +1385,7 @@ init386(paddr_t first_avail)
 		xen_idt_idx++;
 	}
 	KASSERT(xen_idt_idx < MAX_XEN_IDT);
+	idt_vec_reserve(128);
 	xen_idt[xen_idt_idx].vector = 128;
 	xen_idt[xen_idt_idx].flags = SEL_UPL;
 	xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
@@ -1394,7 +1406,6 @@ init386(paddr_t first_avail)
 #endif
 
 #ifdef XEN
-	XENPRINTF(("events_default_setup\n"));
 	events_default_setup();
 #else
 	intr_default_setup();
@@ -1433,7 +1444,7 @@ init386(paddr_t first_avail)
 
 	x86_dbregs_setup_initdbstate();
 
-	pool_init(&x86_dbregspl, sizeof(struct dbreg), 16, 0, 0, "dbregs",                                                                                   
+	pool_init(&x86_dbregspl, sizeof(struct dbreg), 16, 0, 0, "dbregs",
 	    NULL, IPL_NONE);
 }
 
@@ -1469,7 +1480,7 @@ cpu_reset(void)
 	 * 2) Write 0xf to PCI Configuration Data Register (0xcfc)
 	 *    to reset IDE controller, IDE bus, and PCI bus, and
 	 *    to trigger a system-wide reset.
-	 * 
+	 *
 	 * See AMD Geode SC1100 Processor Data Book, Revision 2.0,
 	 * sections 6.3.1, 6.3.2, and 6.4.1.
 	 */

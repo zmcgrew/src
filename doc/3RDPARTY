@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1472 2017/09/19 19:20:43 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1491 2017/12/14 16:49:11 jmcneill Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -40,8 +40,8 @@
 #
 
 Package:	acpica
-Version:	20170303
-Current Vers:	20170303
+Version:	20171110
+Current Vers:	20170111
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
@@ -186,7 +186,7 @@ Todo[5]: Reconcile the doc directory.
 
 Package:	binutils
 Version:	2.27
-Current Vers:	2.29
+Current Vers:	2.29.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	http://www.gnu.org/software/binutils/
@@ -334,8 +334,8 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.0.0-rc2
-Current Vers:	7.0.0-rc2
+Version:	7.0.0-rc4
+Current Vers:	7.0.0-rc4
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
@@ -451,8 +451,8 @@ Notes:
 There is a flex2netbsd script to help newer imports.
 
 Package:	gcc
-Version:	5.4
-Current Vers:	5.4/6.4/7.2
+Version:	5.5
+Current Vers:	5.5/6.4/7.2
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gcc/
 Home Page:	http://www.gnu.org/software/gcc/
@@ -482,7 +482,7 @@ Before importing a new version of external/gpl3/gcc:
 	  into gcc/dist/gcc/doc: cpp.1 cpp.info gcc.1 gcc.info gcov.1
 
 Package:	gdb
-Version:	7.12
+Version:	8.0.1
 Current Vers:	8.0.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
@@ -848,10 +848,10 @@ Uses libc's ohash
 
 Package:	mDNSResponder
 Version:	320.16
-Current Vers:	541
+Current Vers:	878
 Maintainer:	Apple
-Archive Site:	http://www.opensource.apple.com/tarballs/mDNSResponder/
-Home Page:	http://developer.apple.com/opensource/internet/bonjour.html
+Archive Site:	https://www.opensource.apple.com/tarballs/mDNSResponder/
+Home Page:	https://developer.apple.com/bonjour/
 Mailing List:	bonjour-dev@lists.apple.com
 License:	Apache2 (mdnsd), BSD 3-clause (libdns_sd),
 		BSD 3-clause like (dns-sd)
@@ -861,7 +861,7 @@ Notes:
 
 Package:	mandoc
 Version:	1.14.1
-Current Vers:	1.14.2
+Current Vers:	1.14.3
 Maintainer:	Kristaps Džonsons
 Archive Site:	http://mdocml.bsd.lv/snapshots/
 Home Page:	http://mdocml.bsd.lv/
@@ -1030,8 +1030,8 @@ Notes:
 Patch applied after OpenSSH import.
 
 Package:	OpenSSH
-Version:	7.5
-Current Vers:	7.5 / portable 7.5p1
+Version:	7.6
+Current Vers:	7.6 / portable 7.6p1
 Maintainer:	OpenSSH
 Archive Site:	http://www.openssh.com/ftp.html
 Home Page:	http://www.openssh.com/portable.html
@@ -1372,8 +1372,8 @@ perhaps this implementation should be kept anyway for historical
 purposes.
 
 Package:	tmux
-Version:	2.4
-Current Vers:	2.5
+Version:	2.6
+Current Vers:	2.6
 Maintainer:	Nicholas Marriott <nicholas.marriott@gmail.com>
 Archive site:	https://github.com/tmux/tmux
 Home page:	http://tmux.github.io
@@ -1411,8 +1411,8 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2017b / tzdata2017b
-Current Vers:	tzcode2017b / tzdata2017b
+Version:	tzcode2017c / tzdata2017c
+Current Vers:	tzcode2017c / tzdata2017c
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
@@ -1569,10 +1569,10 @@ Notes:
 		Need to feed back local changes
 
 Package:	tre
-Version:	0.8.0
+Version:	0.8.0, git source as of 20171117
 Current Vers:	0.8.0
 Maintainer:	http://laurikari.net/tre
-Archive Site:	http://laurikari.net/tre
+Archive Site:	https://github.com/laurikari/tre
 Home Page:	http://laurikari.net/tre
 Mailing List:
 Responsible:	agc, christos
@@ -1681,7 +1681,7 @@ Location:       usr.bin/nc
 
 Package:	gnu-efi
 Version:	3.0u
-Current Vers:	3.0.5
+Current Vers:	3.0.6
 Maintainer:	https://sourceforge.net/projects/gnu-efi/
 Archive Site:	https://sourceforge.net/projects/gnu-efi/
 Home Page:	https://sourceforge.net/projects/gnu-efi/
@@ -1705,7 +1705,7 @@ Notes:
 
 Package:	dtc,libfdt
 Version:	1.4.4
-Current Vers:	1.4.4
+Current Vers:	1.4.5
 Maintainer:	David Gibson <david@gibson.dropbear.id.au>, Jon Loeliger <jdl@jdl.com>
 Archive Site:	https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 Home Page:	https://git.kernel.org/pub/scm/utils/dtc/dtc.git
@@ -1717,8 +1717,8 @@ Notes:
 external/gpl2/dtc/dtc2netbsd should be used to create directories to import
 
 Package:	dts
-Version:	4.12.4
-Current Vers:	4.12.4
+Version:	4.15-rc1
+Current Vers:	4.15-rc1
 Maintainer:	https://www.kernel.org/
 Archive Site:	https://cdn.kernel.org/pub/linux/kernel/v4.x/
 Home Page:	https://www.kernel.org/

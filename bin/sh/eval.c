@@ -1,4 +1,4 @@
-/*	$NetBSD: eval.c,v 1.151 2017/06/30 23:01:21 kre Exp $	*/
+/*	$NetBSD: eval.c,v 1.153 2017/11/19 03:23:01 kre Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)eval.c	8.9 (Berkeley) 6/8/95";
 #else
-__RCSID("$NetBSD: eval.c,v 1.151 2017/06/30 23:01:21 kre Exp $");
+__RCSID("$NetBSD: eval.c,v 1.153 2017/11/19 03:23:01 kre Exp $");
 #endif
 #endif /* not lint */
 
@@ -279,20 +279,20 @@ evaltree(union node *n, int flags)
 		if (xflag && n->nredir.redirect) {
 			union node *rn;
 
-			out2str(expandstr(ps4val(), line_number));
-			out2str("using redirections:");
+			outxstr(expandstr(ps4val(), line_number));
+			outxstr("using redirections:");
 			for (rn = n->nredir.redirect; rn; rn = rn->nfile.next)
-				(void) outredir(&errout, rn, ' ');
-			out2str(" do\n");
-			flushout(&errout);
+				(void) outredir(outx, rn, ' ');
+			outxstr(" do\n");
+			flushout(outx);
 		}
 		redirect(n->nredir.redirect, REDIR_PUSH | REDIR_KEEP);
 		evaltree(n->nredir.n, flags);
 		popredir();
 		if (xflag && n->nredir.redirect) {
-			out2str(expandstr(ps4val(), line_number));
-			out2str("done\n");
-			flushout(&errout);
+			outxstr(expandstr(ps4val(), line_number));
+			outxstr("done\n");
+			flushout(outx);
 		}
 		break;
 	case NSUBSHELL:
@@ -437,13 +437,13 @@ evalfor(union node *n, int flags)
 			f |= EV_MORE;
 
 		if (xflag) {
-			out2str(expandstr(ps4val(), line_number));
-			out2str("for ");
-			out2str(n->nfor.var);
-			out2c('=');
-			out2shstr(sp->text);
-			out2c('\n');
-			flushout(&errout);
+			outxstr(expandstr(ps4val(), line_number));
+			outxstr("for ");
+			outxstr(n->nfor.var);
+			outxc('=');
+			outxshstr(sp->text);
+			outxc('\n');
+			flushout(outx);
 		}
 
 		setvar(n->nfor.var, sp->text, 0);
@@ -523,12 +523,12 @@ evalsubshell(union node *n, int flags)
 	if (xflag && n->nredir.redirect) {
 		union node *rn;
 
-		out2str(expandstr(ps4val(), line_number));
-		out2str("using redirections:");
+		outxstr(expandstr(ps4val(), line_number));
+		outxstr("using redirections:");
 		for (rn = n->nredir.redirect; rn; rn = rn->nfile.next)
-			(void) outredir(&errout, rn, ' ');
-		out2str(" do subshell\n");
-		flushout(&errout);
+			(void) outredir(outx, rn, ' ');
+		outxstr(" do subshell\n");
+		flushout(outx);
 	}
 	INTOFF;
 	jp = makejob(n, 1);
@@ -543,9 +543,9 @@ evalsubshell(union node *n, int flags)
 	exitstatus = backgnd ? 0 : waitforjob(jp);
 	INTON;
 	if (!backgnd && xflag && n->nredir.redirect) {
-		out2str(expandstr(ps4val(), line_number));
-		out2str("done subshell\n");
-		flushout(&errout);
+		outxstr(expandstr(ps4val(), line_number));
+		outxstr("done subshell\n");
+		flushout(outx);
 	}
 }
 
@@ -797,7 +797,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 
 	vforked = 0;
 	/* First expand the arguments. */
-	CTRACE(DBG_EVAL, ("evalcommand(%p, %d) called\n", cmd, flags));
+	CTRACE(DBG_EVAL, ("evalcommand(%p, %d) called [%s]\n", cmd, flags,
+	    cmd->ncmd.args ? cmd->ncmd.args->narg.text : ""));
 	setstackmark(&smark);
 	back_exitstatus = 0;
 
@@ -861,12 +862,12 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		char sep = 0;
 		union node *rn;
 
-		out2str(expandstr(ps4val(), line_number));
+		outxstr(expandstr(ps4val(), line_number));
 		for (sp = varlist.list ; sp ; sp = sp->next) {
 			char *p;
 
 			if (sep != 0)
-				outc(sep, &errout);
+				outxc(sep);
 
 			/*
 			 * The "var=" part should not be quoted, regardless
@@ -876,25 +877,25 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 			p = strchr(sp->text, '=');
 			if (p != NULL) {
 				*p = '\0';	/*XXX*/
-				out2shstr(sp->text);
-				out2c('=');
+				outxshstr(sp->text);
+				outxc('=');
 				*p++ = '=';	/*XXX*/
 			} else
 				p = sp->text;
-			out2shstr(p);
+			outxshstr(p);
 			sep = ' ';
 		}
 		for (sp = arglist.list ; sp ; sp = sp->next) {
 			if (sep != 0)
-				outc(sep, &errout);
-			out2shstr(sp->text);
+				outxc(sep);
+			outxshstr(sp->text);
 			sep = ' ';
 		}
 		for (rn = cmd->ncmd.redirect; rn; rn = rn->nfile.next)
-			if (outredir(&errout, rn, sep))
+			if (outredir(outx, rn, sep))
 				sep = ' ';
-		outc('\n', &errout);
-		flushout(&errout);
+		outxc('\n');
+		flushout(outx);
 	}
 
 	/* Now locate the command. */
@@ -1056,7 +1057,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 	/* Execute the command. */
 	switch (cmdentry.cmdtype) {
 	case CMDFUNCTION:
-		VXTRACE(DBG_EVAL, ("Shell function:  "), trargs(argv));
+		VXTRACE(DBG_EVAL, ("Shell function%s:  ",vforked?" VF":""),
+		    trargs(argv));
 		redirect(cmd->ncmd.redirect, flags & EV_MORE ? REDIR_PUSH : 0);
 		saveparam = shellparam;
 		shellparam.malloc = 0;
@@ -1126,7 +1128,7 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 
 	case CMDBUILTIN:
 	case CMDSPLBLTIN:
-		VXTRACE(DBG_EVAL, ("builtin command:  "), trargs(argv));
+		VXTRACE(DBG_EVAL, ("builtin command%s:  ",vforked?" VF":""), trargs(argv));
 		mode = (cmdentry.u.bltin == execcmd) ? 0 : REDIR_PUSH;
 		if (flags == EV_BACKCMD) {
 			memout.nleft = 0;
@@ -1204,7 +1206,8 @@ evalcommand(union node *cmd, int flgs, struct backcmd *backcmd)
 		break;
 
 	default:
-		VXTRACE(DBG_EVAL, ("normal command:  "), trargs(argv));
+		VXTRACE(DBG_EVAL, ("normal command%s:  ", vforked?" VF":""),
+		    trargs(argv));
 		redirect(cmd->ncmd.redirect, 
 		    (vforked ? REDIR_VFORK : 0) | REDIR_KEEP);
 		if (!vforked)

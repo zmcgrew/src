@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.362 2017/05/21 15:28:42 riastradh Exp $
+#	$NetBSD: bsd.README,v 1.365 2017/11/25 23:22:41 jmcneill Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -374,7 +374,7 @@ MKRELRO		If "partial", set the non-PLT GOT to read-only. If "full"
 		also force immediate symbol binding.
 		Default: no
 	
-MKREPRO         If "yes", create reproducable builds. This enables
+MKREPRO         If "yes", create reproducible builds. This enables
 		different switches to make two builds from the same source tree
 		result in the same build results.
 		Default: no
@@ -401,6 +401,10 @@ MKSOFTFLOAT	If not "no", build with options to enable the compiler to
 MKSTATICLIB	If "no", don't build or install the normal static (*.a)
 		libraries.
 		Default: yes
+
+MKSTATICPIE	Compile in support for static pie binaries. These binaries
+		use a special rcrt0.o/mcrt0.o that do the necessary relocations
+		Default: yes on platforms that support it.
 
 MKSTRIPSYM	If "yes", strip all local symbols from shared libraries;
 		the affect is equivalent to -x option of ld(1). If "no",
@@ -1206,7 +1210,7 @@ LIBDIR		Target directory for libraries.
 
 MKARZERO	Normally, ar(1) sets the timestamps, uid, gid and
 		permissions in files inside its archives to those of
-		the file it was fed. This leads to non-reproduceable
+		the file it was fed. This leads to non-reproducible
 		builds. If MKARZERO is set to "yes" (default is the
 		same as MKREPRO, or "no" if MKREPRO is not defined),
 		then the "D" flag is passed to ar, causing the
@@ -1613,6 +1617,7 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBPUFFS?=	${DESTDIR}/usr/lib/libpuffs.a
 		LIBQUOTA?=	${DESTDIR}/usr/lib/libquota.a
 		LIBRADIUS?=	${DESTDIR}/usr/lib/libradius.a
+		LIBREFUSE?=	${DESTDIR}/usr/lib/librefuse.a
 		LIBRESOLV?=	${DESTDIR}/usr/lib/libresolv.a
 		LIBRMT?=	${DESTDIR}/usr/lib/librmt.a
 		LIBROKEN?=	${DESTDIR}/usr/lib/libroken.a

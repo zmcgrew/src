@@ -44,6 +44,7 @@
 #ifdef HAVE_MALLOC_H
 #include <malloc.h>
 #endif /* HAVE_MALLOC_H */
+#include <stdint.h>
 
 #include "tre-internal.h"
 #include "tre-match-utils.h"
@@ -121,6 +122,7 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string, int len,
   int new_match = 0;
   int *tmp_tags = NULL;
   int *tmp_iptr;
+  reg_errcode_t ret;
 
 #ifdef TRE_MBSTATE
   memset(&mbstate, '\0', sizeof(mbstate));
@@ -140,6 +142,20 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string, int len,
   {
     size_t tbytes, rbytes, pbytes, xbytes, total_bytes;
     char *tmp_buf;
+
+    /* Ensure that tbytes and xbytes*num_states cannot overflow, and that
+     * they don't contribute more than 1/8 of SIZE_MAX to total_bytes. */
+    if (num_tags > SIZE_MAX/(8 * sizeof(int) * tnfa->num_states))
+      return REG_ESPACE;
+
+    /* Likewise check rbytes. */
+    if (tnfa->num_states+1 > SIZE_MAX/(8 * sizeof(*reach_next)))
+      return REG_ESPACE;
+
+    /* Likewise check pbytes. */
+    if (tnfa->num_states > SIZE_MAX/(8 * sizeof(*reach_pos)))
+      return REG_ESPACE;
+
     /* Compute the length of the block we need. */
     tbytes = sizeof(*tmp_tags) * num_tags;
     rbytes = sizeof(*reach_next) * (tnfa->num_states + 1);
@@ -254,7 +270,7 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string, int len,
   DPRINT(("-------------+------------------------------------------------\n"));
 
   reach_next_i = reach_next;
-  while (/*CONSTCOND*/1)
+  while (/*CONSTCOND*/(void)1,1)
     {
       /* If no match found yet, add the initial states to `reach_next'. */
       if (match_eo < 0)
@@ -305,7 +321,7 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string, int len,
       else
 	{
 	  if (num_tags == 0 || reach_next_i == reach_next)
-	    /* We have found a match. */
+	    /* We have found a match. */
 	    break;
 	}
 
@@ -474,13 +490,14 @@ tre_tnfa_run_parallel(const tre_tnfa_t *tnfa, const void *string, int len,
 
   DPRINT(("match end offset = %d\n", match_eo));
 
+  *match_end_ofs = match_eo;
+  ret = match_eo >= 0 ? REG_OK : REG_NOMATCH;
+error_exit:
 #ifndef TRE_USE_ALLOCA
   if (buf)
     xfree(buf);
 #endif /* !TRE_USE_ALLOCA */
-
-  *match_end_ofs = match_eo;
-  return match_eo >= 0 ? REG_OK : REG_NOMATCH;
+  return ret;
 }
 
 /* EOF */

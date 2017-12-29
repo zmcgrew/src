@@ -1,4 +1,4 @@
-/*	$NetBSD: vmparam.h,v 1.43 2017/06/24 13:43:36 joerg Exp $	*/
+/*	$NetBSD: vmparam.h,v 1.45 2017/11/13 07:06:49 wiz Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -55,6 +55,12 @@
 #define	PAGE_SHIFT	12
 #define	PAGE_SIZE	(1 << PAGE_SHIFT)
 #define	PAGE_MASK	(PAGE_SIZE - 1)
+
+/*
+ * Default pager_map of 16MB is awfully small.  There is plenty
+ * of VA so use it.
+ */
+#define	PAGER_MAP_DEFAULT_SIZE (512 * 1024 * 1024)
 
 /*
  * USRSTACK is the top (end) of the user stack. Immediately above the

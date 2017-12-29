@@ -1,4 +1,4 @@
-.\"	$NetBSD: BUILDING.mdoc,v 1.120 2017/05/21 15:28:38 riastradh Exp $
+.\"	$NetBSD: BUILDING.mdoc,v 1.123 2017/12/29 03:04:56 sevan Exp $
 .\"
 .\" Copyright (c) 2001-2011 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -33,7 +33,7 @@
 .\" Toolchain prefix for commands
 .ds toolprefix nb
 .
-.Dd April 13, 2017
+.Dd October 21, 2017
 .Dt BUILDING 8
 .Os NetBSD
 .
@@ -87,9 +87,11 @@ should only be run for native builds with an appropriately up-to-date
 version of
 .Nx
 .Xr make 1 .
-(For building from out-of-date systems or on a non-native host, see the
+Intended for expert use with knowlege of its shortcomings, it has been superseded
+by the
 .Nm build.sh
-shell script.)
+shell script as the recommended means for building
+.Nx .
 .It Pa UPDATING
 Special notes for updating from an earlier revision of
 .Nx .
@@ -102,7 +104,9 @@ and the
 system from scratch.
 Can be used for both native and cross builds, and should be used instead of
 .Xr make 1
-for any source tree that is updated and recompiled regularly.
+as it performs additional checks to prevent common issues going undetected, such
+as building with an outdated version of
+.Xr make 1 .
 .It Pa crypto/dist/ , dist/ , gnu/dist/
 Sources imported verbatim from third parties, without mangling the
 existing build structure.
@@ -611,7 +615,7 @@ the entire built system will be statically linked.
 .DFLT
 Platform dependent.
 As of this writing, all platforms except
-.Sy sh3
+.Sy m68000
 default to
 .Dq yes .
 .
@@ -1805,7 +1809,7 @@ detected and used automatically.
 See the
 .Cm list-arch
 operation for a way to get a list of valid
-.Sy MACHINE 
+.Sy MACHINE
 and
 .Sy MACHINE_ARCH
 settings.

@@ -1,4 +1,4 @@
-/*	$NetBSD: ex_print.c,v 1.4 2014/01/26 21:43:45 christos Exp $ */
+/*	$NetBSD: ex_print.c,v 1.6 2017/12/01 18:39:49 rin Exp $ */
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -16,7 +16,7 @@
 static const char sccsid[] = "Id: ex_print.c,v 10.24 2001/07/29 19:07:29 skimo Exp  (Berkeley) Date: 2001/07/29 19:07:29 ";
 #endif /* not lint */
 #else
-__RCSID("$NetBSD: ex_print.c,v 1.4 2014/01/26 21:43:45 christos Exp $");
+__RCSID("$NetBSD: ex_print.c,v 1.6 2017/12/01 18:39:49 rin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -119,7 +119,7 @@ ex_print(SCR *sp, EXCMD *cmdp, MARK *fp, MARK *tp, u_int32_t flags)
 		 */
 		if (LF_ISSET(E_C_HASH)) {
 			if (from <= 999999) {
-				SPRINTF(buf, SIZE(buf), L("%6ld  "), from);
+				SPRINTF(buf, SIZE(buf), L("%6u  "), from);
 				p = buf;
 			} else
 				p = L("TOOBIG  ");
@@ -264,7 +264,7 @@ intr:	*colp = col;
  * ex_printf --
  *	Ex's version of printf.
  *
- * PUBLIC: int ex_printf __P((SCR *, const char *, ...));
+ * PUBLIC: int ex_printf __P((SCR *, const char *, ...)) __printflike(2, 3);
  */
 int
 #ifdef __STDC__

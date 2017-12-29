@@ -1,4 +1,4 @@
-/*	$NetBSD: pq3etsec.c,v 1.29 2016/12/15 09:28:04 ozaki-r Exp $	*/
+/*	$NetBSD: pq3etsec.c,v 1.32 2017/10/23 09:23:48 msaitoh Exp $	*/
 /*-
  * Copyright (c) 2010, 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.29 2016/12/15 09:28:04 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pq3etsec.c,v 1.32 2017/10/23 09:23:48 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -648,27 +648,27 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	error = pq3etsec_rxq_attach(sc, &sc->sc_rxq, 0);
 	if (error) {
 		aprint_error(": failed to init rxq: %d\n", error);
-		return;
+		goto fail_1;
 	}
 
 	error = pq3etsec_txq_attach(sc, &sc->sc_txq, 0);
 	if (error) {
 		aprint_error(": failed to init txq: %d\n", error);
-		return;
+		goto fail_2;
 	}
 
 	error = pq3etsec_mapcache_create(sc, &sc->sc_rx_mapcache, 
 	    ETSEC_MAXRXMBUFS, MCLBYTES, ETSEC_NRXSEGS);
 	if (error) {
 		aprint_error(": failed to allocate rx dmamaps: %d\n", error);
-		return;
+		goto fail_3;
 	}
 
 	error = pq3etsec_mapcache_create(sc, &sc->sc_tx_mapcache, 
 	    ETSEC_MAXTXMBUFS, MCLBYTES, ETSEC_NTXSEGS);
 	if (error) {
 		aprint_error(": failed to allocate tx dmamaps: %d\n", error);
-		return;
+		goto fail_4;
 	}
 
 	sc->sc_tx_ih = intr_establish(cnl->cnl_intrs[0], IPL_VM, IST_ONCHIP,
@@ -676,7 +676,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	if (sc->sc_tx_ih == NULL) {
 		aprint_error(": failed to establish tx interrupt: %d\n",
 		    cnl->cnl_intrs[0]);
-		return;
+		goto fail_5;
 	}
 
 	sc->sc_rx_ih = intr_establish(cnl->cnl_intrs[1], IPL_VM, IST_ONCHIP,
@@ -684,7 +684,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	if (sc->sc_rx_ih == NULL) {
 		aprint_error(": failed to establish rx interrupt: %d\n",
 		    cnl->cnl_intrs[1]);
-		return;
+		goto fail_6;
 	}
 
 	sc->sc_error_ih = intr_establish(cnl->cnl_intrs[2], IPL_VM, IST_ONCHIP,
@@ -692,7 +692,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	if (sc->sc_error_ih == NULL) {
 		aprint_error(": failed to establish error interrupt: %d\n",
 		    cnl->cnl_intrs[2]);
-		return;
+		goto fail_7;
 	}
 
 	int softint_flags = SOFTINT_NET;
@@ -703,7 +703,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	    pq3etsec_soft_intr, sc);
 	if (sc->sc_soft_ih == NULL) {
 		aprint_error(": failed to establish soft interrupt\n");
-		return;
+		goto fail_8;
 	}
 
 	/*
@@ -719,7 +719,7 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 		sc->sc_mdio_dev = device_find_by_driver_unit("mdio", mdio);
 		if (sc->sc_mdio_dev == NULL) {
 			aprint_error(": failed to locate mdio device\n");
-			return;
+			goto fail_9;
 		}
 		aprint_normal("\n");
 	}
@@ -734,7 +734,6 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ic_tx_count = 16;
 	pq3etsec_set_ic_rx(sc);
 	pq3etsec_set_ic_tx(sc);
-	pq3etsec_sysctl_setup(NULL, sc);
 
 	char enaddr[ETHER_ADDR_LEN] = {
 	    [0] = sc->sc_macstnaddr2 >> 16,
@@ -794,7 +793,13 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	/*
 	 * Attach the interface.
 	 */
-	if_initialize(ifp);
+	error = if_initialize(ifp);
+	if (error != 0) {
+		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
+		    error);
+		goto fail_10;
+	}
+	pq3etsec_sysctl_setup(NULL, sc);
 	ether_ifattach(ifp, enaddr);
 	if_register(ifp);
 
@@ -818,6 +823,36 @@ pq3etsec_attach(device_t parent, device_t self, void *aux)
 	    NULL, xname, "rx pause");
 	evcnt_attach_dynamic(&sc->sc_ev_mii_ticks, EVCNT_TYPE_MISC,
 	    NULL, xname, "mii ticks");
+	return;
+
+fail_10:
+	ifmedia_removeall(&sc->sc_mii.mii_media);
+	mii_detach(&sc->sc_mii, sc->sc_phy_addr, MII_OFFSET_ANY);
+fail_9:
+	softint_disestablish(sc->sc_soft_ih);
+fail_8:
+	intr_disestablish(sc->sc_error_ih);
+fail_7:
+	intr_disestablish(sc->sc_rx_ih);
+fail_6:
+	intr_disestablish(sc->sc_tx_ih);
+fail_5:
+	pq3etsec_mapcache_destroy(sc, sc->sc_tx_mapcache);
+fail_4:
+	pq3etsec_mapcache_destroy(sc, sc->sc_rx_mapcache);
+fail_3:
+#if 0 /* notyet */
+	pq3etsec_txq_detach(sc);
+#endif
+fail_2:
+#if 0 /* notyet */
+	pq3etsec_rxq_detach(sc);
+#endif
+fail_1:
+	callout_destroy(&sc->sc_mii_callout);
+	mutex_obj_free(sc->sc_lock);
+	mutex_obj_free(sc->sc_hwlock);
+	bus_space_unmap(sc->sc_bst, sc->sc_bsh, cnl->cnl_size);
 }
 
 static uint64_t
@@ -1512,8 +1547,7 @@ pq3etsec_rx_offload(
 	const struct rxfcb *fcb)
 {
 	if (fcb->rxfcb_flags & RXFCB_VLN) {
-		VLAN_INPUT_TAG(&sc->sc_if, m, fcb->rxfcb_vlctl,
-		    m_freem(m); return false);
+		vlan_set_tag(m, fcb->rxfcb_vlctl);
 	}
 	if ((fcb->rxfcb_flags & RXFCB_IP) == 0
 	    || (fcb->rxfcb_flags & (RXFCB_CIP|RXFCB_CTU)) == 0)
@@ -1991,14 +2025,18 @@ pq3etsec_tx_offload(
 {
 	struct mbuf *m = *mp;
 	u_int csum_flags = m->m_pkthdr.csum_flags;
-	struct m_tag *vtag = VLAN_OUTPUT_TAG(&sc->sc_ec, m);
+	bool have_vtag;
+	uint16_t vtag;
 
 	KASSERT(m->m_flags & M_PKTHDR);
+
+	have_vtag = vlan_has_tag(m);
+	vtag = (have_vtag) ? vlan_get_tag(m) : 0;
 
 	/*
 	 * Let see if we are doing any offload first.
 	 */
-	if (csum_flags == 0 && vtag == 0) {
+	if (csum_flags == 0 && !have_vtag) {
 		m->m_flags &= ~M_HASFCB;
 		return;
 	}
@@ -2012,7 +2050,7 @@ pq3etsec_tx_offload(
 		    | ((csum_flags & M_CSUM_CIP) ? TXFCB_CIP : 0)
 		    | ((csum_flags & M_CSUM_CTU) ? TXFCB_CTU : 0);
 	}
-	if (vtag) {
+	if (have_vtag) {
 		flags |= TXFCB_VLN;
 	}
 	if (flags == 0) {
@@ -2028,7 +2066,7 @@ pq3etsec_tx_offload(
 		fcb.txfcb_l4os = M_CSUM_DATA_IPv6_HL(m->m_pkthdr.csum_data);
 	fcb.txfcb_l3os = ETHER_HDR_LEN;
 	fcb.txfcb_phcs = 0;
-	fcb.txfcb_vlctl = vtag ? VLAN_TAG_VALUE(vtag) & 0xffff : 0;
+	fcb.txfcb_vlctl = vtag;
 
 #if 0
 	printf("%s: csum_flags=%#x: txfcb flags=%#x lsos=%u l4os=%u phcs=%u vlctl=%#x\n",
@@ -2063,7 +2101,6 @@ pq3etsec_tx_offload(
 				panic("%s: impossible M_CSUM flags %#x",
 				    device_xname(sc->sc_dev), csum_flags);
 #endif
-			} else if (vtag) {
 			}
 
 			m->m_flags &= ~M_HASFCB;

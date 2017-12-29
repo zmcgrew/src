@@ -1,4 +1,4 @@
-/*	$NetBSD: xform.h,v 1.11 2017/07/14 12:26:26 ozaki-r Exp $	*/
+/*	$NetBSD: xform.h,v 1.13 2017/11/15 10:42:41 knakahara Exp $	*/
 /*	$FreeBSD: src/sys/netipsec/xform.h,v 1.1.4.1 2003/01/24 05:11:36 sam Exp $	*/
 /*	$OpenBSD: ip_ipsp.h,v 1.119 2002/03/14 01:27:11 millert Exp $	*/
 /*
@@ -64,7 +64,7 @@ struct tdb_ident {
  */
 struct secasvar;
 struct tdb_crypto {
-	struct ipsecrequest	*tc_isr;	/* ipsec request state */
+	const struct ipsecrequest *tc_isr;	/* ipsec request state */
 	u_int32_t		tc_spi;		/* associated SPI */
 	union sockaddr_union	tc_dst;		/* dst addr of packet */
 	u_int8_t		tc_proto;	/* current protocol, e.g. AH */
@@ -93,7 +93,7 @@ struct xformsw {
 	int	(*xf_input)(struct mbuf*, struct secasvar*, /* input */
 			int, int);
 	int	(*xf_output)(struct mbuf*,	       		/* output */
-			struct ipsecrequest *, struct secasvar *,
+			const struct ipsecrequest *, struct secasvar *,
 			struct mbuf **, int, int);
 	struct xformsw *xf_next;		/* list of registered xforms */
 };
@@ -105,10 +105,10 @@ extern int xform_init(struct secasvar *sav, int xftype);
 struct cryptoini;
 
 /* XF_IP4 */
-extern	int ip4_input6(struct mbuf **m, int *offp, int proto);
-extern	void ip4_input(struct mbuf *m, int, int);
-extern	int ipip_output(struct mbuf *, struct ipsecrequest *, struct secasvar *,
-			struct mbuf **, int, int);
+extern	int ip4_input6(struct mbuf **m, int *offp, int proto, void *);
+extern	void ip4_input(struct mbuf *m, int, int, void *);
+extern	int ipip_output(struct mbuf *, const struct ipsecrequest *,
+	    struct secasvar *, struct mbuf **, int, int);
 
 /* XF_AH */
 extern int ah_init0(struct secasvar *, const struct xformsw *,

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_kmem.c,v 1.63 2017/04/12 20:05:54 christos Exp $	*/
+/*	$NetBSD: subr_kmem.c,v 1.65 2017/11/09 23:20:12 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2009-2015 The NetBSD Foundation, Inc.
@@ -100,7 +100,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.63 2017/04/12 20:05:54 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_kmem.c,v 1.65 2017/11/09 23:20:12 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kmem.h"
@@ -259,6 +259,9 @@ kmem_intr_alloc(size_t requested_size, km_flag_t kmflags)
 	uint8_t *p;
 
 	KASSERT(requested_size > 0);
+
+	KASSERT((kmflags & KM_SLEEP) || (kmflags & KM_NOSLEEP));
+	KASSERT(!(kmflags & KM_SLEEP) || !(kmflags & KM_NOSLEEP));
 
 #ifdef KMEM_GUARD
 	if (kmem_guard_enabled) {
@@ -525,6 +528,29 @@ kmem_asprintf(const char *fmt, ...)
 	KASSERT(size == len);
 
 	return str;
+}
+
+char *
+kmem_strdupsize(const char *str, size_t *lenp, km_flag_t flags)
+{
+	size_t len = strlen(str) + 1;
+	char *ptr = kmem_alloc(len, flags);
+	if (ptr == NULL)
+		return NULL;
+
+	if (lenp)
+		*lenp = len;
+	memcpy(ptr, str, len);
+	return ptr;
+}
+
+void
+kmem_strfree(char *str)
+{
+	if (str == NULL)
+		return;
+
+	kmem_free(str, strlen(str) + 1);
 }
 
 /* ------------------ DEBUG / DIAGNOSTIC ------------------ */

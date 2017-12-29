@@ -1,4 +1,4 @@
-/*	$NetBSD: ieee80211_input.c,v 1.88 2017/03/06 08:36:20 ozaki-r Exp $	*/
+/*	$NetBSD: ieee80211_input.c,v 1.91 2017/12/10 08:56:23 maxv Exp $	*/
 /*-
  * Copyright (c) 2001 Atsushi Onoe
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
@@ -36,7 +36,7 @@
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_input.c,v 1.81 2005/08/10 16:22:29 sam Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_input.c,v 1.88 2017/03/06 08:36:20 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_input.c,v 1.91 2017/12/10 08:56:23 maxv Exp $");
 #endif
 
 #ifdef _KERNEL_OPT
@@ -358,6 +358,8 @@ ieee80211_input(struct ieee80211com *ic, struct mbuf *m,
 			ic->ic_stats.is_rx_tooshort++;
 			goto out;		/* XXX */
 		}
+		wh = mtod(m, struct ieee80211_frame *);
+
 		switch (ic->ic_opmode) {
 		case IEEE80211_M_STA:
 			if (dir != IEEE80211_FC1_DIR_FROMDS) {
@@ -452,7 +454,7 @@ ieee80211_input(struct ieee80211com *ic, struct mbuf *m,
 				IEEE80211_NODE_STAT(ni, rx_noprivacy);
 				goto out;
 			}
-			key = ieee80211_crypto_decap(ic, ni, m, hdrspace);
+			key = ieee80211_crypto_decap(ic, ni, &m, hdrspace);
 			if (key == NULL) {
 				/* NB: stats+msgs handled in crypto_decap */
 				IEEE80211_NODE_STAT(ni, rx_wepfail);
@@ -593,7 +595,7 @@ ieee80211_input(struct ieee80211com *ic, struct mbuf *m,
 				goto out;
 			}
 			hdrspace = ieee80211_hdrspace(ic, wh);
-			key = ieee80211_crypto_decap(ic, ni, m, hdrspace);
+			key = ieee80211_crypto_decap(ic, ni, &m, hdrspace);
 			if (key == NULL) {
 				/* NB: stats+msgs handled in crypto_decap */
 				goto out;
@@ -788,11 +790,8 @@ ieee80211_deliver_data(struct ieee80211com *ic,
 	}
 	if (m != NULL) {
 
-		if (ni->ni_vlan != 0) {
-			/* attach vlan tag */
-			/* XXX goto err? */
-			VLAN_INPUT_TAG(ifp, m, ni->ni_vlan, goto out);
-		}
+		if (ni->ni_vlan != 0)
+			vlan_set_tag(m, ni->ni_vlan);
 
 		/*
 		 * XXX once ieee80211_input (or rxintr itself) runs in softint
@@ -802,11 +801,6 @@ ieee80211_deliver_data(struct ieee80211com *ic,
 		if_percpuq_enqueue(ifp->if_percpuq, m);
 	}
 	return;
-  out:
-	if (m != NULL) {
-		bpf_mtap3(ic->ic_rawbpf, m);
-		m_freem(m);
-	}
 }
 
 static struct mbuf *

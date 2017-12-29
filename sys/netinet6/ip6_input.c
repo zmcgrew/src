@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.181 2017/07/27 06:59:28 ozaki-r Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.185 2017/11/25 13:18:02 kre Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.181 2017/07/27 06:59:28 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.185 2017/11/25 13:18:02 kre Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -222,9 +222,7 @@ ip6intr(void *arg __unused)
 {
 	struct mbuf *m;
 
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-#endif
+	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
 	while ((m = pktq_dequeue(ip6_pktq)) != NULL) {
 		struct psref psref;
 		struct ifnet *rcvif = m_get_rcvif_psref(m, &psref);
@@ -244,9 +242,7 @@ ip6intr(void *arg __unused)
 		ip6_input(m, rcvif);
 		m_put_rcvif_psref(rcvif, &psref);
 	}
-#ifndef NET_MPSAFE
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 void
@@ -505,13 +501,33 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 #endif
 	    rt->rt_ifp->if_type == IFT_LOOP) {
 		struct in6_ifaddr *ia6 = (struct in6_ifaddr *)rt->rt_ifa;
+		int addrok;
+
 		if (ia6->ia6_flags & IN6_IFF_ANYCAST)
 			m->m_flags |= M_ANYCAST6;
 		/*
 		 * packets to a tentative, duplicated, or somehow invalid
 		 * address must not be accepted.
 		 */
-		if (!(ia6->ia6_flags & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED))) {
+		if (ia6->ia6_flags & IN6_IFF_NOTREADY)
+			addrok = 0;
+		else if (ia6->ia6_flags & IN6_IFF_DETACHED &&
+		    !IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_src))
+		{
+			/* Allow internal traffic to DETACHED addresses */
+			struct sockaddr_in6 sin6;
+			int s;
+
+			memset(&sin6, 0, sizeof(sin6));
+			sin6.sin6_family = AF_INET6;
+			sin6.sin6_len = sizeof(sin6);
+			sin6.sin6_addr = ip6->ip6_src;
+			s = pserialize_read_enter();
+			addrok = (ifa_ifwithaddr(sin6tosa(&sin6)) != NULL);
+			pserialize_read_exit(s);
+		} else
+			addrok = 1;
+		if (addrok) {
 			/* this address is ready */
 			ours = 1;
 			deliverifp = ia6->ia_ifp;	/* correct? */
@@ -797,9 +813,7 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 		}
 #endif /* IPSEC */
 
-		SOFTNET_LOCK();
 		nxt = (*inet6sw[ip6_protox[nxt]].pr_input)(&m, &off, nxt);
-		SOFTNET_UNLOCK();
 	}
 	return;
 

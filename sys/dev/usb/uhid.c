@@ -1,4 +1,4 @@
-/*	$NetBSD: uhid.c,v 1.99 2017/03/11 12:41:14 maya Exp $	*/
+/*	$NetBSD: uhid.c,v 1.101 2017/12/10 17:03:07 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2008, 2012 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.99 2017/03/11 12:41:14 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.101 2017/12/10 17:03:07 bouyer Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -64,8 +64,8 @@ __KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.99 2017/03/11 12:41:14 maya Exp $");
 #include <dev/usb/usbdevs.h>
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdi_util.h>
-#include <dev/usb/hid.h>
 #include <dev/usb/usb_quirks.h>
+#include <dev/hid/hid.h>
 
 #include <dev/usb/uhidev.h>
 
@@ -750,11 +750,19 @@ filt_uhidread(struct knote *kn, long hint)
 	return kn->kn_data > 0;
 }
 
-static const struct filterops uhidread_filtops =
-	{ 1, NULL, filt_uhidrdetach, filt_uhidread };
+static const struct filterops uhidread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_uhidrdetach,
+	.f_event = filt_uhidread,
+};
 
-static const struct filterops uhid_seltrue_filtops =
-	{ 1, NULL, filt_uhidrdetach, filt_seltrue };
+static const struct filterops uhid_seltrue_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_uhidrdetach,
+	.f_event = filt_seltrue,
+};
 
 int
 uhidkqfilter(dev_t dev, struct knote *kn)

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_cprng.c,v 1.27 2015/04/13 22:43:41 riastradh Exp $ */
+/*	$NetBSD: subr_cprng.c,v 1.29 2017/12/01 19:05:49 christos Exp $ */
 
 /*-
  * Copyright (c) 2011-2013 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_cprng.c,v 1.27 2015/04/13 22:43:41 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_cprng.c,v 1.29 2017/12/01 19:05:49 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -253,31 +253,6 @@ out:	mutex_exit(&cprng->cs_lock);
 	return result;
 }
 
-static void	filt_cprng_detach(struct knote *);
-static int	filt_cprng_event(struct knote *, long);
-
-static const struct filterops cprng_filtops =
-	{ 1, NULL, filt_cprng_detach, filt_cprng_event };
-
-int
-cprng_strong_kqfilter(struct cprng_strong *cprng, struct knote *kn)
-{
-
-	switch (kn->kn_filter) {
-	case EVFILT_READ:
-		kn->kn_fop = &cprng_filtops;
-		kn->kn_hook = cprng;
-		mutex_enter(&cprng->cs_lock);
-		SLIST_INSERT_HEAD(&cprng->cs_selq.sel_klist, kn, kn_selnext);
-		mutex_exit(&cprng->cs_lock);
-		return 0;
-
-	case EVFILT_WRITE:
-	default:
-		return EINVAL;
-	}
-}
-
 static void
 filt_cprng_detach(struct knote *kn)
 {
@@ -289,7 +264,7 @@ filt_cprng_detach(struct knote *kn)
 }
 
 static int
-filt_cprng_event(struct knote *kn, long hint)
+filt_cprng_read_event(struct knote *kn, long hint)
 {
 	struct cprng_strong *const cprng = kn->kn_hook;
 	int ret;
@@ -310,6 +285,62 @@ filt_cprng_event(struct knote *kn, long hint)
 		mutex_exit(&cprng->cs_lock);
 
 	return ret;
+}
+
+static int
+filt_cprng_write_event(struct knote *kn, long hint)
+{
+	struct cprng_strong *const cprng = kn->kn_hook;
+
+	if (hint == NOTE_SUBMIT)
+		KASSERT(mutex_owned(&cprng->cs_lock));
+	else
+		mutex_enter(&cprng->cs_lock);
+
+	kn->kn_data = 0;
+
+	if (hint == NOTE_SUBMIT)
+		KASSERT(mutex_owned(&cprng->cs_lock));
+	else
+		mutex_exit(&cprng->cs_lock);
+
+	return 0;
+}
+
+static const struct filterops cprng_read_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_cprng_detach,
+	.f_event = filt_cprng_read_event,
+};
+
+static const struct filterops cprng_write_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_cprng_detach,
+	.f_event = filt_cprng_write_event,
+};
+
+int
+cprng_strong_kqfilter(struct cprng_strong *cprng, struct knote *kn)
+{
+
+	switch (kn->kn_filter) {
+	case EVFILT_READ:
+		kn->kn_fop = &cprng_read_filtops;
+		break;
+	case EVFILT_WRITE:
+		kn->kn_fop = &cprng_write_filtops;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	kn->kn_hook = cprng;
+	mutex_enter(&cprng->cs_lock);
+	SLIST_INSERT_HEAD(&cprng->cs_selq.sel_klist, kn, kn_selnext);
+	mutex_exit(&cprng->cs_lock);
+	return 0;
 }
 
 int

@@ -1,6 +1,7 @@
-/* $NetBSD: ixgbe.h,v 1.26 2017/08/30 08:49:18 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.29 2017/12/06 04:08:50 msaitoh Exp $ */
 
 /******************************************************************************
+  SPDX-License-Identifier: BSD-3-Clause
 
   Copyright (c) 2001-2017, Intel Corporation
   All rights reserved.
@@ -631,11 +632,13 @@ struct adapter {
 /* Sysctl help messages; displayed with sysctl -d */
 #define IXGBE_SYSCTL_DESC_ADV_SPEED \
 	"\nControl advertised link speed using these flags:\n" \
-	"\t0x1 - advertise 100M\n" \
-	"\t0x2 - advertise 1G\n" \
-        "\t0x4 - advertise 10G\n\n" \
-        "\t0x8 - advertise 10M\n\n" \
-        "\t100M and 10M are only supported on certain adapters."
+	"\t0x01 - advertise 100M\n" \
+	"\t0x02 - advertise 1G\n" \
+        "\t0x04 - advertise 10G\n" \
+        "\t0x08 - advertise 10M\n" \
+        "\t0x10 - advertise 2.5G\n" \
+        "\t0x20 - advertise 5G\n\n" \
+        "\t5G, 2.5G, 100M and 10M are only supported on certain adapters."
 
 #define IXGBE_SYSCTL_DESC_SET_FC \
 	"\nSet flow control mode using these values:\n" \
@@ -716,6 +719,8 @@ int  ixgbe_setup_receive_structures(struct adapter *);
 void ixgbe_free_receive_structures(struct adapter *);
 void ixgbe_txeof(struct tx_ring *);
 bool ixgbe_rxeof(struct ix_queue *);
+
+const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 
 #include "ixgbe_bypass.h"
 #include "ixgbe_sriov.h"

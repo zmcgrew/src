@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.537 2017/07/31 06:41:01 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.550 2017/12/28 06:13:50 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.537 2017/07/31 06:41:01 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.550 2017/12/28 06:13:50 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -1850,10 +1850,25 @@ wm_attach(device_t parent, device_t self, void *aux)
 	}
 
 	wm_adjust_qnum(sc, pci_msix_count(pa->pa_pc, pa->pa_tag));
+	/*
+	 *  Don't use MSI-X if we can use only one queue to save interrupt
+	 * resource.
+	 */
+	if (sc->sc_nqueues > 1) {
+		max_type = PCI_INTR_TYPE_MSIX;
+		/*
+		 *  82583 has a MSI-X capability in the PCI configuration space
+		 * but it doesn't support it. At least the document doesn't
+		 * say anything about MSI-X.
+		 */
+		counts[PCI_INTR_TYPE_MSIX]
+		    = (sc->sc_type == WM_T_82583) ? 0 : sc->sc_nqueues + 1;
+	} else {
+		max_type = PCI_INTR_TYPE_MSI;
+		counts[PCI_INTR_TYPE_MSIX] = 0;
+	}
 
 	/* Allocation settings */
-	max_type = PCI_INTR_TYPE_MSIX;
-	counts[PCI_INTR_TYPE_MSIX] = sc->sc_nqueues + 1;
 	counts[PCI_INTR_TYPE_MSI] = 1;
 	counts[PCI_INTR_TYPE_INTX] = 1;
 	/* overridden by disable flags */
@@ -2630,7 +2645,7 @@ alloc_retry:
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef WM_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = wm_ioctl;
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
@@ -2670,11 +2685,12 @@ alloc_retry:
 	case WM_T_82571:
 	case WM_T_82572:
 	case WM_T_82574:
+	case WM_T_82583:
 	case WM_T_82575:
 	case WM_T_82576:
 	case WM_T_82580:
 	case WM_T_I350:
-	case WM_T_I354: /* XXXX ok? */
+	case WM_T_I354:
 	case WM_T_I210:
 	case WM_T_I211:
 	case WM_T_80003:
@@ -2692,7 +2708,6 @@ alloc_retry:
 		break;
 	case WM_T_82542_2_0:
 	case WM_T_82542_2_1:
-	case WM_T_82583:
 	case WM_T_ICH8:
 		/* No support for jumbo frame */
 		break;
@@ -2753,7 +2768,12 @@ alloc_retry:
 #endif
 
 	/* Attach the interface. */
-	if_initialize(ifp);
+	error = if_initialize(ifp);
+	if (error != 0) {
+		aprint_error_dev(sc->sc_dev, "if_initialize failed(%d)\n",
+		    error);
+		return; /* Error */
+	}
 	sc->sc_ipq = if_percpuq_create(&sc->sc_ethercom.ec_if);
 	ether_ifattach(ifp, enaddr);
 	if_register(ifp);
@@ -4022,10 +4042,18 @@ wm_initialize_hardware_bits(struct wm_softc *sc)
 		case WM_T_PCH_LPT:
 		case WM_T_PCH_SPT:
 			/* TARC0 */
-			if ((sc->sc_type == WM_T_ICH8)
-			    || (sc->sc_type == WM_T_PCH_SPT)) {
+			if (sc->sc_type == WM_T_ICH8) {
 				/* Set TARC0 bits 29 and 28 */
 				tarc0 |= __BITS(29, 28);
+			} else if (sc->sc_type == WM_T_PCH_SPT) {
+				tarc0 |= __BIT(29);
+				/*
+				 *  Drop bit 28. From Linux.
+				 * See I218/I219 spec update
+				 * "5. Buffer Overrun While the I219 is
+				 * Processing DMA Transactions"
+				 */
+				tarc0 &= ~__BIT(28);
 			}
 			/* Set TARC0 bits 23,24,26,27 */
 			tarc0 |= __BITS(27, 26) | __BITS(24, 23);
@@ -5795,6 +5823,14 @@ wm_init_locked(struct ifnet *ifp)
 		break;
 	}
 
+	/*
+	 * Set the receive filter.
+	 *
+	 * For 82575 and 82576, the RX descriptors must be initialized after
+	 * the setting of RCTL.EN in wm_set_filter()
+	 */
+	wm_set_filter(sc);
+
 	/* On 575 and later set RDT only if RX enabled */
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 		int qidx;
@@ -5808,9 +5844,6 @@ wm_init_locked(struct ifnet *ifp)
 			}
 		}
 	}
-
-	/* Set the receive filter. */
-	wm_set_filter(sc);
 
 	wm_unset_stopping_flags(sc);
 
@@ -6669,13 +6702,13 @@ wm_init_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 				return ENOMEM;
 			}
 		} else {
-			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
-				wm_init_rxdesc(rxq, i);
 			/*
-			 * For 82575 and newer device, the RX descriptors
-			 * must be initialized after the setting of RCTL.EN in
+			 * For 82575 and 82576, the RX descriptors must be
+			 * initialized after the setting of RCTL.EN in
 			 * wm_set_filter()
 			 */
+			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
+				wm_init_rxdesc(rxq, i);
 		}
 	}
 	rxq->rxq_ptr = 0;
@@ -6977,7 +7010,7 @@ wm_start(struct ifnet *ifp)
 	struct wm_txqueue *txq = &sc->sc_queue[0].wmq_txq;
 
 #ifdef WM_MPSAFE
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
 	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
@@ -7043,7 +7076,6 @@ wm_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 {
 	struct wm_softc *sc = ifp->if_softc;
 	struct mbuf *m0;
-	struct m_tag *mtag;
 	struct wm_txsoft *txs;
 	bus_dmamap_t dmamap;
 	int error, nexttx, lasttx = -1, ofree, seg, segs_needed, use_tso;
@@ -7292,11 +7324,11 @@ wm_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 		 *
 		 * This is only valid on the last descriptor of the packet.
 		 */
-		if ((mtag = VLAN_OUTPUT_TAG(&sc->sc_ethercom, m0)) != NULL) {
+		if (vlan_has_tag(m0)) {
 			txq->txq_descs[lasttx].wtx_cmdlen |=
 			    htole32(WTX_CMD_VLE);
 			txq->txq_descs[lasttx].wtx_fields.wtxu_vlan
-			    = htole16(VLAN_TAG_VALUE(mtag) & 0xffff);
+			    = htole16(vlan_get_tag(m0));
 		}
 
 		txs->txs_lastdesc = lasttx;
@@ -7365,7 +7397,6 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
     struct wm_txsoft *txs, uint32_t *cmdlenp, uint32_t *fieldsp, bool *do_csum)
 {
 	struct mbuf *m0 = txs->txs_mbuf;
-	struct m_tag *mtag;
 	uint32_t vl_len, mssidx, cmdc;
 	struct ether_header *eh;
 	int offset, iphl;
@@ -7409,8 +7440,8 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	vl_len |= (iphl << NQTXC_VLLEN_IPLEN_SHIFT);
 	KASSERT((iphl & ~NQTXC_VLLEN_IPLEN_MASK) == 0);
 
-	if ((mtag = VLAN_OUTPUT_TAG(&sc->sc_ethercom, m0)) != NULL) {
-		vl_len |= ((VLAN_TAG_VALUE(mtag) & NQTXC_VLLEN_VLAN_MASK)
+	if (vlan_has_tag(m0)) {
+		vl_len |= ((vlan_get_tag(m0) & NQTXC_VLLEN_VLAN_MASK)
 		     << NQTXC_VLLEN_VLAN_SHIFT);
 		*cmdlenp |= NQTX_CMD_VLE;
 	}
@@ -7572,7 +7603,7 @@ wm_nq_start(struct ifnet *ifp)
 	struct wm_txqueue *txq = &sc->sc_queue[0].wmq_txq;
 
 #ifdef WM_MPSAFE
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
 	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
@@ -7648,7 +7679,6 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 {
 	struct wm_softc *sc = ifp->if_softc;
 	struct mbuf *m0;
-	struct m_tag *mtag;
 	struct wm_txsoft *txs;
 	bus_dmamap_t dmamap;
 	int error, nexttx, lasttx = -1, seg, segs_needed;
@@ -7809,12 +7839,11 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 			    htole32(WTX_CMD_IFCS | dmamap->dm_segs[0].ds_len);
 			txq->txq_descs[nexttx].wtx_fields.wtxu_status = 0;
 			txq->txq_descs[nexttx].wtx_fields.wtxu_options = 0;
-			if ((mtag = VLAN_OUTPUT_TAG(&sc->sc_ethercom, m0)) !=
-			    NULL) {
+			if (vlan_has_tag(m0)) {
 				txq->txq_descs[nexttx].wtx_cmdlen |=
 				    htole32(WTX_CMD_VLE);
 				txq->txq_descs[nexttx].wtx_fields.wtxu_vlan =
-				    htole16(VLAN_TAG_VALUE(mtag) & 0xffff);
+				    htole16(vlan_get_tag(m0));
 			} else {
 				txq->txq_descs[nexttx].wtx_fields.wtxu_vlan =0;
 			}
@@ -8228,11 +8257,10 @@ static inline bool
 wm_rxdesc_input_vlantag(struct wm_rxqueue *rxq, uint32_t status, uint16_t vlantag,
     struct mbuf *m)
 {
-	struct ifnet *ifp = &rxq->rxq_sc->sc_ethercom.ec_if;
 
 	if (wm_rxdesc_is_set_status(rxq->rxq_sc, status,
 		WRX_ST_VP, EXTRXC_STATUS_VP, NQRXC_STATUS_VP)) {
-		VLAN_INPUT_TAG(ifp, m, le16toh(vlantag), return false);
+		vlan_set_tag(m, le16toh(vlantag));
 	}
 
 	return true;
@@ -11773,7 +11801,8 @@ wm_nvm_read_eerd(struct wm_softc *sc, int offset, int wordcnt,
 		CSR_WRITE(sc, WMREG_EERD, eerd);
 		rv = wm_poll_eerd_eewr_done(sc, WMREG_EERD);
 		if (rv != 0) {
-			aprint_error_dev(sc->sc_dev, "EERD polling failed\n");
+			aprint_error_dev(sc->sc_dev, "EERD polling failed: "
+			    "offset=%d. wordcnt=%d\n", offset, wordcnt);
 			break;
 		}
 		data[i] = (CSR_READ(sc, WMREG_EERD) >> EERD_DATA_SHIFT);
@@ -12554,7 +12583,7 @@ printver:
 	}
 
 	/* Assume the Option ROM area is at avove NVM_SIZE */
-	if ((sc->sc_nvm_wordsize >= NVM_SIZE) && check_optionrom
+	if ((sc->sc_nvm_wordsize > NVM_SIZE) && check_optionrom
 	    && (wm_nvm_read(sc, NVM_OFF_COMB_VER_PTR, 1, &off) == 0)) {
 		/* Option ROM Version */
 		if ((off != 0x0000) && (off != 0xffff)) {

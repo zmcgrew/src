@@ -1,5 +1,5 @@
 #!/bin/sh
-# $NetBSD: mkimage,v 1.66 2017/07/06 00:17:04 jmcneill Exp $
+# $NetBSD: mkimage,v 1.69 2017/11/28 02:56:44 kre Exp $
 #
 # Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -66,7 +66,7 @@ xsets="xbase xcomp xetc xfont xserver"
 minfree="10%"
 bar="==="
 
-tmp="$(mktemp -d "/tmp/$PROG.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/$PROG.XXXXXX")"
 mnt="${tmp}/mnt"
 mkdir -p "${mnt}/etc" "${mnt}/dev"
 
@@ -74,8 +74,14 @@ trap "cleanup" 0 1 2 3 15
 
 cleanup() {
 	case "$tmp" in
-	/tmp/$PROG.*)	rm -fr "$tmp";;
+	"${TMPDIR:-/tmp}/$PROG."*)	rm -fr "$tmp";;
 	esac
+}
+
+fail() {
+	IFS=' '
+	echo >&2 "${PROG}: $*"
+	exit 1
 }
 
 getsize() {

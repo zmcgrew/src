@@ -1,5 +1,5 @@
 /* $KAME: sctp_pcb.c,v 1.39 2005/06/16 18:29:25 jinmei Exp $ */
-/* $NetBSD: sctp_pcb.c,v 1.9 2017/06/28 13:22:28 rjs Exp $ */
+/* $NetBSD: sctp_pcb.c,v 1.15 2017/10/17 19:23:42 rjs Exp $ */
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,10 +33,11 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.9 2017/06/28 13:22:28 rjs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.15 2017/10/17 19:23:42 rjs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
+#include "opt_ipsec.h"
 #include "opt_sctp.h"
 #endif /* _KERNEL_OPT */
 
@@ -690,15 +691,7 @@ sctp_endpoint_probe(struct sockaddr *nam, struct sctppcbhead *head,
 			/* got it */
 			if ((nam->sa_family == AF_INET) &&
 			    (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) &&
-#if defined(__FreeBSD__) || defined(__APPLE__)
-			    (((struct inpcb *)inp)->inp_flags & IN6P_IPV6_V6ONLY)
-#else
-#if defined(__OpenBSD__)
-			    (0)	/* For open bsd we do dual bind only */
-#else
 			    (((struct in6pcb *)inp)->in6p_flags & IN6P_IPV6_V6ONLY)
-#endif
-#endif
 				) {
 				/* IPv4 on a IPv6 socket with ONLY IPv6 set */
 				SCTP_INP_RUNLOCK(inp);
@@ -1306,7 +1299,13 @@ sctp_inpcb_alloc(struct socket *so)
 	 * the EP.
 	 */
 	int i, error;
-	struct sctp_inpcb *inp, *n_inp;
+	struct sctp_inpcb *inp;
+#ifdef DEBUG
+	struct sctp_inpcb *n_inp;
+#endif
+#ifdef IPSEC
+	struct inpcbpolicy *pcb_sp = NULL;
+#endif
 	struct sctp_pcb *m;
 	struct timeval time;
 
@@ -1326,7 +1325,7 @@ sctp_inpcb_alloc(struct socket *so)
 	 * Probably we should move this to the invariant
 	 * compile options
 	 */
-/* #ifdef INVARIANTS*/
+#ifdef DEBUG
 	SCTP_INP_INFO_RLOCK();
 	inp = LIST_FIRST(&sctppcbinfo.listhead);
 	while (inp) {
@@ -1343,7 +1342,7 @@ sctp_inpcb_alloc(struct socket *so)
 		inp = n_inp;
 	}
 	SCTP_INP_INFO_RUNLOCK();
-/* #endif INVARIANTS*/
+#endif /* DEBUG */
 
 	SCTP_INP_INFO_WLOCK();
 	inp = (struct sctp_inpcb *)SCTP_ZONE_GET(sctppcbinfo.ipi_zone_ep);
@@ -1356,9 +1355,6 @@ sctp_inpcb_alloc(struct socket *so)
 	/* zap it */
 	memset(inp, 0, sizeof(*inp));
 
-	/* bump generations */
-	inp->ip_inp.inp.inp_socket = so;
-
 	/* setup socket pointers */
 	inp->sctp_socket = so;
 
@@ -1366,32 +1362,21 @@ sctp_inpcb_alloc(struct socket *so)
 	inp->ip_inp.inp.inp_socket = so;
 	inp->sctp_frag_point = SCTP_DEFAULT_MAXSEGMENT;
 #ifdef IPSEC
-#if !(defined(__OpenBSD__) || defined(__APPLE__))
-	{
-		struct inpcbpolicy *pcb_sp = NULL;
+	if (ipsec_enabled) {
 		error = ipsec_init_pcbpolicy(so, &pcb_sp);
+		if (error != 0) {
+			SCTP_ZONE_FREE(sctppcbinfo.ipi_zone_ep, inp);
+			SCTP_INP_INFO_WUNLOCK();
+			return error;
+		}
 		/* Arrange to share the policy */
 		inp->ip_inp.inp.inp_sp = pcb_sp;
-		((struct in6pcb *)(&inp->ip_inp.inp))->in6p_sp = pcb_sp;
-	}
-#else
-	/* not sure what to do for openbsd here */
-	error = 0;
-#endif
-	if (error != 0) {
-		SCTP_ZONE_FREE(sctppcbinfo.ipi_zone_ep, inp);
-		SCTP_INP_INFO_WUNLOCK();
-		return error;
+		pcb_sp->sp_inph = (struct inpcb_hdr *)inp;
 	}
 #endif /* IPSEC */
 	sctppcbinfo.ipi_count_ep++;
-#if defined(__FreeBSD__) || defined(__APPLE__)
-	inp->ip_inp.inp.inp_gencnt = ++sctppcbinfo.ipi_gencnt_ep;
-	inp->ip_inp.inp.inp_ip_ttl = ip_defttl;
-#else
 	inp->inp_ip_ttl = ip_defttl;
 	inp->inp_ip_tos = 0;
-#endif
 
 	so->so_pcb = (void *)inp;
 
@@ -1483,13 +1468,7 @@ sctp_inpcb_alloc(struct socket *so)
 	/* seed random number generator */
 	m->random_counter = 1;
 	m->store_at = SCTP_SIGNATURE_SIZE;
-#if defined(__FreeBSD__) && (__FreeBSD_version < 500000)
-	read_random_unlimited(m->random_numbers, sizeof(m->random_numbers));
-#elif defined(__APPLE__) || (__FreeBSD_version > 500000)
-	read_random(m->random_numbers, sizeof(m->random_numbers));
-#elif defined(__OpenBSD__)
-	get_random_bytes(m->random_numbers, sizeof(m->random_numbers));
-#elif defined(__NetBSD__) && NRND > 0
+#if NRND > 0
 	rnd_extract_data(m->random_numbers, sizeof(m->random_numbers),
 			 RND_EXTRACT_ANY);
 #else
@@ -1628,16 +1607,7 @@ sctp_isport_inuse(struct sctp_inpcb *inp, uint16_t lport)
 		/* This one is in use. */
 		/* check the v6/v4 binding issue */
 		if ((t_inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) &&
-#if defined(__FreeBSD__)
-		    (((struct inpcb *)t_inp)->inp_flags & IN6P_IPV6_V6ONLY)
-#else
-#if defined(__OpenBSD__)
-		    (0)	/* For open bsd we do dual bind only */
-#else
-		    (((struct in6pcb *)t_inp)->in6p_flags & IN6P_IPV6_V6ONLY)
-#endif
-#endif
-			) {
+		    (((struct in6pcb *)t_inp)->in6p_flags & IN6P_IPV6_V6ONLY)) {
 			if (inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) {
 				/* collision in V6 space */
 				return (1);
@@ -1651,15 +1621,7 @@ sctp_isport_inuse(struct sctp_inpcb *inp, uint16_t lport)
 		} else {
 			/* t_inp is bound only V4 */
 			if ((inp->sctp_flags & SCTP_PCB_FLAGS_BOUND_V6) &&
-#if defined(__FreeBSD__)
-			    (((struct inpcb *)inp)->inp_flags & IN6P_IPV6_V6ONLY)
-#else
-#if defined(__OpenBSD__)
-			    (0)	/* For open bsd we do dual bind only */
-#else
 			    (((struct in6pcb *)inp)->in6p_flags & IN6P_IPV6_V6ONLY)
-#endif
-#endif
 				) {
 				/* no conflict */
 				continue;
@@ -1670,15 +1632,6 @@ sctp_isport_inuse(struct sctp_inpcb *inp, uint16_t lport)
 	}
 	return (0);
 }
-
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
-/*
- * Don't know why, but without this there is an unknown reference when
- * compiling NetBSD... hmm
- */
-extern void in6_sin6_2_sin (struct sockaddr_in *, struct sockaddr_in6 *sin6);
-#endif
-
 
 int
 sctp_inpcb_bind(struct socket *so, struct sockaddr *addr, struct lwp *l)
@@ -1727,6 +1680,9 @@ sctp_inpcb_bind(struct socket *so, struct sockaddr *addr, struct lwp *l)
 			if (sin->sin_addr.s_addr != INADDR_ANY) {
 				bindall = 0;
 			}
+#ifdef IPSEC
+			inp->ip_inp.inp.inp_af = AF_INET;
+#endif
 		} else if (addr->sa_family == AF_INET6) {
 			/* Only for pure IPv6 Address. (No IPv4 Mapped!) */
 			struct sockaddr_in6 *sin6;
@@ -1748,9 +1704,21 @@ sctp_inpcb_bind(struct socket *so, struct sockaddr *addr, struct lwp *l)
 			/* this must be cleared for ifa_ifwithaddr() */
 			sin6->sin6_scope_id = 0;
 #endif /* SCOPEDROUTING */
+#ifdef IPSEC
+			inp->ip_inp.inp.inp_af = AF_INET6;
+#endif
 		} else {
 			return (EAFNOSUPPORT);
 		}
+#ifdef IPSEC
+		if (ipsec_enabled) {
+			inp->ip_inp.inp.inp_socket = so;
+			error = ipsec_init_pcbpolicy(so, &inp->ip_inp.inp.inp_sp);
+			if (error != 0)
+				return (error);
+			inp->ip_inp.inp.inp_sp->sp_inph = (struct inpcb_hdr *)inp;
+		}
+#endif
 	}
 	SCTP_INP_INFO_WLOCK();
 #ifdef SCTP_DEBUG
@@ -2184,10 +2152,10 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate)
 	if (so) {
 	/* First take care of socket level things */
 #ifdef IPSEC
-		ipsec4_delete_pcbpolicy(ip_pcb);
+		if (ipsec_enabled)
+			ipsec4_delete_pcbpolicy(ip_pcb);
 #endif /*IPSEC*/
 		so->so_pcb = 0;
-		sofree(so);
 	}
 
 	if (ip_pcb->inp_options) {
@@ -2199,11 +2167,7 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate)
 		ip_freemoptions(ip_pcb->inp_moptions);
 		ip_pcb->inp_moptions = 0;
 	}
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 	inp->inp_vflag = 0;
-#else
-	ip_pcb->inp_vflag = 0;
-#endif
 
 	/* Now the sctp_pcb things */
 	/*
@@ -2307,6 +2271,9 @@ sctp_inpcb_free(struct sctp_inpcb *inp, int immediate)
 
 	SCTP_INP_INFO_WUNLOCK();
 	splx(s);
+
+	sofree(so);
+	mutex_enter(softnet_lock);
 }
 
 
@@ -3449,17 +3416,9 @@ sctp_destination_is_reachable(struct sctp_tcb *stcb, const struct sockaddr *dest
 	}
 	/* NOTE: all "scope" checks are done when local addresses are added */
 	if (destaddr->sa_family == AF_INET6) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 		answer = inp->inp_vflag & INP_IPV6;
-#else
-		answer = inp->ip_inp.inp.inp_vflag & INP_IPV6;
-#endif
 	} else if (destaddr->sa_family == AF_INET) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 		answer = inp->inp_vflag & INP_IPV4;
-#else
-		answer = inp->ip_inp.inp.inp_vflag & INP_IPV4;
-#endif
 	} else {
 		/* invalid family, so it's unreachable */
 		answer = 0;
@@ -3475,11 +3434,8 @@ sctp_update_ep_vflag(struct sctp_inpcb *inp) {
 	struct sctp_laddr *laddr;
 
 	/* first clear the flag */
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 	inp->inp_vflag = 0;
-#else
-	inp->ip_inp.inp.inp_vflag = 0;
-#endif
+
 	/* set the flag based on addresses on the ep list */
 	LIST_FOREACH(laddr, &inp->sctp_addr_list, sctp_nxt_addr) {
 		if (laddr->ifa == NULL) {
@@ -3494,17 +3450,9 @@ sctp_update_ep_vflag(struct sctp_inpcb *inp) {
 			continue;
 		}
 		if (laddr->ifa->ifa_addr->sa_family == AF_INET6) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 			inp->inp_vflag |= INP_IPV6;
-#else
-			inp->ip_inp.inp.inp_vflag |= INP_IPV6;
-#endif
 		} else if (laddr->ifa->ifa_addr->sa_family == AF_INET) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 			inp->inp_vflag |= INP_IPV4;
-#else
-			inp->ip_inp.inp.inp_vflag |= INP_IPV4;
-#endif
 		}
 	}
 }
@@ -3548,17 +3496,9 @@ sctp_add_local_addr_ep(struct sctp_inpcb *inp, struct ifaddr *ifa)
 		inp->laddr_count++;
 		/* update inp_vflag flags */
 		if (ifa->ifa_addr->sa_family == AF_INET6) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 			inp->inp_vflag |= INP_IPV6;
-#else
-			inp->ip_inp.inp.inp_vflag |= INP_IPV6;
-#endif
 		} else if (ifa->ifa_addr->sa_family == AF_INET) {
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
 			inp->inp_vflag |= INP_IPV4;
-#else
-			inp->ip_inp.inp.inp_vflag |= INP_IPV4;
-#endif
 		}
 	}
 	return (0);
@@ -3982,11 +3922,8 @@ sctp_pcb_init(void)
 	/* mbuf tracker */
 	sctppcbinfo.mbuf_track = 0;
 	/* port stuff */
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
-	sctppcbinfo.lastlow = ipport_firstauto;
-#else
 	sctppcbinfo.lastlow = anonportmin;
-#endif
+
 	/* Init the TIMEWAIT list */
 	for (i = 0; i < SCTP_STACK_VTAG_HASH_SIZE; i++) {
 		LIST_INIT(&sctppcbinfo.vtag_timewait[i]);

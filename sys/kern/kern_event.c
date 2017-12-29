@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_event.c,v 1.94 2017/09/16 23:55:16 christos Exp $	*/
+/*	$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.94 2017/09/16 23:55:16 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -108,6 +108,7 @@ static void	filt_timerdetach(struct knote *);
 static int	filt_timer(struct knote *, long hint);
 
 static const struct fileops kqueueops = {
+	.fo_name = "kqueue",
 	.fo_read = (void *)enxio,
 	.fo_write = (void *)enxio,
 	.fo_ioctl = kqueue_ioctl,
@@ -119,14 +120,33 @@ static const struct fileops kqueueops = {
 	.fo_restart = fnullop_restart,
 };
 
-static const struct filterops kqread_filtops =
-	{ 1, NULL, filt_kqdetach, filt_kqueue };
-static const struct filterops proc_filtops =
-	{ 0, filt_procattach, filt_procdetach, filt_proc };
-static const struct filterops file_filtops =
-	{ 1, filt_fileattach, NULL, NULL };
-static const struct filterops timer_filtops =
-	{ 0, filt_timerattach, filt_timerdetach, filt_timer };
+static const struct filterops kqread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_kqdetach,
+	.f_event = filt_kqueue,
+};
+
+static const struct filterops proc_filtops = {
+	.f_isfd = 0,
+	.f_attach = filt_procattach,
+	.f_detach = filt_procdetach,
+	.f_event = filt_proc,
+};
+
+static const struct filterops file_filtops = {
+	.f_isfd = 1,
+	.f_attach = filt_fileattach,
+	.f_detach = NULL,
+	.f_event = NULL,
+};
+
+static const struct filterops timer_filtops = {
+	.f_isfd = 0,
+	.f_attach = filt_timerattach,
+	.f_detach = filt_timerdetach,
+	.f_event = filt_timer,
+};
 
 static u_int	kq_ncallouts = 0;
 static int	kq_calloutmax = (4 * 1024);
@@ -170,7 +190,26 @@ static int		user_kfilterc;		/* current offset */
 static int		user_kfiltermaxc;	/* max size so far */
 static size_t		user_kfiltersz;		/* size of allocated memory */
 
-/* Locks */
+/*
+ * Global Locks.
+ *
+ * Lock order:
+ *
+ *	kqueue_filter_lock
+ *	-> kn_kq->kq_fdp->fd_lock
+ *	-> object lock (e.g., device driver lock, kqueue_misc_lock, &c.)
+ *	-> kn_kq->kq_lock
+ *
+ * Locking rules:
+ *
+ *	f_attach: fdp->fd_lock, KERNEL_LOCK
+ *	f_detach: fdp->fd_lock, KERNEL_LOCK
+ *	f_event(!NOTE_SUBMIT) via kevent: fdp->fd_lock, _no_ object lock
+ *	f_event via knote: whatever caller guarantees
+ *		Typically,	f_event(NOTE_SUBMIT) via knote: object lock
+ *				f_event(!NOTE_SUBMIT) via knote: nothing,
+ *					acquires/releases object lock inside.
+ */
 static krwlock_t	kqueue_filter_lock;	/* lock on filter lists */
 static kmutex_t		kqueue_misc_lock;	/* miscellaneous */
 
@@ -332,9 +371,7 @@ kfilter_register(const char *name, const struct filterops *filtops,
 	/* Adding new slot */
 	kfilter = &user_kfilters[user_kfilterc++];
 reuse:
-	kfilter->namelen = strlen(name) + 1;
-	kfilter->name = kmem_alloc(kfilter->namelen, KM_SLEEP);
-	memcpy(__UNCONST(kfilter->name), name, kfilter->namelen);
+	kfilter->name = kmem_strdupsize(name, &kfilter->namelen, KM_SLEEP);
 
 	kfilter->filter = (kfilter - user_kfilters) + EVFILT_SYSCOUNT;
 
@@ -710,8 +747,12 @@ filt_seltruedetach(struct knote *kn)
 	/* Nothing to do */
 }
 
-const struct filterops seltrue_filtops =
-	{ 1, NULL, filt_seltruedetach, filt_seltrue };
+const struct filterops seltrue_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_seltruedetach,
+	.f_event = filt_seltrue,
+};
 
 int
 seltrue_kqfilter(dev_t dev, struct knote *kn)
@@ -942,6 +983,10 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 		}
 		mutex_enter(&fdp->fd_lock);
 		ff = fdp->fd_dt->dt_ff[fd];
+		if (ff->ff_refcnt & FR_CLOSING) {
+			error = EBADF;
+			goto doneunlock;
+		}
 		if (fd <= fdp->fd_lastkqfile) {
 			SLIST_FOREACH(kn, &ff->ff_knlist, kn_link) {
 				if (kq == kn->kn_kq &&
@@ -1019,12 +1064,14 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 			error = (*kfilter->filtops->f_attach)(kn);
 			KERNEL_UNLOCK_ONE(NULL);	/* XXXSMP */
 			if (error != 0) {
-#ifdef DIAGNOSTIC
-				printf("%s: event type %d not supported for "
-				    "file type %d (error %d)\n", __func__,
-				    kn->kn_filter, kn->kn_obj ?
-				    ((file_t *)kn->kn_obj)->f_type : -1, error);
+#ifdef DEBUG
+				const file_t *ft = kn->kn_obj;
+				uprintf("%s: event type %d not supported for "
+				    "file type %d/%s (error %d)\n", __func__,
+				    kn->kn_filter, ft ? ft->f_type : -1,
+				    ft ? ft->f_ops->fo_name : "?", error);
 #endif
+
 				/* knote_detach() drops fdp->fd_lock */
 				knote_detach(kn, fdp, false);
 				goto done;
@@ -1056,8 +1103,7 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 	} else {
 		if (kn == NULL) {
 			error = ENOENT;
-		 	mutex_exit(&fdp->fd_lock);
-			goto done;
+			goto doneunlock;
 		}
 		if (kev->flags & EV_DELETE) {
 			/* knote_detach() drops fdp->fd_lock */
@@ -1078,6 +1124,7 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 	if ((kev->flags & EV_ENABLE)) {
 		knote_enqueue(kn);
 	}
+doneunlock:
 	mutex_exit(&fdp->fd_lock);
  done:
 	rw_exit(&kqueue_filter_lock);

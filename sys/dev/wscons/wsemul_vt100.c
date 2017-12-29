@@ -1,4 +1,4 @@
-/* $NetBSD: wsemul_vt100.c,v 1.38 2017/05/19 19:22:33 macallan Exp $ */
+/* $NetBSD: wsemul_vt100.c,v 1.41 2017/11/03 19:20:27 maya Exp $ */
 
 /*
  * Copyright (c) 1998
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100.c,v 1.38 2017/05/19 19:22:33 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsemul_vt100.c,v 1.41 2017/11/03 19:20:27 maya Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_wsmsgattrs.h"
@@ -60,19 +60,19 @@ static void wsemul_vt100_setmsgattrs(void *, const struct wsscreen_descr *,
 static void wsemul_vt100_resize(void *, const struct wsscreen_descr *);
 
 const struct wsemul_ops wsemul_vt100_ops = {
-	"vt100",
-	wsemul_vt100_cnattach,
-	wsemul_vt100_attach,
-	wsemul_vt100_output,
-	wsemul_vt100_translate,
-	wsemul_vt100_detach,
-	wsemul_vt100_resetop,
+	.name = "vt100",
+	.cnattach = wsemul_vt100_cnattach,
+	.attach = wsemul_vt100_attach,
+	.output = wsemul_vt100_output,
+	.translate = wsemul_vt100_translate,
+	.detach = wsemul_vt100_detach,
+	.reset = wsemul_vt100_resetop,
 #ifdef WSDISPLAY_CUSTOM_OUTPUT
-	wsemul_vt100_getmsgattrs,
-	wsemul_vt100_setmsgattrs,
+	.getmsgattrs = wsemul_vt100_getmsgattrs,
+	.setmsgattrs = wsemul_vt100_setmsgattrs,
 #else
-	NULL,
-	NULL,
+	.getmsgattrs = NULL,
+	.setmsgattrs = NULL,
 #endif
 	.resize = wsemul_vt100_resize
 };
@@ -242,9 +242,7 @@ wsemul_vt100_attach(int console, const struct wsscreen_descr *type,
 
 	if (console) {
 		edp = &wsemul_vt100_console_emuldata;
-#ifdef DIAGNOSTIC
 		KASSERT(edp->console == 1);
-#endif
 	} else {
 		edp = malloc(sizeof *edp, M_DEVBUF, M_WAITOK);
 		wsemul_vt100_init(edp, type, cookie, ccol, crow, defattr);
@@ -1008,10 +1006,7 @@ wsemul_vt100_output(void *cookie, const u_char *data, u_int count, int kernel)
 			wsemul_vt100_output_normal(edp, *data, kernel);
 			continue;
 		}
-#ifdef DIAGNOSTIC
-		if (edp->state > sizeof(vt100_output) / sizeof(vt100_output[0]))
-			panic("wsemul_vt100: invalid state %d", edp->state);
-#endif
+		KASSERT(edp->state < __arraycount(vt100_output) - 1);
 		edp->state = vt100_output[edp->state - 1](edp, *data);
 	}
 	if (vd->flags & VTFL_CURSORON)

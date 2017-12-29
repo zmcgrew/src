@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tun.c,v 1.139 2017/05/24 06:52:14 pgoyette Exp $	*/
+/*	$NetBSD: if_tun.c,v 1.142 2017/12/06 07:40:16 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1988, Julian Onions <jpo@cs.nott.ac.uk>
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.139 2017/05/24 06:52:14 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tun.c,v 1.142 2017/12/06 07:40:16 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -247,6 +247,7 @@ tunattach0(struct tun_softc *tp)
 	ifp->if_start = tunstart;
 #endif
 	ifp->if_flags = IFF_POINTOPOINT;
+	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
 	ifp->if_type = IFT_TUNNEL;
 	ifp->if_snd.ifq_maxlen = ifqmaxlen;
 	ifp->if_collisions = 0;
@@ -420,8 +421,6 @@ tun_enable(struct tun_softc *tp, const struct ifaddr *ifa)
 	TUNDEBUG("%s: %s\n", __func__, ifp->if_xname);
 
 	mutex_enter(&tp->tun_lock);
-	ifp->if_flags |= IFF_UP | IFF_RUNNING;
-
 	tp->tun_flags &= ~(TUN_IASET|TUN_DSTADDR);
 
 	switch (ifa->ifa_addr->sa_family) {
@@ -461,6 +460,7 @@ tun_enable(struct tun_softc *tp, const struct ifaddr *ifa)
 	default:
 		break;
 	}
+	ifp->if_flags |= IFF_UP | IFF_RUNNING;
 	mutex_exit(&tp->tun_lock);
 }
 
@@ -1063,11 +1063,19 @@ filt_tunread(struct knote *kn, long hint)
 	return 1;
 }
 
-static const struct filterops tunread_filtops =
-	{ 1, NULL, filt_tunrdetach, filt_tunread };
+static const struct filterops tunread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_tunrdetach,
+	.f_event = filt_tunread,
+};
 
-static const struct filterops tun_seltrue_filtops =
-	{ 1, NULL, filt_tunrdetach, filt_seltrue };
+static const struct filterops tun_seltrue_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_tunrdetach,
+	.f_event = filt_seltrue,
+};
 
 int
 tunkqfilter(dev_t dev, struct knote *kn)

@@ -1,6 +1,6 @@
-/*	$NetBSD: cpu.h,v 1.79 2017/09/16 09:28:38 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.84 2017/12/28 08:30:36 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -92,8 +92,6 @@ struct cpu_info {
 	device_t ci_dev;		/* pointer to our device */
 	struct cpu_info *ci_self;	/* self-pointer */
 	volatile struct vcpu_info *ci_vcpu; /* for XEN */
-	void	*ci_tlog_base;		/* Trap log base */
-	int32_t ci_tlog_offset;		/* Trap log current offset */
 
 	/*
 	 * Will be accessed by other CPUs.
@@ -101,18 +99,14 @@ struct cpu_info {
 	struct cpu_info *ci_next;	/* next cpu */
 	struct lwp *ci_curlwp;		/* current owner of the processor */
 	struct lwp *ci_fpcurlwp;	/* current owner of the FPU */
-	int	_unused1[2];
 	cpuid_t ci_cpuid;		/* our CPU ID */
-	int	_unused;
 	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
-	uint32_t ci_initapicid;		/* our intitial APIC ID */
+	uint32_t ci_initapicid;		/* our initial APIC ID */
 
 	/*
 	 * Private members.
 	 */
-	struct evcnt ci_tlb_evcnt;	/* tlb shootdown counter */
 	struct pmap *ci_pmap;		/* current pmap */
-	int ci_need_tlbwait;		/* need to wait for TLB invalidations */
 	int ci_want_pmapload;		/* pmap_load() is needed */
 	volatile int ci_tlbstate;	/* one of TLBSTATE_ states. see below */
 #define	TLBSTATE_VALID	0	/* all user tlbs are valid */
@@ -156,11 +150,9 @@ struct cpu_info {
 
 	uint32_t ci_flags;		/* flags; see below */
 	uint32_t ci_ipis;		/* interprocessor interrupts pending */
-	uint32_t sc_apic_version;	/* local APIC version */
 
 	uint32_t	ci_signature;	 /* X86 cpuid type (cpuid.1.%eax) */
 	uint32_t	ci_vendor[4];	 /* vendor string */
-	uint32_t	_unused2;
 	uint32_t	ci_max_cpuid;	/* cpuid.0:%eax */
 	uint32_t	ci_max_ext_cpuid; /* cpuid.80000000:%eax */
 	volatile uint32_t	ci_lapic_counter;
@@ -272,7 +264,7 @@ struct cpu_info {
 /*
  * Processor flag notes: The "primary" CPU has certain MI-defined
  * roles (mostly relating to hardclock handling); we distinguish
- * betwen the processor which booted us, and the processor currently
+ * between the processor which booted us, and the processor currently
  * holding the "primary" role just to give us the flexibility later to
  * change primaries should we be sufficiently twisted.
  */
@@ -381,7 +373,7 @@ extern char cpu_brand_string[];
 extern int use_pae;
 
 #ifdef __i386__
-extern int i386_fpu_present;
+#define	i386_fpu_present	1
 int npx586bug1(int, int);
 extern int i386_fpu_fdivbug;
 extern int i386_use_fxsave;
@@ -512,7 +504,7 @@ void x86_bus_space_mallocok(void);
 					 * 3: maximum frequency
 					 */
 #define	CPU_TMLR_FREQUENCY	12	/* int: current frequency */
-#define	CPU_TMLR_VOLTAGE	13	/* int: curret voltage */
+#define	CPU_TMLR_VOLTAGE	13	/* int: current voltage */
 #define	CPU_TMLR_PERCENTAGE	14	/* int: current clock percentage */
 #define	CPU_FPU_SAVE		15	/* int: FPU Instructions layout
 					 * to use this, CPU_OSFXSR must be true
@@ -534,6 +526,7 @@ void x86_bus_space_mallocok(void);
 
 struct disklist {
 	int dl_nbiosdisks;			   /* number of bios disks */
+	int dl_unused;
 	struct biosdisk_info {
 		int bi_dev;			   /* BIOS device # (0x80 ..) */
 		int bi_cyl;			   /* cylinders on disk */
@@ -543,6 +536,7 @@ struct disklist {
 #define BIFLAG_INVALID		0x01
 #define BIFLAG_EXTINT13		0x02
 		int bi_flags;
+		int bi_unused;
 	} dl_biosdisks[MAX_BIOSDISKS];
 
 	int dl_nnativedisks;			   /* number of native disks */

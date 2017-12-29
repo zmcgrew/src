@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.318 2017/04/11 14:04:15 christos Exp $
+#	$NetBSD: Makefile,v 1.321 2017/12/06 19:34:00 uwe Exp $
 
 #
 # This is the top-level makefile for building NetBSD. For an outline of
@@ -30,6 +30,7 @@
 #   NOCLEANDIR, if defined, will avoid a `make cleandir' at the start
 #	of the `make build'.
 #   NOINCLUDES will avoid the `make includes' usually done by `make build'.
+#   NOBINARIES will not build binaries, only includes and libraries
 #
 #   See mk.conf(5) for more details.
 #
@@ -96,9 +97,9 @@
 #                    if ${MKCOMPAT} != "no".
 #   do-compat-lib:   builds and installs prerequisites from compat/lib
 #                    if ${MKCOMPAT} != "no".
+#   do-x11:          builds and installs X11 tools and libraries
+#                    from src/external/mit/xorg if ${MKX11} != "no".
 #   do-build:        builds and installs the entire system.
-#   do-x11:          builds and installs X11 if ${MKX11} != "no"; either
-#                    X11R7 from src/external/mit/xorg 
 #   do-extsrc:       builds and installs extsrc if ${MKEXTSRC} != "no".
 #   do-obsolete:     installs the obsolete sets (for the postinstall-* targets).
 #
@@ -237,11 +238,13 @@ BUILDTARGETS+=	do-compat-lib
 .if ${MKX11} != "no"
 BUILDTARGETS+=	do-x11
 .endif
+.if !defined(NOBINARIES)
 BUILDTARGETS+=	do-build
 .if ${MKEXTSRC} != "no"
 BUILDTARGETS+=	do-extsrc
 .endif
 BUILDTARGETS+=	do-obsolete
+.endif
 
 #
 # Enforce proper ordering of some rules.

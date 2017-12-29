@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_proc.c,v 1.207 2017/08/28 00:46:07 kamil Exp $	*/
+/*	$NetBSD: kern_proc.c,v 1.209 2017/11/30 18:44:16 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.207 2017/08/28 00:46:07 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.209 2017/11/30 18:44:16 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kstack.h"
@@ -2433,41 +2433,28 @@ proc_find_locked(struct lwp *l, struct proc **p, pid_t pid)
 static int
 fill_pathname(struct lwp *l, pid_t pid, void *oldp, size_t *oldlenp)
 {
-#ifndef _RUMPKERNEL
 	int error;
 	struct proc *p;
-	char *path;
-	size_t len;
 
 	if ((error = proc_find_locked(l, &p, pid)) != 0)
 		return error;
 
-	if (p->p_textvp == NULL) {
+	if (p->p_path == NULL) {
 		if (pid != -1)
 			mutex_exit(p->p_lock);
 		return ENOENT;
 	}
 
-	path = PNBUF_GET();
-	error = vnode_to_path(path, MAXPATHLEN / 2, p->p_textvp, l, p);
-	if (error)
-		goto out;
-
-	len = strlen(path) + 1;
+	size_t len = strlen(p->p_path) + 1;
 	if (oldp != NULL) {
-		error = sysctl_copyout(l, path, oldp, *oldlenp);
+		error = sysctl_copyout(l, p->p_path, oldp, *oldlenp);
 		if (error == 0 && *oldlenp < len)
 			error = ENOSPC;
 	}
 	*oldlenp = len;
-out:
-	PNBUF_PUT(path);
 	if (pid != -1)
 		mutex_exit(p->p_lock);
 	return error;
-#else
-	return 0;
-#endif
 }
 
 int
@@ -2476,16 +2463,19 @@ proc_getauxv(struct proc *p, void **buf, size_t *len)
 	struct ps_strings pss;
 	int error;
 	void *uauxv, *kauxv;
+	size_t size;
 
 	if ((error = copyin_psstrings(p, &pss)) != 0)
 		return error;
-
 	if (pss.ps_envstr == NULL)
+		return EIO;
+
+	size = p->p_execsw->es_arglen;
+	if (size == 0)
 		return EIO;
 
 	size_t ptrsz = PROC_PTRSZ(p);
 	uauxv = (void *)((char *)pss.ps_envstr + (pss.ps_nenvstr + 1) * ptrsz);
-	size_t size = p->p_execsw->es_arglen;
 
 	kauxv = kmem_alloc(size, KM_SLEEP);
 

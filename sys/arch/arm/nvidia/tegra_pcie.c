@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_pcie.c,v 1.19 2017/07/20 01:45:38 jmcneill Exp $ */
+/* $NetBSD: tegra_pcie.c,v 1.23 2017/10/19 16:01:58 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.19 2017/07/20 01:45:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.23 2017/10/19 16:01:58 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -48,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: tegra_pcie.c,v 1.19 2017/07/20 01:45:38 jmcneill Exp
 
 #include <arm/nvidia/tegra_reg.h>
 #include <arm/nvidia/tegra_pciereg.h>
+#include <arm/nvidia/tegra_pmcreg.h>
 #include <arm/nvidia/tegra_var.h>
 
 #include <dev/fdt/fdtvar.h>
@@ -74,6 +75,7 @@ struct tegra_pcie_softc {
 	bus_dma_tag_t		sc_dmat;
 	bus_space_tag_t		sc_bst;
 	bus_space_handle_t	sc_bsh_afi;
+	bus_space_handle_t	sc_bsh_pads;
 	bus_space_handle_t	sc_bsh_rpconf;
 	int			sc_phandle;
 
@@ -92,6 +94,8 @@ struct tegra_pcie_softc {
 static int	tegra_pcie_intr(void *);
 static void	tegra_pcie_init(pci_chipset_tag_t, void *);
 static void	tegra_pcie_enable(struct tegra_pcie_softc *);
+static void	tegra_pcie_enable_ports(struct tegra_pcie_softc *);
+static void	tegra_pcie_enable_clocks(struct tegra_pcie_softc *);
 static void	tegra_pcie_setup(struct tegra_pcie_softc * const);
 static void	tegra_pcie_conf_frag_map(struct tegra_pcie_softc * const,
 					 uint, uint);
@@ -126,9 +130,7 @@ static int
 tegra_pcie_match(device_t parent, cfdata_t cf, void *aux)
 {
 	const char * const compatible[] = {
-#if notyet
 		"nvidia,tegra210-pcie",
-#endif
 		"nvidia,tegra124-pcie",
 		NULL
 	};
@@ -144,13 +146,17 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 	struct fdt_attach_args * const faa = aux;
 	struct extent *ioext, *memext, *pmemext;
 	struct pcibus_attach_args pba;
-	bus_addr_t afi_addr, cs_addr;
-	bus_size_t afi_size, cs_size;
+	bus_addr_t afi_addr, cs_addr, pads_addr;
+	bus_size_t afi_size, cs_size, pads_size;
 	char intrstr[128];
 	int error;
 
-	if (fdtbus_get_reg(faa->faa_phandle, 1, &afi_addr, &afi_size) != 0) {
+	if (fdtbus_get_reg_byname(faa->faa_phandle, "afi", &afi_addr, &afi_size) != 0) {
 		aprint_error(": couldn't get afi registers\n");
+		return;
+	}
+	if (fdtbus_get_reg_byname(faa->faa_phandle, "pads", &pads_addr, &pads_size) != 0) {
+		aprint_error(": couldn't get pads registers\n");
 		return;
 	}
 #if notyet
@@ -173,6 +179,12 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 		aprint_error(": couldn't map afi registers: %d\n", error);
 		return;
 	}
+	error = bus_space_map(sc->sc_bst, pads_addr, pads_size, 0,
+	    &sc->sc_bsh_pads);
+	if (error) {
+		aprint_error(": couldn't map afi registers: %d\n", error);
+		return;
+	}
 	error = bus_space_map(sc->sc_bst, cs_addr, cs_size, 0,
 	    &sc->sc_bsh_rpconf);
 	if (error) {
@@ -187,6 +199,11 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 
 	aprint_naive("\n");
 	aprint_normal(": PCIE\n");
+
+	tegra_pmc_power(PMC_PARTID_PCX, true);
+	tegra_pmc_remove_clamping(PMC_PARTID_PCX);
+
+	tegra_pcie_enable_clocks(sc);
 
 	if (!fdtbus_intr_str(faa->faa_phandle, 0, intrstr, sizeof(intrstr))) {
 		aprint_error_dev(self, "failed to decode interrupt\n");
@@ -230,6 +247,8 @@ tegra_pcie_attach(device_t parent, device_t self, void *aux)
 	}
 
 	tegra_pcie_enable(sc);
+
+	tegra_pcie_enable_ports(sc);
 
 	memset(&pba, 0, sizeof(pba));
 	pba.pba_flags = PCI_FLAGS_MRL_OKAY |
@@ -313,9 +332,144 @@ tegra_pcie_intr(void *priv)
 }
 
 static void
+tegra_pcie_enable_clocks(struct tegra_pcie_softc * const sc)
+{
+	const char *clock_names[] = { "pex", "afi", "pll_e", "cml" };
+	const char *reset_names[] = { "pex", "afi", "pcie_x" };
+	struct fdtbus_reset *rst;
+	struct clk *clk;
+	int n;
+
+	for (n = 0; n < __arraycount(clock_names); n++) {
+		clk = fdtbus_clock_get(sc->sc_phandle, clock_names[n]);
+		if (clk == NULL || clk_enable(clk) != 0)
+			aprint_error_dev(sc->sc_dev, "couldn't enable clock %s\n",
+			    clock_names[n]);
+	}
+
+	for (n = 0; n < __arraycount(reset_names); n++) {
+		rst = fdtbus_reset_get(sc->sc_phandle, reset_names[n]);
+		if (rst == NULL || fdtbus_reset_deassert(rst) != 0)
+			aprint_error_dev(sc->sc_dev, "couldn't de-assert reset %s\n",
+			    reset_names[n]);
+	}
+}
+
+#if 0
+static void
+tegra_pcie_reset_port(struct tegra_pcie_softc * const sc, int index)
+{
+	uint32_t val;
+
+	val = bus_space_read_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index));
+	val &= ~AFI_PEXn_CTRL_RST_L;
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index), val);
+
+	delay(2000);
+
+	val = bus_space_read_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index));
+	val |= AFI_PEXn_CTRL_RST_L;
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index), val);
+}
+#endif
+
+static void
+tegra_pcie_enable_ports(struct tegra_pcie_softc * const sc)
+{
+	struct fdtbus_phy *phy;
+	const u_int *data;
+	int child, len, n;
+	uint32_t val;
+
+	for (child = OF_child(sc->sc_phandle); child; child = OF_peer(child)) {
+		if (!fdtbus_status_okay(child))
+			continue;
+
+		/* Enable PHYs */
+		for (n = 0; (phy = fdtbus_phy_get_index(child, n)) != NULL; n++)
+			if (fdtbus_phy_enable(phy, true) != 0)
+				aprint_error_dev(sc->sc_dev, "couldn't enable %s phy #%d\n",
+				    fdtbus_get_string(child, "name"), n);
+
+		data = fdtbus_get_prop(child, "reg", &len);
+		if (data == NULL || len < 4)
+			continue;
+		const u_int index = ((be32toh(data[0]) >> 11) & 0x1f) - 1;
+
+		val = bus_space_read_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index));
+		val |= AFI_PEXn_CTRL_CLKREQ_EN;
+		val |= AFI_PEXn_CTRL_REFCLK_EN;
+		val |= AFI_PEXn_CTRL_REFCLK_OVERRIDE_EN;
+		bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXn_CTRL_REG(index), val);
+
+#if 0
+		tegra_pcie_reset_port(sc, index);
+#endif
+
+	}
+}
+
+static void
 tegra_pcie_setup(struct tegra_pcie_softc * const sc)
 {
+	uint32_t val, cfg, lanes;
+	int child, len;
+	const u_int *data;
 	size_t i;
+
+	/* Enable PLLE control */
+	val = bus_space_read_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PLLE_CONTROL_REG);
+	val &= ~AFI_PLLE_CONTROL_BYPASS_PADS2PLLE_CONTROL;
+	val |= AFI_PLLE_CONTROL_PADS2PLLE_CONTROL_EN;
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PLLE_CONTROL_REG, val);
+
+	/* Disable PEX clock bias pad power down */
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PEXBIAS_CTRL_REG, 0);
+
+	/* Configure PCIE mode and enable ports */
+	cfg = bus_space_read_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PCIE_CONFIG_REG);
+	cfg |= AFI_PCIE_CONFIG_PCIECn_DISABLE_DEVICE(0);
+	cfg |= AFI_PCIE_CONFIG_PCIECn_DISABLE_DEVICE(1);
+	cfg &= ~AFI_PCIE_CONFIG_SM2TMS0_XBAR_CONFIG;
+
+	lanes = 0;
+	for (child = OF_child(sc->sc_phandle); child; child = OF_peer(child)) {
+		if (!fdtbus_status_okay(child))
+			continue;
+		data = fdtbus_get_prop(child, "reg", &len);
+		if (data == NULL || len < 4)
+			continue;
+		const u_int index = ((be32toh(data[0]) >> 11) & 0x1f) - 1;
+		if (of_getprop_uint32(child, "nvidia,num-lanes", &val) != 0)
+			continue;
+		lanes |= (val << (index << 3));
+		cfg &= ~AFI_PCIE_CONFIG_PCIECn_DISABLE_DEVICE(index);
+	}
+
+	switch (lanes) {
+	case 0x0104:
+		aprint_normal_dev(sc->sc_dev, "lane config: x4 x1\n");
+		cfg |= __SHIFTIN(AFI_PCIE_CONFIG_SM2TMS0_XBAR_CONFIG_4_1,
+				 AFI_PCIE_CONFIG_SM2TMS0_XBAR_CONFIG);
+		break;
+	case 0x0102:
+		aprint_normal_dev(sc->sc_dev, "lane config: x2 x1\n");
+		cfg |= __SHIFTIN(AFI_PCIE_CONFIG_SM2TMS0_XBAR_CONFIG_2_1,
+				 AFI_PCIE_CONFIG_SM2TMS0_XBAR_CONFIG);
+		break;
+	}
+
+	bus_space_write_4(sc->sc_bst, sc->sc_bsh_afi, AFI_PCIE_CONFIG_REG, cfg);
+
+	/* Configure refclk pad */
+	const char * const tegra124_compat[] = { "nvidia,tegra124-pcie", NULL };
+	if (of_match_compatible(sc->sc_phandle, tegra124_compat))
+		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads, PADS_REFCLK_CFG0_REG,
+		    0x44ac44ac);
+	const char * const tegra210_compat[] = { "nvidia,tegra210-pcie", NULL };
+	if (of_match_compatible(sc->sc_phandle, tegra210_compat))
+		bus_space_write_4(sc->sc_bst, sc->sc_bsh_pads, PADS_REFCLK_CFG0_REG,
+		    0x90b890b8);
 
 	/*
 	 * Map PCI address spaces into ARM address space via

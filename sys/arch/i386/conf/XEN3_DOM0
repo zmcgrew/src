@@ -1,4 +1,4 @@
-#	$NetBSD: XEN3_DOM0,v 1.122 2017/09/14 07:58:41 mrg Exp $
+#	$NetBSD: XEN3_DOM0,v 1.124 2017/12/10 17:19:48 bouyer Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
@@ -117,6 +117,7 @@ file-system	TMPFS		# Efficient memory file-system
 # File system options
 options 	QUOTA		# legacy UFS quotas
 options 	QUOTA2		# new, in-filesystem UFS quotas
+#options 	DISKLABEL_EI	# disklabel Endian Independent support
 #options 	FFS_EI		# FFS Endian Independent support
 options 	WAPBL		# File system journaling support
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
@@ -266,6 +267,10 @@ amdpm*	at pci? dev ? function ?	# RNG and SMBus 1.0 interface
 ichsmb* at pci? dev ? function ?
 iic*	at ichsmb?
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # dbCool thermal monitor and fan controller
 #iic*	at amdpm?			# sensors below are on this bus
 #dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
@@ -390,6 +395,13 @@ tlphy*	at mii? phy ?			# ThunderLAN PHYs
 tqphy*	at mii? phy ?			# TDK Semiconductor PHYs
 ukphy*	at mii? phy ?			# generic unknown PHYs
 urlphy* at mii? phy ?			# Realtek RTL8150L internal PHYs
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 iop*	at pci? dev ? function ?	# I/O processor

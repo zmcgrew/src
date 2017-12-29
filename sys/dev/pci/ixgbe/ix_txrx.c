@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.28 2017/08/30 08:49:18 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.30 2017/12/04 09:29:42 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -320,9 +320,7 @@ ixgbe_xmit(struct tx_ring *txr, struct mbuf *m_head)
 	struct adapter          *adapter = txr->adapter;
 	struct ixgbe_tx_buf     *txbuf;
 	union ixgbe_adv_tx_desc *txd = NULL;
-	struct m_tag            *mtag;
 	struct ifnet	        *ifp = adapter->ifp;
-	struct ethercom         *ec = &adapter->osdep.ec;
 	int                     i, j, error;
 	int                     first;
 	u32                     olinfo_status = 0, cmd_type_len;
@@ -333,7 +331,7 @@ ixgbe_xmit(struct tx_ring *txr, struct mbuf *m_head)
 	cmd_type_len = (IXGBE_ADVTXD_DTYP_DATA |
 	    IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT);
 
-	if ((mtag = VLAN_OUTPUT_TAG(ec, m_head)) != NULL)
+	if (vlan_has_tag(m_head))
 		cmd_type_len |= IXGBE_ADVTXD_DCMD_VLE;
 
 	/*
@@ -716,8 +714,6 @@ ixgbe_tx_ctx_setup(struct tx_ring *txr, struct mbuf *mp,
     u32 *cmd_type_len, u32 *olinfo_status)
 {
 	struct adapter                   *adapter = txr->adapter;
-	struct ethercom                  *ec = &adapter->osdep.ec;
-	struct m_tag                     *mtag;
 	struct ixgbe_adv_tx_context_desc *TXD;
 	struct ether_vlan_header         *eh;
 #ifdef INET
@@ -760,8 +756,8 @@ ixgbe_tx_ctx_setup(struct tx_ring *txr, struct mbuf *mp,
 	 * be placed into the context descriptor. Hence
 	 * we need to make one even if not doing offloads.
 	 */
-	if ((mtag = VLAN_OUTPUT_TAG(ec, mp)) != NULL) {
-		vtag = htole16(VLAN_TAG_VALUE(mtag) & 0xffff);
+	if (vlan_has_tag(mp)) {
+		vtag = htole16(vlan_get_tag(mp));
 		vlan_macip_lens |= (vtag << IXGBE_ADVTXD_VLAN_SHIFT);
 	} else if (!(txr->adapter->feat_en & IXGBE_FEATURE_NEEDS_CTXD) &&
 	           (offload == FALSE))
@@ -882,9 +878,6 @@ static int
 ixgbe_tso_setup(struct tx_ring *txr, struct mbuf *mp, u32 *cmd_type_len,
     u32 *olinfo_status)
 {
-	struct m_tag                     *mtag;
-	struct adapter                   *adapter = txr->adapter;
-	struct ethercom                  *ec = &adapter->osdep.ec;
 	struct ixgbe_adv_tx_context_desc *TXD;
 	struct ether_vlan_header         *eh;
 #ifdef INET6
@@ -958,8 +951,8 @@ ixgbe_tso_setup(struct tx_ring *txr, struct mbuf *mp, u32 *cmd_type_len,
 	paylen = mp->m_pkthdr.len - ehdrlen - ip_hlen - tcp_hlen;
 
 	/* VLAN MACLEN IPLEN */
-	if ((mtag = VLAN_OUTPUT_TAG(ec, mp)) != NULL) {
-		vtag = htole16(VLAN_TAG_VALUE(mtag) & 0xffff);
+	if (vlan_has_tag(mp)) {
+		vtag = htole16(vlan_get_tag(mp));
 		vlan_macip_lens |= (vtag << IXGBE_ADVTXD_VLAN_SHIFT);
 	}
 
@@ -1362,9 +1355,7 @@ fail:
 } /* ixgbe_allocate_receive_buffers */
 
 /************************************************************************
- * ixgbe_setup_receive_ring
- *
- *   Initialize a receive ring and its buffers.
+ * ixgbe_free_receive_ring
  ************************************************************************/
 static void
 ixgbe_free_receive_ring(struct rx_ring *rxr)
@@ -1415,17 +1406,6 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 
 	/* Free current RX buffer structs and their mbufs */
 	ixgbe_free_receive_ring(rxr);
-
-	IXGBE_RX_UNLOCK(rxr);
-
-	/* Now reinitialize our supply of jumbo mbufs.  The number
-	 * or size of jumbo mbufs may have changed.
-	 */
-	ixgbe_jcl_reinit(&adapter->jcl_head, rxr->ptag->dt_dmat,
-	    (2 * adapter->num_rx_desc) * adapter->num_queues,
-	    adapter->rx_mbuf_sz);
-
-	IXGBE_RX_LOCK(rxr);
 
 	/* Now replenish the mbufs */
 	for (int j = 0; j != rxr->num_desc; ++j) {
@@ -1532,6 +1512,15 @@ ixgbe_setup_receive_structures(struct adapter *adapter)
 {
 	struct rx_ring *rxr = adapter->rx_rings;
 	int            j;
+
+	/*
+	 * Now reinitialize our supply of jumbo mbufs.  The number
+	 * or size of jumbo mbufs may have changed.
+	 * Assume all of rxr->ptag are the same.
+	 */
+	ixgbe_jcl_reinit(&adapter->jcl_head, rxr->ptag->dt_dmat,
+	    (2 * adapter->num_rx_desc) * adapter->num_queues,
+	    adapter->rx_mbuf_sz);
 
 	for (j = 0; j < adapter->num_queues; j++, rxr++)
 		if (ixgbe_setup_receive_ring(rxr))
@@ -1874,9 +1863,7 @@ ixgbe_rxeof(struct ix_queue *que)
 			if ((rxr->vtag_strip) && (staterr & IXGBE_RXD_STAT_VP))
 				vtag = le16toh(cur->wb.upper.vlan);
 			if (vtag) {
-				VLAN_INPUT_TAG(ifp, sendmp, vtag,
-				    printf("%s: could not apply VLAN "
-					"tag", __func__));
+				vlan_set_tag(sendmp, vtag);
 			}
 			if ((ifp->if_capenable & IFCAP_RXCSUM) != 0) {
 				ixgbe_rx_checksum(staterr, sendmp, ptype,

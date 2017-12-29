@@ -1,4 +1,4 @@
-/* $NetBSD: if_pppoe.c,v 1.126 2017/07/20 02:34:24 knakahara Exp $ */
+/* $NetBSD: if_pppoe.c,v 1.133 2017/12/07 10:22:04 ozaki-r Exp $ */
 
 /*-
  * Copyright (c) 2002, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_pppoe.c,v 1.126 2017/07/20 02:34:24 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_pppoe.c,v 1.133 2017/12/07 10:22:04 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "pppoe.h"
@@ -133,18 +133,10 @@ struct pppoetag {
 #define	IFF_PASSIVE	IFF_LINK0	/* wait passively for connection */
 #endif
 
-#define PPPOE_SESSION_LOCK(_sc, _op)	rw_enter(&(_sc)->sc_session_lock, (_op))
-#define PPPOE_SESSION_UNLOCK(_sc)	rw_exit(&(_sc)->sc_session_lock)
-#define PPPOE_SESSION_LOCKED(_sc)	rw_lock_held(&(_sc)->sc_session_lock)
-#define PPPOE_SESSION_WLOCKED(_sc)	rw_write_held(&(_sc)->sc_session_lock)
-#define PPPOE_SESSION_RLOCKED(_sc)	rw_read_held(&(_sc)->sc_session_lock)
+#define PPPOE_LOCK(_sc, _op)	rw_enter(&(_sc)->sc_lock, (_op))
+#define PPPOE_UNLOCK(_sc)	rw_exit(&(_sc)->sc_lock)
+#define PPPOE_WLOCKED(_sc)	rw_write_held(&(_sc)->sc_lock)
 
-#define PPPOE_PARAM_LOCK(_sc)		if ((_sc)->sc_lock) \
-						mutex_enter((_sc)->sc_lock)
-#define PPPOE_PARAM_UNLOCK(_sc)		if ((_sc)->sc_lock) \
-						mutex_exit((_sc)->sc_lock)
-#define PPPOE_PARAM_LOCKED(_sc)		(!(_sc)->sc_lock || \
-						mutex_owned((_sc)->sc_lock))
 #ifdef PPPOE_MPSAFE
 #define DECLARE_SPLNET_VARIABLE
 #define ACQUIRE_SPLNET()	do { } while (0)
@@ -165,7 +157,6 @@ struct pppoe_softc {
 	struct ifnet *sc_eth_if;	/* ethernet interface we are using */
 
 	int sc_state;			/* discovery phase or session connected */
-	bool sc_state_updating;		/* state update in other components */
 	struct ether_addr sc_dest;	/* hardware address of concentrator */
 	uint16_t sc_session;		/* PPPoE session id */
 
@@ -182,8 +173,7 @@ struct pppoe_softc {
 	callout_t sc_timeout;	/* timeout while not in session state */
 	int sc_padi_retried;		/* number of PADI retries already done */
 	int sc_padr_retried;		/* number of PADR retries already done */
-	krwlock_t sc_session_lock;	/* lock of sc_state, sc_session, and sc_eth_if */
-	kmutex_t *sc_lock;		/* lock of other parameters */
+	krwlock_t sc_lock;	/* lock of sc_state, sc_session, and sc_eth_if */
 };
 
 /* incoming traffic will be queued here */
@@ -231,7 +221,8 @@ static int pppoe_send_padt(struct ifnet *, u_int, const uint8_t *);
 static int pppoe_output(struct pppoe_softc *, struct mbuf *);
 
 /* internal helper functions */
-static struct pppoe_softc * pppoe_find_softc_by_session(u_int, struct ifnet *, krw_t);
+static struct pppoe_softc * pppoe_find_softc_by_session(u_int, struct ifnet *,
+    krw_t);
 static struct pppoe_softc * pppoe_find_softc_by_hunique(uint8_t *, size_t,
     struct ifnet *, krw_t);
 static struct mbuf *pppoe_get_mbuf(size_t len);
@@ -301,6 +292,7 @@ static int
 pppoe_clone_create(struct if_clone *ifc, int unit)
 {
 	struct pppoe_softc *sc;
+	int rv;
 
 	sc = malloc(sizeof(struct pppoe_softc), M_DEVBUF, M_WAITOK|M_ZERO);
 
@@ -309,7 +301,7 @@ pppoe_clone_create(struct if_clone *ifc, int unit)
 	sc->sc_sppp.pp_if.if_mtu = PPPOE_MAXMTU;
 	sc->sc_sppp.pp_if.if_flags = IFF_SIMPLEX|IFF_POINTOPOINT|IFF_MULTICAST;
 #ifdef PPPOE_MPSAFE
-	sc->sc_sppp.pp_if.if_extflags = IFEF_OUTPUT_MPSAFE;
+	sc->sc_sppp.pp_if.if_extflags = IFEF_MPSAFE;
 #endif
 	sc->sc_sppp.pp_if.if_type = IFT_PPP;
 	sc->sc_sppp.pp_if.if_hdrlen = sizeof(struct ether_header) + PPPOE_HEADERLEN;
@@ -323,7 +315,7 @@ pppoe_clone_create(struct if_clone *ifc, int unit)
 	/* changed to real address later */
 	memcpy(&sc->sc_dest, etherbroadcastaddr, sizeof(sc->sc_dest));
 
-	callout_init(&sc->sc_timeout, 0);
+	callout_init(&sc->sc_timeout, CALLOUT_MPSAFE);
 
 	sc->sc_sppp.pp_if.if_start = pppoe_start;
 #ifdef PPPOE_MPSAFE
@@ -333,7 +325,13 @@ pppoe_clone_create(struct if_clone *ifc, int unit)
 	sc->sc_sppp.pp_tlf = pppoe_tlf;
 	sc->sc_sppp.pp_framebytes = PPPOE_HEADERLEN;	/* framing added to ppp packets */
 
-	if_initialize(&sc->sc_sppp.pp_if);
+	rv = if_initialize(&sc->sc_sppp.pp_if);
+	if (rv != 0) {
+		callout_halt(&sc->sc_timeout, NULL);
+		callout_destroy(&sc->sc_timeout);
+		free(sc, M_DEVBUF);
+		return rv;
+	}
 	sc->sc_sppp.pp_if.if_percpuq = if_percpuq_create(&sc->sc_sppp.pp_if);
 	sppp_attach(&sc->sc_sppp.pp_if);
 	if_register(&sc->sc_sppp.pp_if);
@@ -343,8 +341,7 @@ pppoe_clone_create(struct if_clone *ifc, int unit)
 		pfil_add_ihook(pppoe_ifattach_hook, NULL, PFIL_IFNET, if_pfil);
 	}
 
-	sc->sc_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SOFTNET);
-	rw_init(&sc->sc_session_lock);
+	rw_init(&sc->sc_lock);
 
 	rw_enter(&pppoe_softc_list_lock, RW_WRITER);
 	LIST_INSERT_HEAD(&pppoe_softc_list, sc, sc_list);
@@ -359,7 +356,7 @@ pppoe_clone_destroy(struct ifnet *ifp)
 
 	rw_enter(&pppoe_softc_list_lock, RW_WRITER);
 
-	PPPOE_PARAM_LOCK(sc);
+	PPPOE_LOCK(sc, RW_WRITER);
 	callout_halt(&sc->sc_timeout, NULL);
 
 	LIST_REMOVE(sc, sc_list);
@@ -368,8 +365,6 @@ pppoe_clone_destroy(struct ifnet *ifp)
 		pfil_remove_ihook(pppoe_ifattach_hook, NULL, PFIL_IFNET, if_pfil);
 	}
 	rw_exit(&pppoe_softc_list_lock);
-
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
 
 	bpf_detach(ifp);
 	sppp_detach(&sc->sc_sppp.pp_if);
@@ -384,15 +379,12 @@ pppoe_clone_destroy(struct ifnet *ifp)
 		free(sc->sc_relay_sid, M_DEVBUF);
 	callout_destroy(&sc->sc_timeout);
 
-	PPPOE_PARAM_UNLOCK(sc);
-	if (sc->sc_lock)
-		mutex_obj_free(sc->sc_lock);
-	PPPOE_SESSION_UNLOCK(sc);
-	rw_destroy(&sc->sc_session_lock);
+	PPPOE_UNLOCK(sc);
+	rw_destroy(&sc->sc_lock);
 
 	free(sc, M_DEVBUF);
 
-	return (0);
+	return 0;
 }
 
 /*
@@ -410,14 +402,13 @@ pppoe_find_softc_by_session(u_int session, struct ifnet *rcvif, krw_t lock)
 		return NULL;
 	rw_enter(&pppoe_softc_list_lock, RW_READER);
 	LIST_FOREACH(sc, &pppoe_softc_list, sc_list) {
-		PPPOE_SESSION_LOCK(sc, lock);
-		if (!sc->sc_state_updating
-		    && sc->sc_state == PPPOE_STATE_SESSION
+		PPPOE_LOCK(sc, lock);
+		if ( sc->sc_state == PPPOE_STATE_SESSION
 		    && sc->sc_session == session
 		    && sc->sc_eth_if == rcvif)
 			break;
 
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 	}
 	rw_exit(&pppoe_softc_list_lock);
 	return sc;
@@ -441,7 +432,7 @@ pppoe_find_softc_by_hunique(uint8_t *token, size_t len,
 	rw_enter(&pppoe_softc_list_lock, RW_READER);
 	LIST_FOREACH(sc, &pppoe_softc_list, sc_list) {
 		if (sc == t) {
-			PPPOE_SESSION_LOCK(sc, lock);
+			PPPOE_LOCK(sc, lock);
 			break;
 		}
 	}
@@ -454,26 +445,17 @@ pppoe_find_softc_by_hunique(uint8_t *token, size_t len,
 		return NULL;
 	}
 
-	if (sc->sc_state_updating) {
-#ifdef PPPOE_DEBUG
-		printf("%s: host unique tag found, but its state is updating\n",
-		    sc->sc_sppp.pp_if.if_xname);
-#endif
-		PPPOE_SESSION_UNLOCK(sc);
-		return NULL;
-	}
-
 	/* should be safe to access *sc now */
 	if (sc->sc_state < PPPOE_STATE_PADI_SENT || sc->sc_state >= PPPOE_STATE_SESSION) {
 		printf("%s: host unique tag found, but it belongs to a connection in state %d\n",
 			sc->sc_sppp.pp_if.if_xname, sc->sc_state);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return NULL;
 	}
 	if (sc->sc_eth_if != rcvif) {
 		printf("%s: wrong interface, not accepting host unique\n",
 			sc->sc_sppp.pp_if.if_xname);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return NULL;
 	}
 	return sc;
@@ -493,9 +475,7 @@ pppoeintr(void)
 	struct mbuf *m;
 	int disc_done, data_done;
 
-#ifndef PPPOE_MPSAFE
-		mutex_enter(softnet_lock);
-#endif
+	SOFTNET_LOCK_UNLESS_NET_MPSAFE();
 
 	do {
 		disc_done = 0;
@@ -518,9 +498,8 @@ pppoeintr(void)
 			pppoe_data_input(m);
 		}
 	} while (disc_done || data_done);
-#ifndef PPPOE_MPSAFE
-		mutex_exit(softnet_lock);
-#endif
+
+	SOFTNET_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 /* analyze and handle a single received packet while not in session state */
@@ -657,14 +636,15 @@ pppoe_dispatch_disc_pkt(struct mbuf *m, int off)
 #endif
 			rcvif = m_get_rcvif_psref(m, &psref);
 			if (rcvif != NULL) {
-				sc = pppoe_find_softc_by_hunique(mtod(n, char *) + noff,
-				    len, rcvif, RW_READER);
+				sc = pppoe_find_softc_by_hunique(
+					mtod(n, char *) + noff, len, rcvif,
+					RW_READER);
 			}
 			m_put_rcvif_psref(rcvif, &psref);
 			if (sc != NULL) {
 				strlcpy(devname, sc->sc_sppp.pp_if.if_xname,
 				    sizeof(devname));
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 			}
 			break;
 		}
@@ -744,21 +724,20 @@ breakbreak:;
 			goto done;
 		rw_enter(&pppoe_softc_list_lock, RW_READER);
 		LIST_FOREACH(sc, &pppoe_softc_list, sc_list) {
-			PPPOE_SESSION_LOCK(sc, RW_WRITER);
+			PPPOE_LOCK(sc, RW_WRITER);
 			if (!(sc->sc_sppp.pp_if.if_flags & IFF_UP)) {
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				continue;
 			}
 			if (!(sc->sc_sppp.pp_if.if_flags & IFF_PASSIVE)) {
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				continue;
 			}
 
-			if (!sc->sc_state_updating
-			    && sc->sc_state == PPPOE_STATE_INITIAL)
+			if (sc->sc_state == PPPOE_STATE_INITIAL)
 				break;
 
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 		}
 		rw_exit(&pppoe_softc_list_lock);
 
@@ -767,15 +746,13 @@ breakbreak:;
 			goto done;
 		}
 
-		PPPOE_PARAM_LOCK(sc);
 		if (hunique) {
 			if (sc->sc_hunique)
 				free(sc->sc_hunique, M_DEVBUF);
 			sc->sc_hunique = malloc(hunique_len, M_DEVBUF,
 			    M_DONTWAIT);
 			if (sc->sc_hunique == NULL) {
-				PPPOE_PARAM_UNLOCK(sc);
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				goto done;
 			}
 			sc->sc_hunique_len = hunique_len;
@@ -784,8 +761,7 @@ breakbreak:;
 		memcpy(&sc->sc_dest, eh->ether_shost, sizeof sc->sc_dest);
 		sc->sc_state = PPPOE_STATE_PADO_SENT;
 		pppoe_send_pado(sc);
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		break;
 #endif /* PPPOE_SERVER */
 	case PPPOE_CODE_PADR:
@@ -817,22 +793,20 @@ breakbreak:;
 			goto done;
 		}
 
-		if (sc->sc_state_updating
-		    || sc->sc_state != PPPOE_STATE_PADO_SENT) {
+		if (sc->sc_state != PPPOE_STATE_PADO_SENT) {
 			printf("%s: received unexpected PADR\n",
 			    sc->sc_sppp.pp_if.if_xname);
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 			goto done;
 		}
-		PPPOE_PARAM_LOCK(sc);
+
 		if (hunique) {
 			if (sc->sc_hunique)
 				free(sc->sc_hunique, M_DEVBUF);
 			sc->sc_hunique = malloc(hunique_len, M_DEVBUF,
 			    M_DONTWAIT);
 			if (sc->sc_hunique == NULL) {
-				PPPOE_PARAM_UNLOCK(sc);
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				goto done;
 			}
 			sc->sc_hunique_len = hunique_len;
@@ -840,12 +814,9 @@ breakbreak:;
 		}
 		pppoe_send_pads(sc);
 		sc->sc_state = PPPOE_STATE_SESSION;
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 
-		sppp_lock_enter(&sc->sc_sppp);
 		sc->sc_sppp.pp_up(&sc->sc_sppp);
-		sppp_lock_exit(&sc->sc_sppp);
 		break;
 	    }
 #else
@@ -860,17 +831,15 @@ breakbreak:;
 			goto done;
 		}
 
-		PPPOE_SESSION_LOCK(sc, RW_WRITER);
+		PPPOE_LOCK(sc, RW_WRITER);
 
-		if (sc->sc_state_updating
-		    || sc->sc_state != PPPOE_STATE_PADI_SENT) {
+		if (sc->sc_state != PPPOE_STATE_PADI_SENT) {
 			printf("%s: received unexpected PADO\n",
 			    sc->sc_sppp.pp_if.if_xname);
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 			goto done;
 		}
 
-		PPPOE_PARAM_LOCK(sc);
 		if (ac_cookie) {
 			if (sc->sc_ac_cookie)
 				free(sc->sc_ac_cookie, M_DEVBUF);
@@ -880,8 +849,7 @@ breakbreak:;
 				printf("%s: FATAL: could not allocate memory "
 				    "for AC cookie\n",
 				    sc->sc_sppp.pp_if.if_xname);
-				PPPOE_PARAM_UNLOCK(sc);
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				goto done;
 			}
 			sc->sc_ac_cookie_len = ac_cookie_len;
@@ -896,8 +864,7 @@ breakbreak:;
 				printf("%s: FATAL: could not allocate memory "
 				    "for relay SID\n",
 				    sc->sc_sppp.pp_if.if_xname);
-				PPPOE_PARAM_UNLOCK(sc);
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				goto done;
 			}
 			sc->sc_relay_sid_len = relay_sid_len;
@@ -917,21 +884,13 @@ breakbreak:;
 		    PPPOE_DISC_TIMEOUT * (1 + sc->sc_padr_retried),
 		    pppoe_timeout, sc);
 
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		break;
 	case PPPOE_CODE_PADS:
 		if (sc == NULL)
 			goto done;
 
-		PPPOE_SESSION_LOCK(sc, RW_WRITER);
-		PPPOE_PARAM_LOCK(sc);
-
-		if (sc->sc_state_updating) {
-			PPPOE_PARAM_UNLOCK(sc);
-			PPPOE_SESSION_UNLOCK(sc);
-			goto done;
-		}
+		PPPOE_LOCK(sc, RW_WRITER);
 
 		sc->sc_session = session;
 		callout_stop(&sc->sc_timeout);
@@ -939,12 +898,9 @@ breakbreak:;
 			printf("%s: session 0x%x connected\n",
 			    sc->sc_sppp.pp_if.if_xname, session);
 		sc->sc_state = PPPOE_STATE_SESSION;
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 
-		sppp_lock_enter(&sc->sc_sppp);
 		sc->sc_sppp.pp_up(&sc->sc_sppp);	/* notify upper layers */
-		sppp_lock_exit(&sc->sc_sppp);
 		break;
 	case PPPOE_CODE_PADT: {
 		struct ifnet *rcvif;
@@ -959,18 +915,16 @@ breakbreak:;
 		if (sc == NULL)
 			goto done;
 
-		PPPOE_PARAM_LOCK(sc);
 		pppoe_clear_softc(sc, "received PADT");
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		break;
 	}
 	default:
 		if (sc != NULL) {
-			PPPOE_SESSION_LOCK(sc, RW_READER);
+			PPPOE_LOCK(sc, RW_READER);
 			strlcpy(devname, sc->sc_sppp.pp_if.if_xname,
 			    sizeof(devname));
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 		} else
 			strlcpy(devname, "pppoe", sizeof(devname));
 
@@ -1064,8 +1018,7 @@ pppoe_data_input(struct mbuf *m)
 		struct mbuf *p;
 
 		printf("%s: pkthdr.len=%d, pppoe.len=%d",
-			sc->sc_sppp.pp_if.if_xname,
-			m->m_pkthdr.len, plen);
+		    sc->sc_sppp.pp_if.if_xname, m->m_pkthdr.len, plen);
 		p = m;
 		while (p) {
 			printf(" l=%d", p->m_len);
@@ -1074,12 +1027,15 @@ pppoe_data_input(struct mbuf *m)
 		printf("\n");
 	}
 #endif
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 
 	if (m->m_pkthdr.len < plen)
 		goto drop;
 
-	/* fix incoming interface pointer (not the raw ethernet interface anymore) */
+	/*
+	 *  Fix incoming interface pointer (not the raw ethernet interface
+	 * anymore)
+	 */
 	m_set_rcvif(m, &sc->sc_sppp.pp_if);
 
 	/* pass packet up and account for it */
@@ -1098,9 +1054,6 @@ pppoe_output(struct pppoe_softc *sc, struct mbuf *m)
 	struct ether_header *eh;
 	uint16_t etype;
 
-	KASSERT(PPPOE_SESSION_LOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
-
 	if (sc->sc_eth_if == NULL) {
 		m_freem(m);
 		return EIO;
@@ -1109,7 +1062,8 @@ pppoe_output(struct pppoe_softc *sc, struct mbuf *m)
 	memset(&dst, 0, sizeof dst);
 	dst.sa_family = AF_UNSPEC;
 	eh = (struct ether_header*)&dst.sa_data;
-	etype = sc->sc_state == PPPOE_STATE_SESSION ? ETHERTYPE_PPPOE : ETHERTYPE_PPPOEDISC;
+	etype = sc->sc_state == PPPOE_STATE_SESSION
+	    ? ETHERTYPE_PPPOE : ETHERTYPE_PPPOEDISC;
 	eh->ether_type = htons(etype);
 	memcpy(&eh->ether_dhost, &sc->sc_dest, sizeof sc->sc_dest);
 
@@ -1140,15 +1094,15 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 		if (kauth_authorize_network(l->l_cred, KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, (void *)cmd,
 		    NULL) != 0)
-			return (EPERM);
+			return EPERM;
 		if (parms->eth_ifname[0] != 0) {
 			struct ifnet	*eth_if;
 
-			PPPOE_SESSION_LOCK(sc, RW_WRITER);
+			PPPOE_LOCK(sc, RW_WRITER);
 			eth_if = ifunit(parms->eth_ifname);
 			if (eth_if == NULL || eth_if->if_dlt != DLT_EN10MB) {
 				sc->sc_eth_if = NULL;
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				return ENXIO;
 			}
 
@@ -1158,7 +1112,7 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 				    PPPOE_OVERHEAD;
 			}
 			sc->sc_eth_if = eth_if;
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 		}
 		if (parms->ac_name != NULL) {
 			size_t s;
@@ -1177,11 +1131,11 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 				return EINVAL;
 			}
 
-			PPPOE_PARAM_LOCK(sc);
+			PPPOE_LOCK(sc, RW_WRITER);
 			if (sc->sc_concentrator_name)
 				free(sc->sc_concentrator_name, M_DEVBUF);
 			sc->sc_concentrator_name = b;
-			PPPOE_PARAM_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 		}
 		if (parms->service_name != NULL) {
 			size_t s;
@@ -1200,11 +1154,11 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 				return EINVAL;
 			}
 
-			PPPOE_PARAM_LOCK(sc);
+			PPPOE_LOCK(sc, RW_WRITER);
 			if (sc->sc_service_name)
 				free(sc->sc_service_name, M_DEVBUF);
 			sc->sc_service_name = b;
-			PPPOE_PARAM_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 		}
 		return 0;
 	}
@@ -1213,25 +1167,23 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 	{
 		struct pppoediscparms *parms = (struct pppoediscparms*)data;
 		memset(parms, 0, sizeof *parms);
-		PPPOE_SESSION_LOCK(sc, RW_READER);
+		PPPOE_LOCK(sc, RW_READER);
 		if (sc->sc_eth_if)
 			strlcpy(parms->ifname, sc->sc_eth_if->if_xname,
 			    sizeof(parms->ifname));
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return 0;
 	}
 	break;
 	case PPPOEGETSESSION:
 	{
 		struct pppoeconnectionstate *state = (struct pppoeconnectionstate*)data;
-		PPPOE_SESSION_LOCK(sc, RW_READER);
-		PPPOE_PARAM_LOCK(sc);
+		PPPOE_LOCK(sc, RW_READER);
 		state->state = sc->sc_state;
 		state->session_id = sc->sc_session;
 		state->padi_retry_no = sc->sc_padi_retried;
 		state->padr_retry_no = sc->sc_padr_retried;
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return 0;
 	}
 	break;
@@ -1240,8 +1192,7 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 		 * Prevent running re-establishment timers overriding
 		 * administrators choice.
 		 */
-		PPPOE_SESSION_LOCK(sc, RW_WRITER);
-		PPPOE_PARAM_LOCK(sc);
+		PPPOE_LOCK(sc, RW_WRITER);
 
 		if ((ifr->ifr_flags & IFF_UP) == 0
 		     && sc->sc_state >= PPPOE_STATE_PADI_SENT
@@ -1252,17 +1203,11 @@ pppoe_ioctl(struct ifnet *ifp, unsigned long cmd, void *data)
 			sc->sc_padr_retried = 0;
 			memcpy(&sc->sc_dest, etherbroadcastaddr,
 			    sizeof(sc->sc_dest));
-			sc->sc_state_updating = 1;
 		}
 
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 
 		error = sppp_ioctl(ifp, cmd, data);
-
-		PPPOE_SESSION_LOCK(sc, RW_WRITER);
-		sc->sc_state_updating = 0;
-		PPPOE_SESSION_UNLOCK(sc);
 
 		return error;
 	case SIOCSIFMTU:
@@ -1311,9 +1256,6 @@ pppoe_send_padi(struct pppoe_softc *sc)
 	struct mbuf *m0;
 	int len, l1 = 0, l2 = 0; /* XXX: gcc */
 	uint8_t *p;
-
-	KASSERT(PPPOE_SESSION_LOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
 
 	if (sc->sc_state >PPPOE_STATE_PADI_SENT)
 		panic("pppoe_send_padi in state %d", sc->sc_state);
@@ -1386,8 +1328,7 @@ pppoe_timeout(void *arg)
 	printf("%s: timeout\n", sc->sc_sppp.pp_if.if_xname);
 #endif
 
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
-	PPPOE_PARAM_LOCK(sc);
+	PPPOE_LOCK(sc, RW_WRITER);
 	switch (sc->sc_state) {
 	case PPPOE_STATE_INITIAL:
 		/* delayed connect from pppoe_tls() */
@@ -1416,8 +1357,7 @@ pppoe_timeout(void *arg)
 			} else {
 				pppoe_abort_connect(sc);
 				RELEASE_SPLNET();
-				PPPOE_PARAM_UNLOCK(sc);
-				PPPOE_SESSION_UNLOCK(sc);
+				PPPOE_UNLOCK(sc);
 				return;
 			}
 		}
@@ -1445,15 +1385,13 @@ pppoe_timeout(void *arg)
 				if (sc->sc_sppp.pp_if.if_flags & IFF_DEBUG)
 					printf("%s: failed to send PADI"
 					    ", error=%d\n",
-					    sc->sc_sppp.pp_if.if_xname,
-					    err);
+					    sc->sc_sppp.pp_if.if_xname, err);
 			}
 			callout_reset(&sc->sc_timeout,
 			    PPPOE_DISC_TIMEOUT * (1 + sc->sc_padi_retried),
 			    pppoe_timeout, sc);
 			RELEASE_SPLNET();
-			PPPOE_PARAM_UNLOCK(sc);
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 			return;
 		}
 		if ((err = pppoe_send_padr(sc)) != 0) {
@@ -1472,12 +1410,10 @@ pppoe_timeout(void *arg)
 		pppoe_disconnect(sc);
 		break;
 	default:
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return;	/* all done, work in peace */
 	}
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 }
 
 /* Start a connection (i.e. initiate discovery phase) */
@@ -1487,8 +1423,7 @@ pppoe_connect(struct pppoe_softc *sc)
 	int err;
 	DECLARE_SPLNET_VARIABLE;
 
-	KASSERT(PPPOE_SESSION_WLOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
+	KASSERT(PPPOE_WLOCKED(sc));
 
 	if (sc->sc_state != PPPOE_STATE_INITIAL)
 		return EBUSY;
@@ -1518,8 +1453,7 @@ pppoe_disconnect(struct pppoe_softc *sc)
 	int err;
 	DECLARE_SPLNET_VARIABLE;
 
-	KASSERT(PPPOE_SESSION_WLOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
+	KASSERT(PPPOE_WLOCKED(sc));
 
 	ACQUIRE_SPLNET();
 
@@ -1529,12 +1463,12 @@ pppoe_disconnect(struct pppoe_softc *sc)
 		if (sc->sc_sppp.pp_if.if_flags & IFF_DEBUG)
 			printf("%s: disconnecting\n",
 			    sc->sc_sppp.pp_if.if_xname);
-		err = pppoe_send_padt(sc->sc_eth_if, sc->sc_session, (const uint8_t *)&sc->sc_dest);
+		err = pppoe_send_padt(sc->sc_eth_if, sc->sc_session,
+		    (const uint8_t *)&sc->sc_dest);
 	}
 
 	/* cleanup softc */
 	sc->sc_state = PPPOE_STATE_INITIAL;
-	sc->sc_state_updating = 1;
 
 	memcpy(&sc->sc_dest, etherbroadcastaddr, sizeof(sc->sc_dest));
 	if (sc->sc_ac_cookie) {
@@ -1556,17 +1490,12 @@ pppoe_disconnect(struct pppoe_softc *sc)
 #endif
 	sc->sc_session = 0;
 
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 
 	/* notify upper layer */
-	sppp_lock_enter(&sc->sc_sppp);
 	sc->sc_sppp.pp_down(&sc->sc_sppp);
-	sppp_lock_exit(&sc->sc_sppp);
 
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
-	PPPOE_PARAM_LOCK(sc);
-	sc->sc_state_updating = 0;
+	PPPOE_LOCK(sc, RW_WRITER);
 
 	RELEASE_SPLNET();
 	return err;
@@ -1576,26 +1505,18 @@ pppoe_disconnect(struct pppoe_softc *sc)
 static void
 pppoe_abort_connect(struct pppoe_softc *sc)
 {
-	KASSERT(PPPOE_SESSION_WLOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
+	KASSERT(PPPOE_WLOCKED(sc));
 
 	printf("%s: could not establish connection\n",
 		sc->sc_sppp.pp_if.if_xname);
 	sc->sc_state = PPPOE_STATE_CLOSING;
-	sc->sc_state_updating = 1;
 
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 
 	/* notify upper layer */
-	sppp_lock_enter(&sc->sc_sppp);
 	sc->sc_sppp.pp_down(&sc->sc_sppp);
-	sppp_lock_exit(&sc->sc_sppp);
 
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
-	PPPOE_PARAM_LOCK(sc);
-
-	sc->sc_state_updating = 0;
+	PPPOE_LOCK(sc, RW_WRITER);
 
 	/* clear connection state */
 	memcpy(&sc->sc_dest, etherbroadcastaddr, sizeof(sc->sc_dest));
@@ -1609,9 +1530,6 @@ pppoe_send_padr(struct pppoe_softc *sc)
 	struct mbuf *m0;
 	uint8_t *p;
 	size_t len, l1 = 0; /* XXX: gcc */
-
-	KASSERT(PPPOE_SESSION_LOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
 
 	if (sc->sc_state != PPPOE_STATE_PADR_SENT)
 		return EIO;
@@ -1706,9 +1624,6 @@ pppoe_send_pado(struct pppoe_softc *sc)
 	uint8_t *p;
 	size_t len;
 
-	KASSERT(PPPOE_SESSION_LOCKED(sc)); /* required by pppoe_output(). */
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
-
 	if (sc->sc_state != PPPOE_STATE_PADO_SENT)
 		return EIO;
 
@@ -1741,8 +1656,7 @@ pppoe_send_pads(struct pppoe_softc *sc)
 	uint8_t *p;
 	size_t len, l1 = 0;	/* XXX: gcc */
 
-	KASSERT(PPPOE_SESSION_WLOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
+	KASSERT(PPPOE_WLOCKED(sc));
 
 	if (sc->sc_state != PPPOE_STATE_PADO_SENT)
 		return EIO;
@@ -1783,17 +1697,12 @@ pppoe_tls(struct sppp *sp)
 	struct pppoe_softc *sc = (void *)sp;
 	int wtime;
 
-	KASSERT(!PPPOE_SESSION_LOCKED(sc));
-	KASSERT(!PPPOE_PARAM_LOCKED(sc));
-
-	PPPOE_SESSION_LOCK(sc, RW_READER);
+	PPPOE_LOCK(sc, RW_READER);
 
 	if (sc->sc_state != PPPOE_STATE_INITIAL) {
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return;
 	}
-
-	PPPOE_PARAM_LOCK(sc);
 
 	if (sc->sc_sppp.pp_phase == SPPP_PHASE_ESTABLISH &&
 	    sc->sc_sppp.pp_auth_failures > 0) {
@@ -1809,8 +1718,7 @@ pppoe_tls(struct sppp *sp)
 	}
 	callout_reset(&sc->sc_timeout, wtime, pppoe_timeout, sc);
 
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 }
 
 static void
@@ -1818,13 +1726,10 @@ pppoe_tlf(struct sppp *sp)
 {
 	struct pppoe_softc *sc = (void *)sp;
 
-	KASSERT(!PPPOE_SESSION_LOCKED(sc));
-	KASSERT(!PPPOE_PARAM_LOCKED(sc));
-
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
+	PPPOE_LOCK(sc, RW_WRITER);
 
 	if (sc->sc_state < PPPOE_STATE_SESSION) {
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		return;
 	}
 	/*
@@ -1833,12 +1738,10 @@ pppoe_tlf(struct sppp *sp)
 	 * function and defer disconnecting to the timeout handler.
 	 */
 	sc->sc_state = PPPOE_STATE_CLOSING;
-	PPPOE_PARAM_LOCK(sc);
 
 	callout_reset(&sc->sc_timeout, hz/50, pppoe_timeout, sc);
 
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 }
 
 static void
@@ -1853,8 +1756,10 @@ pppoe_start(struct ifnet *ifp)
 		return;
 
 	/* are we ready to process data yet? */
+	PPPOE_LOCK(sc, RW_READER);
 	if (sc->sc_state < PPPOE_STATE_SESSION) {
 		sppp_flush(&sc->sc_sppp.pp_if);
+		PPPOE_UNLOCK(sc);
 		return;
 	}
 
@@ -1866,16 +1771,13 @@ pppoe_start(struct ifnet *ifp)
 			continue;
 		}
 		p = mtod(m, uint8_t *);
-		PPPOE_SESSION_LOCK(sc, RW_READER);
 		PPPOE_ADD_HEADER(p, 0, sc->sc_session, len);
 
 		bpf_mtap(&sc->sc_sppp.pp_if, m);
 
-		PPPOE_PARAM_LOCK(sc);
 		pppoe_output(sc, m);
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
 	}
+	PPPOE_UNLOCK(sc);
 }
 
 #ifdef PPPOE_MPSAFE
@@ -1890,9 +1792,9 @@ pppoe_transmit(struct ifnet *ifp, struct mbuf *m)
 		return EINVAL;
 
 	/* are we ready to process data yet? */
-	PPPOE_SESSION_LOCK(sc, RW_READER);
+	PPPOE_LOCK(sc, RW_READER);
 	if (sc->sc_state < PPPOE_STATE_SESSION) {
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		m_free(m);
 		return ENOBUFS;
 	}
@@ -1900,7 +1802,7 @@ pppoe_transmit(struct ifnet *ifp, struct mbuf *m)
 	len = m->m_pkthdr.len;
 	M_PREPEND(m, PPPOE_HEADERLEN, M_DONTWAIT);
 	if (m == NULL) {
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 		ifp->if_oerrors++;
 		return ENETDOWN;
 	}
@@ -1909,10 +1811,8 @@ pppoe_transmit(struct ifnet *ifp, struct mbuf *m)
 
 	bpf_mtap(&sc->sc_sppp.pp_if, m);
 
-	PPPOE_PARAM_LOCK(sc);
 	pppoe_output(sc, m);
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 	return 0;
 }
 #endif /* PPPOE_MPSAFE */
@@ -1930,23 +1830,19 @@ pppoe_ifattach_hook(void *arg, unsigned long cmd, void *arg2)
 	ACQUIRE_SPLNET();
 	rw_enter(&pppoe_softc_list_lock, RW_READER);
 	LIST_FOREACH(sc, &pppoe_softc_list, sc_list) {
-		PPPOE_SESSION_LOCK(sc, RW_WRITER);
+		PPPOE_LOCK(sc, RW_WRITER);
 		if (sc->sc_eth_if != ifp) {
-			PPPOE_SESSION_UNLOCK(sc);
+			PPPOE_UNLOCK(sc);
 			continue;
 		}
-		sppp_lock_enter(&sc->sc_sppp);
 		if (sc->sc_sppp.pp_if.if_flags & IFF_UP) {
 			sc->sc_sppp.pp_if.if_flags &= ~(IFF_UP|IFF_RUNNING);
 			printf("%s: ethernet interface detached, going down\n",
 			    sc->sc_sppp.pp_if.if_xname);
 		}
-		sppp_lock_exit(&sc->sc_sppp);
 		sc->sc_eth_if = NULL;
-		PPPOE_PARAM_LOCK(sc);
 		pppoe_clear_softc(sc, "ethernet interface detached");
-		PPPOE_PARAM_UNLOCK(sc);
-		PPPOE_SESSION_UNLOCK(sc);
+		PPPOE_UNLOCK(sc);
 	}
 	rw_exit(&pppoe_softc_list_lock);
 	RELEASE_SPLNET();
@@ -1955,8 +1851,7 @@ pppoe_ifattach_hook(void *arg, unsigned long cmd, void *arg2)
 static void
 pppoe_clear_softc(struct pppoe_softc *sc, const char *message)
 {
-	KASSERT(PPPOE_SESSION_WLOCKED(sc));
-	KASSERT(PPPOE_PARAM_LOCKED(sc));
+	KASSERT(PPPOE_WLOCKED(sc));
 
 	/* stop timer */
 	callout_stop(&sc->sc_timeout);
@@ -1966,20 +1861,13 @@ pppoe_clear_softc(struct pppoe_softc *sc, const char *message)
 
 	/* fix our state */
 	sc->sc_state = PPPOE_STATE_INITIAL;
-	sc->sc_state_updating = 1;
 
-	PPPOE_PARAM_UNLOCK(sc);
-	PPPOE_SESSION_UNLOCK(sc);
+	PPPOE_UNLOCK(sc);
 
 	/* signal upper layer */
-	sppp_lock_enter(&sc->sc_sppp);
 	sc->sc_sppp.pp_down(&sc->sc_sppp);
-	sppp_lock_exit(&sc->sc_sppp);
 
-	PPPOE_SESSION_LOCK(sc, RW_WRITER);
-	PPPOE_PARAM_LOCK(sc);
-
-	sc->sc_state_updating = 0;
+	PPPOE_LOCK(sc, RW_WRITER);
 
 	/* clean up softc */
 	memcpy(&sc->sc_dest, etherbroadcastaddr, sizeof(sc->sc_dest));

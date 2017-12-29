@@ -1103,26 +1103,10 @@ ipv6_handleifa(struct dhcpcd_ctx *ctx,
 		break;
 	case RTM_NEWADDR:
 		if (ia == NULL) {
-			char buf[INET6_ADDRSTRLEN];
-			const char *cbp;
-
-			if ((ia = calloc(1, sizeof(*ia))) == NULL) {
-				logerr(__func__);
-				break;
-			}
+			ia = ipv6_newaddr(ifp, addr, prefix_len, 0);
 #ifdef ALIAS_ADDR
 			strlcpy(ia->alias, ifname, sizeof(ia->alias));
 #endif
-			ia->iface = ifp;
-			ia->addr = *addr;
-			ia->prefix_len = prefix_len;
-			ipv6_makeprefix(&ia->prefix, &ia->addr,
-			    ia->prefix_len);
-			cbp = inet_ntop(AF_INET6, &addr->s6_addr,
-			    buf, sizeof(buf));
-			if (cbp)
-				snprintf(ia->saddr, sizeof(ia->saddr),
-				    "%s/%d", cbp, prefix_len);
 			if (if_getlifetime6(ia) == -1) {
 				/* No support or address vanished.
 				 * Either way, just set a deprecated
@@ -1190,10 +1174,8 @@ ipv6_handleifa(struct dhcpcd_ctx *ctx,
 	}
 
 	if (ia != NULL) {
-		if (!IN6_IS_ADDR_LINKLOCAL(&ia->addr)) {
-			ipv6nd_handleifa(cmd, ia);
-			dhcp6_handleifa(cmd, ia);
-		}
+		ipv6nd_handleifa(cmd, ia);
+		dhcp6_handleifa(cmd, ia);
 
 		/* Done with the ia now, so free it. */
 		if (cmd == RTM_DELADDR)
@@ -1453,8 +1435,8 @@ ipv6_tryaddlinklocal(struct interface *ifp)
 }
 
 struct ipv6_addr *
-ipv6_newaddr(struct interface *ifp, struct in6_addr *addr, uint8_t prefix_len,
-    unsigned int flags)
+ipv6_newaddr(struct interface *ifp, const struct in6_addr *addr,
+    uint8_t prefix_len, unsigned int flags)
 {
 	struct ipv6_addr *ia;
 	char buf[INET6_ADDRSTRLEN];
@@ -2222,9 +2204,7 @@ inet6_staticroutes(struct rt_head *routes, struct dhcpcd_ctx *ctx)
 	struct ipv6_state *state;
 	struct ipv6_addr *ia;
 	struct rt *rt;
-	int n;
 
-	n = 0;
 	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
 		if ((state = IPV6_STATE(ifp)) == NULL)
 			continue;
@@ -2233,14 +2213,12 @@ inet6_staticroutes(struct rt_head *routes, struct dhcpcd_ctx *ctx)
 			    (IPV6_AF_ADDED | IPV6_AF_STATIC))
 			{
 				rt = inet6_makeprefix(ifp, NULL, ia);
-				if (rt) {
+				if (rt)
 					TAILQ_INSERT_TAIL(routes, rt, rt_next);
-					n++;
-				}
 			}
 		}
 	}
-	return n;
+	return 0;
 }
 
 static int
@@ -2250,9 +2228,7 @@ inet6_raroutes(struct rt_head *routes, struct dhcpcd_ctx *ctx, int expired,
 	struct rt *rt;
 	struct ra *rap;
 	const struct ipv6_addr *addr;
-	int n;
 
-	n = 0;
 	TAILQ_FOREACH(rap, ctx->ra_routers, next) {
 		if (rap->expired != expired)
 			continue;
@@ -2261,21 +2237,21 @@ inet6_raroutes(struct rt_head *routes, struct dhcpcd_ctx *ctx, int expired,
 				continue;
 			rt = inet6_makeprefix(rap->iface, rap, addr);
 			if (rt) {
+				rt->rt_dflags |= RTDF_RA;
 				TAILQ_INSERT_TAIL(routes, rt, rt_next);
-				n++;
 			}
 		}
 		if (rap->lifetime) {
 			rt = inet6_makerouter(rap);
 			if (rt) {
+				rt->rt_dflags |= RTDF_RA;
 				TAILQ_INSERT_TAIL(routes, rt, rt_next);
-				n++;
 				if (have_default)
 					*have_default = true;
 			}
 		}
 	}
-	return n;
+	return 0;
 }
 
 static int
@@ -2286,22 +2262,20 @@ inet6_dhcproutes(struct rt_head *routes, struct dhcpcd_ctx *ctx,
 	const struct dhcp6_state *d6_state;
 	const struct ipv6_addr *addr;
 	struct rt *rt;
-	int n;
 
-	n = 0;
 	TAILQ_FOREACH(ifp, ctx->ifaces, next) {
 		d6_state = D6_CSTATE(ifp);
 		if (d6_state && d6_state->state == dstate) {
 			TAILQ_FOREACH(addr, &d6_state->addrs, next) {
 				rt = inet6_makeprefix(ifp, NULL, addr);
 				if (rt) {
+					rt->rt_dflags |= RTDF_DHCP;
 					TAILQ_INSERT_TAIL(routes, rt, rt_next);
-					n++;
 				}
 			}
 		}
 	}
-	return n;
+	return 0;
 }
 
 bool

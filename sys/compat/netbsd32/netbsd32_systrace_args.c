@@ -1,4 +1,4 @@
-/* $NetBSD: netbsd32_systrace_args.c,v 1.19 2017/05/10 06:19:49 riastradh Exp $ */
+/* $NetBSD: netbsd32_systrace_args.c,v 1.23 2017/12/19 19:40:03 kamil Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -522,20 +522,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 0;
 		break;
 	}
-	/* netbsd32_sbrk */
-	case 69: {
-		const struct netbsd32_sbrk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* netbsd32_intptr_t */
-		*n_args = 1;
-		break;
-	}
-	/* netbsd32_sstk */
-	case 70: {
-		const struct netbsd32_sstk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* int */
-		*n_args = 1;
-		break;
-	}
 	/* netbsd32_ommap */
 	case 71: {
 		const struct compat_43_netbsd32_ommap_args *p = params;
@@ -546,13 +532,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[4] = SCARG(p, fd); /* int */
 		iarg[5] = SCARG(p, pos); /* netbsd32_long */
 		*n_args = 6;
-		break;
-	}
-	/* netbsd32_ovadvise */
-	case 72: {
-		const struct netbsd32_ovadvise_args *p = params;
-		iarg[0] = SCARG(p, anom); /* int */
-		*n_args = 1;
 		break;
 	}
 	/* netbsd32_munmap */
@@ -3423,7 +3402,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		const struct netbsd32____lwp_park60_args *p = params;
 		iarg[0] = SCARG(p, clock_id); /* netbsd32_clockid_t */
 		iarg[1] = SCARG(p, flags); /* int */
-		uarg[2] = (intptr_t) SCARG(p, ts).i32; /* const netbsd32_timespecp_t */
+		uarg[2] = (intptr_t) SCARG(p, ts).i32; /* netbsd32_timespecp_t */
 		iarg[3] = SCARG(p, unpark); /* lwpid_t */
 		uarg[4] = (intptr_t) SCARG(p, hint).i32; /* netbsd32_voidp */
 		uarg[5] = (intptr_t) SCARG(p, unparkhint).i32; /* netbsd32_voidp */
@@ -4273,26 +4252,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	/* sys_vfork */
 	case 66:
 		break;
-	/* netbsd32_sbrk */
-	case 69:
-		switch(ndx) {
-		case 0:
-			p = "netbsd32_intptr_t";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* netbsd32_sstk */
-	case 70:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		default:
-			break;
-		};
-		break;
 	/* netbsd32_ommap */
 	case 71:
 		switch(ndx) {
@@ -4313,16 +4272,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 5:
 			p = "netbsd32_long";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* netbsd32_ovadvise */
-	case 72:
-		switch(ndx) {
-		case 0:
-			p = "int";
 			break;
 		default:
 			break;
@@ -9265,7 +9214,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "int";
 			break;
 		case 2:
-			p = "const netbsd32_timespecp_t";
+			p = "netbsd32_timespecp_t";
 			break;
 		case 3:
 			p = "lwpid_t";
@@ -9664,23 +9613,8 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_vfork */
 	case 66:
-	/* netbsd32_sbrk */
-	case 69:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* netbsd32_sstk */
-	case 70:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
 	/* netbsd32_ommap */
 	case 71:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* netbsd32_ovadvise */
-	case 72:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
 		break;

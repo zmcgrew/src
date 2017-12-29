@@ -1,4 +1,4 @@
-/*	$NetBSD: if_stf.c,v 1.101 2016/12/12 03:55:57 ozaki-r Exp $	*/
+/*	$NetBSD: if_stf.c,v 1.103 2017/11/15 10:42:41 knakahara Exp $	*/
 /*	$KAME: if_stf.c,v 1.62 2001/06/07 22:32:16 itojun Exp $ */
 
 /*
@@ -75,7 +75,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_stf.c,v 1.101 2016/12/12 03:55:57 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_stf.c,v 1.103 2017/11/15 10:42:41 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -220,7 +220,7 @@ stf_clone_create(struct if_clone *ifc, int unit)
 		/* Only one stf interface is allowed. */
 		encap_lock_exit();
 		free(sc, M_DEVBUF);
-		return (EEXIST);
+		return EEXIST;
 	}
 
 	sc->encap_cookie = encap_attach_func(AF_INET, IPPROTO_IPV6,
@@ -229,7 +229,7 @@ stf_clone_create(struct if_clone *ifc, int unit)
 	if (sc->encap_cookie == NULL) {
 		printf("%s: unable to attach encap\n", if_name(&sc->sc_if));
 		free(sc, M_DEVBUF);
-		return (EIO);	/* XXX */
+		return EIO;	/* XXX */
 	}
 
 	sc->sc_if.if_mtu    = STF_MTU;
@@ -238,11 +238,20 @@ stf_clone_create(struct if_clone *ifc, int unit)
 	sc->sc_if.if_output = stf_output;
 	sc->sc_if.if_type   = IFT_STF;
 	sc->sc_if.if_dlt    = DLT_NULL;
-	if_attach(&sc->sc_if);
+	error = if_attach(&sc->sc_if);
+	if (error != 0) {
+		aprint_error("%s: if_initialize failed(%d)\n",
+		    if_name(&sc->sc_if), error);
+		encap_lock_enter();
+		encap_detach(sc->encap_cookie);
+		encap_lock_exit();
+		free(sc, M_DEVBUF);
+		return error;
+	}
 	if_alloc_sadl(&sc->sc_if);
 	bpf_attach(&sc->sc_if, DLT_NULL, sizeof(u_int));
 	LIST_INSERT_HEAD(&stf_softc_list, sc, sc_list);
-	return (0);
+	return 0;
 }
 
 static int
@@ -259,7 +268,7 @@ stf_clone_destroy(struct ifnet *ifp)
 	rtcache_free(&sc->sc_ro);
 	free(sc, M_DEVBUF);
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -582,15 +591,17 @@ stf_checkaddr6(struct stf_softc *sc, const struct in6_addr *in6,
 }
 
 void
-in_stf_input(struct mbuf *m, int off, int proto)
+in_stf_input(struct mbuf *m, int off, int proto, void *eparg)
 {
 	int s;
-	struct stf_softc *sc;
+	struct stf_softc *sc = eparg;
 	struct ip *ip;
 	struct ip6_hdr *ip6;
 	uint8_t otos, itos;
 	struct ifnet *ifp;
 	size_t pktlen;
+
+	KASSERT(sc != NULL);
 
 	if (proto != IPPROTO_IPV6) {
 		m_freem(m);
@@ -599,9 +610,7 @@ in_stf_input(struct mbuf *m, int off, int proto)
 
 	ip = mtod(m, struct ip *);
 
-	sc = (struct stf_softc *)encap_getarg(m);
-
-	if (sc == NULL || (sc->sc_if.if_flags & IFF_UP) == 0) {
+	if ((sc->sc_if.if_flags & IFF_UP) == 0) {
 		m_freem(m);
 		return;
 	}

@@ -1,4 +1,4 @@
-/*	$NetBSD: copy.S,v 1.24 2017/08/25 11:35:03 maxv Exp $	*/
+/*	$NetBSD: copy.S,v 1.28 2017/11/01 09:17:28 maxv Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -105,6 +105,27 @@ ENTRY(do_pmap_load)
 	popq	%rdi
 	leaveq
 	ret
+END(do_pmap_load)
+
+/*
+ * SMAP functions. ret+int3+int3 is patched dynamically to STAC/CLAC.
+ */
+
+ENTRY(smap_enable)
+.Lclacpatch:
+	ret
+	int3
+	int3
+	ret
+END(smap_enable)
+
+ENTRY(smap_disable)
+.Lstacpatch:
+	ret
+	int3
+	int3
+	ret
+END(smap_disable)
 
 /*
  * Copy routines from and to userland, plus a few more. See the
@@ -172,6 +193,7 @@ ENTRY(kcopy)
 .Lkcopy_end:
 	xorq	%rax,%rax
 	ret
+END(kcopy)
 
 ENTRY(copyout)
 	DEFERRED_SWITCH_CHECK
@@ -185,6 +207,7 @@ ENTRY(copyout)
 	cmpq	%r8,%rdx
 	ja	_C_LABEL(copy_efault)	/* jump if end in kernel space */
 
+	callq	smap_disable
 .Lcopyout_start:
 	movq	%rax,%rcx		/* length */
 	shrq	$3,%rcx			/* count of 8-byte words */
@@ -195,10 +218,12 @@ ENTRY(copyout)
 	rep
 	movsb				/* copy remaining bytes */
 .Lcopyout_end:
+	callq	smap_enable
 
 	xorl	%eax,%eax
 	ret
 	DEFERRED_SWITCH_CALL
+END(copyout)
 
 ENTRY(copyin)
 	DEFERRED_SWITCH_CHECK
@@ -212,6 +237,7 @@ ENTRY(copyin)
 	cmpq	%r8,%rdx
 	ja	_C_LABEL(copy_efault)	/* j if end in kernel space */
 
+	callq	smap_disable
 .Lcopyin_start:
 3:	/* bcopy(%rsi, %rdi, %rax); */
 	movq	%rax,%rcx
@@ -223,25 +249,26 @@ ENTRY(copyin)
 	rep
 	movsb
 .Lcopyin_end:
+	callq	smap_enable
 
 	xorl	%eax,%eax
 	ret
 	DEFERRED_SWITCH_CALL
+END(copyin)
 
 NENTRY(copy_efault)
 	movq	$EFAULT,%rax
-
-/*
- * kcopy_fault is used by kcopy and copy_fault is used by copyin/out.
- *
- * they're distinguished for lazy pmap switching.  see trap().
- */
+	ret
+END(copy_efault)
 
 NENTRY(kcopy_fault)
 	ret
+END(kcopy_fault)
 
 NENTRY(copy_fault)
+	callq	smap_enable
 	ret
+END(copy_fault)
 
 ENTRY(copyoutstr)
 	DEFERRED_SWITCH_CHECK
@@ -261,6 +288,7 @@ ENTRY(copyoutstr)
 	movq	%rax,%r8
 1:	incq	%rdx
 
+	callq	smap_disable
 .Lcopyoutstr_start:
 1:	decq	%rdx
 	jz	2f
@@ -269,6 +297,7 @@ ENTRY(copyoutstr)
 	testb	%al,%al
 	jnz	1b
 .Lcopyoutstr_end:
+	callq	smap_enable
 
 	/* Success -- 0 byte reached. */
 	decq	%rdx
@@ -276,12 +305,14 @@ ENTRY(copyoutstr)
 	jmp	copystr_return
 
 2:	/* rdx is zero -- return EFAULT or ENAMETOOLONG. */
+	callq	smap_enable
 	movq	$VM_MAXUSER_ADDRESS,%r11
 	cmpq	%r11,%rdi
 	jae	_C_LABEL(copystr_efault)
 	movq	$ENAMETOOLONG,%rax
 	jmp	copystr_return
 	DEFERRED_SWITCH_CALL
+END(copyoutstr)
 
 ENTRY(copyinstr)
 	DEFERRED_SWITCH_CHECK
@@ -301,6 +332,7 @@ ENTRY(copyinstr)
 	movq	%rax,%r8
 1:	incq	%rdx
 
+	callq	smap_disable
 .Lcopyinstr_start:
 1:	decq	%rdx
 	jz	2f
@@ -309,32 +341,38 @@ ENTRY(copyinstr)
 	testb	%al,%al
 	jnz	1b
 .Lcopyinstr_end:
+	callq	smap_enable
 
 	/* Success -- 0 byte reached. */
 	decq	%rdx
 	xorq	%rax,%rax
 	jmp	copystr_return
 
-2:	/* edx is zero -- return EFAULT or ENAMETOOLONG. */
+2:	/* rdx is zero -- return EFAULT or ENAMETOOLONG. */
+	callq	smap_enable
 	movq	$VM_MAXUSER_ADDRESS,%r11
 	cmpq	%r11,%rsi
 	jae	_C_LABEL(copystr_efault)
 	movq	$ENAMETOOLONG,%rax
 	jmp	copystr_return
 	DEFERRED_SWITCH_CALL
+END(copyinstr)
 
 ENTRY(copystr_efault)
 	movl	$EFAULT,%eax
+	jmp	copystr_return
+END(copystr_efault)
 
 ENTRY(copystr_fault)
+	callq	smap_enable
 copystr_return:
 	/* Set *lencopied and return %eax. */
 	testq	%r9,%r9
 	jz	8f
 	subq	%rdx,%r8
 	movq	%r8,(%r9)
-
 8:	ret
+END(copystr_fault)
 
 ENTRY(copystr)
 	xchgq	%rdi,%rsi
@@ -354,7 +392,7 @@ ENTRY(copystr)
 	xorl	%eax,%eax
 	jmp	6f
 
-4:	/* edx is zero -- return ENAMETOOLONG. */
+4:	/* rdx is zero -- return ENAMETOOLONG. */
 	movl	$ENAMETOOLONG,%eax
 
 6:	/* Set *lencopied and return %eax. */
@@ -364,7 +402,7 @@ ENTRY(copystr)
 	movq	%r8,(%rcx)
 
 7:	ret
-
+END(copystr)
 
 ENTRY(fuswintr)
 	cmpl	$TLBSTATE_VALID,CPUVAR(TLBSTATE)
@@ -376,10 +414,13 @@ ENTRY(fuswintr)
 	leaq	_C_LABEL(fusuintrfailure)(%rip),%r11
 	movq	%r11,PCB_ONFAULT(%rcx)
 
+	callq	smap_disable
 	movzwl	(%rdi),%eax
+	callq	smap_enable
 
 	movq	$0,PCB_ONFAULT(%rcx)
 	ret
+END(fuswintr)
 
 ENTRY(fubyte)
 	DEFERRED_SWITCH_CHECK
@@ -390,11 +431,14 @@ ENTRY(fubyte)
 	leaq	_C_LABEL(fusufailure)(%rip),%r11
 	movq	%r11,PCB_ONFAULT(%rcx)
 
+	callq	smap_disable
 	movzbl	(%rdi),%eax
+	callq	smap_enable
 
 	movq	$0,PCB_ONFAULT(%rcx)
 	ret
 	DEFERRED_SWITCH_CALL
+END(fubyte)
 
 ENTRY(suswintr)
 	cmpl	$TLBSTATE_VALID,CPUVAR(TLBSTATE)
@@ -406,11 +450,14 @@ ENTRY(suswintr)
 	leaq	_C_LABEL(fusuintrfailure)(%rip),%r11
 	movq	%r11,PCB_ONFAULT(%rcx)
 
+	callq	smap_disable
 	movw	%si,(%rdi)
+	callq	smap_enable
 
 	xorq	%rax,%rax
 	movq	%rax,PCB_ONFAULT(%rcx)
 	ret
+END(suswintr)
 
 ENTRY(subyte)
 	DEFERRED_SWITCH_CHECK
@@ -422,30 +469,38 @@ ENTRY(subyte)
 	leaq	_C_LABEL(fusufailure)(%rip),%r11
 	movq	%r11,PCB_ONFAULT(%rcx)
 
+	callq	smap_disable
 	movb	%sil,(%rdi)
+	callq	smap_enable
 
 	xorq	%rax,%rax
 	movq	%rax,PCB_ONFAULT(%rcx)
 	ret
 	DEFERRED_SWITCH_CALL
+END(subyte)
 
 /*
  * These are the same, but must reside at different addresses,
  * because trap.c checks for them.
  */
 ENTRY(fusuintrfailure)
+	callq	smap_enable
 	movq	$0,PCB_ONFAULT(%rcx)
 	movl	$-1,%eax
 	ret
+END(fusuintrfailure)
 
 ENTRY(fusufailure)
+	callq	smap_enable
 	movq	$0,PCB_ONFAULT(%rcx)
 	movl	$-1,%eax
 	ret
+END(fusufailure)
 
 ENTRY(fusuaddrfault)
 	movl	$-1,%eax
 	ret
+END(fusuaddrfault)
 
 /*
  * Compare-and-swap the 64-bit integer in the user-space.
@@ -460,11 +515,13 @@ ENTRY(ucas_64)
 	ja	_C_LABEL(ucas_efault)
 	movq	%rsi,%rax
 
+	callq	smap_disable
 .Lucas64_start:
 	/* Perform the CAS */
 	lock
 	cmpxchgq %rdx,(%rdi)
 .Lucas64_end:
+	callq	smap_enable
 
 	/*
 	 * Note: %rax is "old" value.
@@ -474,6 +531,7 @@ ENTRY(ucas_64)
 	xorq	%rax,%rax
 	ret
 	DEFERRED_SWITCH_CALL
+END(ucas_64)
 
 /*
  * int	ucas_32(volatile int32_t *uptr, int32_t old, int32_t new, int32_t *ret);
@@ -486,11 +544,13 @@ ENTRY(ucas_32)
 	ja	_C_LABEL(ucas_efault)
 	movl	%esi,%eax
 
+	callq	smap_disable
 .Lucas32_start:
 	/* Perform the CAS */
 	lock
 	cmpxchgl %edx,(%rdi)
 .Lucas32_end:
+	callq	smap_enable
 
 	/*
 	 * Note: %eax is "old" value.
@@ -500,12 +560,17 @@ ENTRY(ucas_32)
 	xorq	%rax,%rax
 	ret
 	DEFERRED_SWITCH_CALL
+END(ucas_32)
 
 ENTRY(ucas_efault)
 	movq	$EFAULT,%rax
+	ret
+END(ucas_efault)
 
 NENTRY(ucas_fault)
+	callq	smap_enable
 	ret
+END(ucas_fault)
 
 /*
  * int	ucas_ptr(volatile void **uptr, void *old, void *new, void **ret);
@@ -524,6 +589,19 @@ x86_copyfunc_end:	.globl	x86_copyfunc_end
  */
 	.section ".rodata"
 	.globl _C_LABEL(onfault_table)
+	.type	_C_LABEL(x86_clacpatch),@object
+	.type	_C_LABEL(x86_stacpatch),@object
+
+LABEL(x86_clacpatch)
+	.quad	.Lclacpatch
+	.quad	0 /* terminate */
+END(x86_clacpatch)
+
+LABEL(x86_stacpatch)
+	.quad	.Lstacpatch
+	.quad	0 /* terminate */
+END(x86_stacpatch)
+
 _C_LABEL(onfault_table):
 	.quad .Lcopyin_start
 	.quad .Lcopyin_end

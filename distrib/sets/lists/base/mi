@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1161 2017/09/17 00:00:39 sevan Exp $
+# $NetBSD: mi,v 1.1165 2017/12/10 20:38:13 bouyer Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -138,6 +138,12 @@
 ./libdata/firmware/if_athn/athn-ar7010-11	base-firmware-root
 ./libdata/firmware/if_athn/athn-ar9271		base-firmware-root
 ./libdata/firmware/if_athn/athn-license		base-firmware-root
+./libdata/firmware/if_bwfm			base-firmware-root
+./libdata/firmware/if_bwfm/LICENCE.broadcom_bcm43xx	base-firmware-root
+./libdata/firmware/if_bwfm/brcmfmac43143.bin	base-firmware-root
+./libdata/firmware/if_bwfm/brcmfmac43236b.bin	base-firmware-root
+./libdata/firmware/if_bwfm/brcmfmac43242a.bin	base-firmware-root
+./libdata/firmware/if_bwfm/brcmfmac43569.bin	base-firmware-root
 ./libdata/firmware/if_ipw			base-firmware-root
 ./libdata/firmware/if_ipw/LICENSE		base-firmware-root
 ./libdata/firmware/if_ipw/ipw2100-1.2-i.fw	base-firmware-root
@@ -940,6 +946,7 @@
 ./usr/bin/sysstat				base-util-bin
 ./usr/bin/systat				base-util-bin
 ./usr/bin/tabs					base-util-bin
+./usr/bin/tac					base-util-bin
 ./usr/bin/tail					base-util-bin
 ./usr/bin/talk					base-netutil-bin
 ./usr/bin/tar					base-util-bin
@@ -1062,6 +1069,7 @@
 ./usr/include/dev/filemon			base-c-usr
 ./usr/include/dev/hdaudio			base-c-usr
 ./usr/include/dev/hdmicec			base-c-usr
+./usr/include/dev/hid				base-c-usr
 ./usr/include/dev/hpc				base-c-usr
 ./usr/include/dev/i2c				base-c-usr
 ./usr/include/dev/i2o				base-c-usr
@@ -5633,7 +5641,7 @@
 ./usr/share/zoneinfo/Canada			base-sys-share
 ./usr/share/zoneinfo/Canada/Atlantic		base-sys-share		share
 ./usr/share/zoneinfo/Canada/Central		base-sys-share		share
-./usr/share/zoneinfo/Canada/East-Saskatchewan	base-sys-share		share
+./usr/share/zoneinfo/Canada/East-Saskatchewan	base-obsolete		obsolete
 ./usr/share/zoneinfo/Canada/Eastern		base-sys-share		share
 ./usr/share/zoneinfo/Canada/Mountain		base-sys-share		share
 ./usr/share/zoneinfo/Canada/Newfoundland	base-sys-share		share

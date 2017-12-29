@@ -1,4 +1,4 @@
-/* 	$NetBSD: ioapic.c,v 1.52 2015/07/27 15:45:20 msaitoh Exp $	*/
+/* 	$NetBSD: ioapic.c,v 1.56 2017/12/13 16:30:18 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2009 The NetBSD Foundation, Inc.
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ioapic.c,v 1.52 2015/07/27 15:45:20 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ioapic.c,v 1.56 2017/12/13 16:30:18 bouyer Exp $");
 
 #include "opt_ddb.h"
 
@@ -111,8 +111,6 @@ void ioapic_hwunmask(struct pic *, int);
 bool ioapic_trymask(struct pic *, int);
 static void ioapic_addroute(struct pic *, struct cpu_info *, int, int, int);
 static void ioapic_delroute(struct pic *, struct cpu_info *, int, int, int);
-
-int apic_verbose = 0;
 
 struct ioapic_softc *ioapics;	 /* head of linked list */
 int nioapics = 0;	   	 /* number attached */
@@ -508,6 +506,7 @@ ioapic_hwmask(struct pic *pic, int pin)
 	flags = ioapic_lock(sc);
 	redlo = ioapic_read_ul(sc, IOAPIC_REDLO(pin));
 	redlo |= IOAPIC_REDLO_MASK;
+	redlo &= ~IOAPIC_REDLO_RIRR;
 	ioapic_write_ul(sc, IOAPIC_REDLO(pin), redlo);
 	ioapic_unlock(sc, flags);
 }
@@ -548,7 +547,7 @@ ioapic_hwunmask(struct pic *pic, int pin)
 
 	flags = ioapic_lock(sc);
 	redlo = ioapic_read_ul(sc, IOAPIC_REDLO(pin));
-	redlo &= ~IOAPIC_REDLO_MASK;
+	redlo &= ~(IOAPIC_REDLO_MASK | IOAPIC_REDLO_RIRR);
 	ioapic_write_ul(sc, IOAPIC_REDLO(pin), redlo);
 	ioapic_unlock(sc, flags);
 }
@@ -565,6 +564,28 @@ ioapic_addroute(struct pic *pic, struct cpu_info *ci, int pin,
 	pp->ip_vector = idtvec;
 	pp->ip_cpu = ci;
 	apic_set_redir(sc, pin, idtvec, ci);
+
+#if defined(XEN)
+	/*
+	 * This is kludgy, and not the right place, but we can't bind
+	 * before the routing has been set to the appropriate 'vector'.
+	 * in x86/intr.c, this is done after idt_vec_set(), where this
+	 * would have been more appropriate to put this.
+	 */
+
+	int port, irq;
+	irq = vect2irq[idtvec];
+	KASSERT(irq != 0);
+	port = bind_pirq_to_evtch(irq);
+	KASSERT(port < NR_EVENT_CHANNELS);
+	KASSERT(port >= 0);
+
+	KASSERT(irq2port[irq] == 0);
+	irq2port[irq] = port + 1;
+
+	xen_atomic_set_bit(&ci->ci_evtmask[0], port);
+#endif
+
 }
 
 static void
@@ -573,6 +594,15 @@ ioapic_delroute(struct pic *pic, struct cpu_info *ci, int pin,
 {
 
 	ioapic_hwmask(pic, pin);
+
+#if defined(XEN)
+	int port, irq;
+	irq = vect2irq[idtvec];
+	port = unbind_pirq_from_evtch(irq);
+
+	KASSERT(port < NR_EVENT_CHANNELS);
+#endif
+
 }
 
 #ifdef DDB

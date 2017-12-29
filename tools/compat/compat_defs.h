@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_defs.h,v 1.107 2017/01/07 21:29:30 christos Exp $	*/
+/*	$NetBSD: compat_defs.h,v 1.109 2017/10/03 01:43:03 christos Exp $	*/
 
 #ifndef	__NETBSD_COMPAT_DEFS_H__
 #define	__NETBSD_COMPAT_DEFS_H__
@@ -250,6 +250,10 @@ extern int optind, opterr, optopt;
 
 #if !HAVE_DECL_DIRNAME
 char *dirname(char *);
+#endif
+
+#if !HAVE_DECL_FPURGE
+int fpurge(FILE *);
 #endif
 
 #if !HAVE_DIRFD

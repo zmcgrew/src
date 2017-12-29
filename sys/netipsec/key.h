@@ -1,4 +1,4 @@
-/*	$NetBSD: key.h,v 1.29 2017/08/09 09:48:11 ozaki-r Exp $	*/
+/*	$NetBSD: key.h,v 1.33 2017/11/21 07:03:08 ozaki-r Exp $	*/
 /*	$FreeBSD: src/sys/netipsec/key.h,v 1.1.4.1 2003/01/24 05:11:36 sam Exp $	*/
 /*	$KAME: key.h,v 1.21 2001/07/27 03:51:30 itojun Exp $	*/
 
@@ -91,15 +91,17 @@ void key_socksplist_add(struct secpolicy *);
 struct secasvar *key_lookup_sa(const union sockaddr_union *,
 		u_int, u_int32_t, u_int16_t, u_int16_t, const char*, int);
 void key_freesav(struct secasvar **, const char*, int);
+struct secasvar *key_lookup_sa_bysaidx(const struct secasindex *);
 
 #define	KEY_LOOKUP_SA(dst, proto, spi, sport, dport)		\
 	key_lookup_sa(dst, proto, spi, sport, dport,  __func__, __LINE__)
 
 int key_checktunnelsanity (struct secasvar *, u_int, void *, void *);
-int key_checkrequest(struct ipsecrequest *, struct secasvar **);
+int key_checkrequest(const struct ipsecrequest *, const struct secasindex *,
+    struct secasvar **);
 
 struct secpolicy *key_msg2sp (const struct sadb_x_policy *, size_t, int *);
-struct mbuf *key_sp2msg (const struct secpolicy *);
+struct mbuf *key_sp2msg(const struct secpolicy *, int);
 int key_ismyaddr (const struct sockaddr *);
 int key_spdacquire (const struct secpolicy *);
 u_long key_random (void);

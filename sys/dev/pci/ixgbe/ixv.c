@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.65 2017/09/15 08:31:32 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.77 2017/12/21 06:49:26 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -102,7 +102,7 @@ static int      ixv_configure_interrupts(struct adapter *);
 static void	ixv_free_pci_resources(struct adapter *);
 static void     ixv_local_timer(void *);
 static void     ixv_local_timer_locked(void *);
-static void     ixv_setup_interface(device_t, struct adapter *);
+static int      ixv_setup_interface(device_t, struct adapter *);
 static int      ixv_negotiate_api(struct adapter *);
 
 static void     ixv_initialize_transmit_units(struct adapter *);
@@ -284,6 +284,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	ixgbe_vendor_info_t *ent;
 	const struct pci_attach_args *pa = aux;
 	const char *apivstr;
+	const char *str;
 	char buf[256];
 
 	INIT_DEBUGOUT("ixv_attach: begin");
@@ -348,18 +349,23 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	switch (hw->device_id) {
 	case IXGBE_DEV_ID_82599_VF:
 		hw->mac.type = ixgbe_mac_82599_vf;
+		str = "82599 VF";
 		break;
 	case IXGBE_DEV_ID_X540_VF:
 		hw->mac.type = ixgbe_mac_X540_vf;
+		str = "X540 VF";
 		break;
 	case IXGBE_DEV_ID_X550_VF:
 		hw->mac.type = ixgbe_mac_X550_vf;
+		str = "X550 VF";
 		break;
 	case IXGBE_DEV_ID_X550EM_X_VF:
 		hw->mac.type = ixgbe_mac_X550EM_x_vf;
+		str = "X550EM X VF";
 		break;
 	case IXGBE_DEV_ID_X550EM_A_VF:
 		hw->mac.type = ixgbe_mac_X550EM_a_vf;
+		str = "X550EM A VF";
 		break;
 	default:
 		/* Shouldn't get here since probe succeeded */
@@ -368,6 +374,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 		goto err_out;
 		break;
 	}
+	aprint_normal_dev(dev, "device %s\n", str);
 
 	ixv_init_device_features(adapter);
 
@@ -489,12 +496,16 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	/* hw.ix defaults init */
 	adapter->enable_aim = ixv_enable_aim;
 
-	/* Setup OS specific network interface */
-	ixv_setup_interface(dev, adapter);
-
 	error = ixv_allocate_msix(adapter, pa);
 	if (error) {
 		device_printf(dev, "ixv_allocate_msix() failed!\n");
+		goto err_late;
+	}
+
+	/* Setup OS specific network interface */
+	error = ixv_setup_interface(dev, adapter);
+	if (error != 0) {
+		aprint_error_dev(dev, "ixv_setup_interface() failed!\n");
 		goto err_late;
 	}
 
@@ -540,6 +551,7 @@ static int
 ixv_detach(device_t dev, int flags)
 {
 	struct adapter  *adapter = device_private(dev);
+	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = adapter->queues;
 	struct tx_ring *txr = adapter->tx_rings;
 	struct rx_ring *rxr = adapter->rx_rings;
@@ -642,6 +654,13 @@ ixv_detach(device_t dev, int flags)
 	evcnt_detach(&stats->vfgotc);
 	evcnt_detach(&stats->vfgptc);
 
+	/* Mailbox Stats */
+	evcnt_detach(&hw->mbx.stats.msgs_tx);
+	evcnt_detach(&hw->mbx.stats.msgs_rx);
+	evcnt_detach(&hw->mbx.stats.acks);
+	evcnt_detach(&hw->mbx.stats.reqs);
+	evcnt_detach(&hw->mbx.stats.rsts);
+
 	ixgbe_free_transmit_structures(adapter);
 	ixgbe_free_receive_structures(adapter);
 	free(adapter->queues, M_DEVBUF);
@@ -667,7 +686,10 @@ ixv_init_locked(struct adapter *adapter)
 	struct ifnet	*ifp = adapter->ifp;
 	device_t 	dev = adapter->dev;
 	struct ixgbe_hw *hw = &adapter->hw;
+	struct ix_queue	*que = adapter->queues;
 	int             error = 0;
+	uint32_t mask;
+	int i;
 
 	INIT_DEBUGOUT("ixv_init_locked: begin");
 	KASSERT(mutex_owned(&adapter->core_mtx));
@@ -741,7 +763,10 @@ ixv_init_locked(struct adapter *adapter)
 	ixv_configure_ivars(adapter);
 
 	/* Set up auto-mask */
-	IXGBE_WRITE_REG(hw, IXGBE_VTEIAM, IXGBE_EICS_RTX_QUEUE);
+	mask = (1 << adapter->vector);
+	for (i = 0; i < adapter->num_queues; i++, que++)
+		mask |= (1 << que->msix);
+	IXGBE_WRITE_REG(hw, IXGBE_VTEIAM, mask);
 
 	/* Set moderation on the Link interrupt */
 	IXGBE_WRITE_REG(hw, IXGBE_VTEITR(adapter->vector), IXGBE_LINK_ITR);
@@ -891,20 +916,15 @@ ixv_msix_mbx(void *arg)
 {
 	struct adapter	*adapter = arg;
 	struct ixgbe_hw *hw = &adapter->hw;
-	u32		reg;
 
 	++adapter->link_irq.ev_count;
-
-	/* First get the cause */
-	reg = IXGBE_READ_REG(hw, IXGBE_VTEICS);
-	/* Clear interrupt with write */
-	IXGBE_WRITE_REG(hw, IXGBE_VTEICR, reg);
+	/* NetBSD: We use auto-clear, so it's not required to write VTEICR */
 
 	/* Link status change */
-	if (reg & IXGBE_EICR_LSC)
-		softint_schedule(adapter->link_si);
+	hw->mac.get_link_status = TRUE;
+	softint_schedule(adapter->link_si);
 
-	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, IXGBE_EIMS_OTHER);
+	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, (1 << adapter->vector));
 
 	return 1;
 } /* ixv_msix_mbx */
@@ -939,6 +959,12 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 		case IXGBE_LINK_SPEED_10GB_FULL:
 			ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
 			break;
+		case IXGBE_LINK_SPEED_5GB_FULL:
+			ifmr->ifm_active |= IFM_5000_T | IFM_FDX;
+			break;
+		case IXGBE_LINK_SPEED_2_5GB_FULL:
+			ifmr->ifm_active |= IFM_2500_T | IFM_FDX;
+			break;
 		case IXGBE_LINK_SPEED_1GB_FULL:
 			ifmr->ifm_active |= IFM_1000_T | IFM_FDX;
 			break;
@@ -949,6 +975,8 @@ ixv_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 			ifmr->ifm_active |= IFM_10_T | IFM_FDX;
 			break;
 	}
+
+	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
 
 	IXGBE_CORE_UNLOCK(adapter);
 
@@ -1024,8 +1052,10 @@ ixv_set_multi(struct adapter *adapter)
 	u8                 *update_ptr;
 	int                mcnt = 0;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
 	IOCTL_DEBUGOUT("ixv_set_multi: begin");
 
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		bcopy(enm->enm_addrlo,
@@ -1037,6 +1067,7 @@ ixv_set_multi(struct adapter *adapter)
 			break;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	update_ptr = mta;
 
@@ -1343,11 +1374,12 @@ ixv_free_pci_resources(struct adapter * adapter)
  *
  *   Setup networking device structure and register an interface.
  ************************************************************************/
-static void
+static int
 ixv_setup_interface(device_t dev, struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ifnet   *ifp;
+	int rv;
 
 	INIT_DEBUGOUT("ixv_setup_interface: begin");
 
@@ -1359,7 +1391,7 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef IXGBE_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = ixv_ioctl;
 	if (adapter->feat_en & IXGBE_FEATURE_LEGACY_TX) {
@@ -1376,7 +1408,11 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
 	IFQ_SET_READY(&ifp->if_snd);
 
-	if_initialize(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0) {
+		aprint_error_dev(dev, "if_initialize failed(%d)\n", rv);
+		return rv;
+	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
 	/*
@@ -1422,7 +1458,7 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	ifmedia_add(&adapter->media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
 
-	return;
+	return 0;
 } /* ixv_setup_interface */
 
 
@@ -1556,9 +1592,6 @@ ixv_initialize_rss_mapping(struct adapter *adapter)
 		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV4_UDP;
-	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4_EX)
-		device_printf(adapter->dev, "%s: RSS_HASHTYPE_RSS_UDP_IPV4_EX defined, but not supported\n",
-		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_UDP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6_EX)
@@ -1831,16 +1864,19 @@ ixv_enable_intr(struct adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct ix_queue *que = adapter->queues;
-	u32             mask = (IXGBE_EIMS_ENABLE_MASK & ~IXGBE_EIMS_RTX_QUEUE);
+	u32             mask;
+	int i;
 
-
-	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, mask);
-
-	mask = IXGBE_EIMS_ENABLE_MASK;
-	mask &= ~(IXGBE_EIMS_OTHER | IXGBE_EIMS_LSC);
+	/* For VTEIAC */
+	mask = (1 << adapter->vector);
+	for (i = 0; i < adapter->num_queues; i++, que++)
+		mask |= (1 << que->msix);
 	IXGBE_WRITE_REG(hw, IXGBE_VTEIAC, mask);
 
-	for (int i = 0; i < adapter->num_queues; i++, que++)
+	/* For VTEIMS */
+	IXGBE_WRITE_REG(hw, IXGBE_VTEIMS, (1 << adapter->vector));
+	que = adapter->queues;
+	for (i = 0; i < adapter->num_queues; i++, que++)
 		ixv_enable_queue(adapter, que->msix);
 
 	IXGBE_WRITE_FLUSH(hw);
@@ -2076,6 +2112,7 @@ ixv_add_stats_sysctls(struct adapter *adapter)
 	struct tx_ring          *txr = adapter->tx_rings;
 	struct rx_ring          *rxr = adapter->rx_rings;
 	struct ixgbevf_hw_stats *stats = &adapter->stats.vf;
+	struct ixgbe_hw *hw = &adapter->hw;
 	const struct sysctlnode *rnode;
 	struct sysctllog **log = &adapter->sysctllog;
 	const char *xname = device_xname(dev);
@@ -2236,6 +2273,19 @@ ixv_add_stats_sysctls(struct adapter *adapter)
 	    xname, "Good Packets Transmitted");
 	evcnt_attach_dynamic(&stats->vfgotc, EVCNT_TYPE_MISC, NULL,
 	    xname, "Good Octets Transmitted");
+
+	/* Mailbox Stats */
+	evcnt_attach_dynamic(&hw->mbx.stats.msgs_tx, EVCNT_TYPE_MISC, NULL,
+	    xname, "message TXs");
+	evcnt_attach_dynamic(&hw->mbx.stats.msgs_rx, EVCNT_TYPE_MISC, NULL,
+	    xname, "message RXs");
+	evcnt_attach_dynamic(&hw->mbx.stats.acks, EVCNT_TYPE_MISC, NULL,
+	    xname, "ACKs");
+	evcnt_attach_dynamic(&hw->mbx.stats.reqs, EVCNT_TYPE_MISC, NULL,
+	    xname, "REQs");
+	evcnt_attach_dynamic(&hw->mbx.stats.rsts, EVCNT_TYPE_MISC, NULL,
+	    xname, "RSTs");
+
 } /* ixv_add_stats_sysctls */
 
 /************************************************************************
@@ -2646,6 +2696,7 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	/* and Mailbox */
 	cpu_id++;
 	snprintf(intr_xname, sizeof(intr_xname), "%s link", device_xname(dev));
+	adapter->vector = vector;
 	intrstr = pci_intr_string(pc, adapter->osdep.intrs[vector], intrbuf,
 	    sizeof(intrbuf));
 #ifdef IXGBE_MPSAFE
@@ -2674,7 +2725,6 @@ ixv_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	else
 		aprint_normal("\n");
 
-	adapter->vector = vector;
 	/* Tasklets for Mailbox */
 	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
 	    ixv_handle_link, adapter);

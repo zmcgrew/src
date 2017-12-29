@@ -52,8 +52,10 @@
 	    else							      \
 	      {								      \
 		w = tre_mbrtowc(&next_c, str_byte, (size_t)max, &mbstate);    \
-		if (w == (size_t)-1 || w == (size_t)-2)			      \
-		  return REG_NOMATCH;					      \
+		if (w == (size_t)-1 || w == (size_t)-2) {		      \
+		  ret = REG_NOMATCH;					      \
+		  goto error_exit;					      \
+		}							      \
 		if (w == 0 && len >= 0)					      \
 		  {							      \
 		    pos_add_next = 1;					      \
@@ -71,10 +73,9 @@
       case STR_USER:						      	      \
         pos += pos_add_next;					      	      \
 	str_user_end = str_source->get_next_char(&next_c, &pos_add_next,      \
-                                                 str_source->context);        \
-        break;								      \
-    }									      \
-  } while(/*CONSTCOND*/0)
+                                                 str_source->context);	      \
+      }									      \
+  } while(/*CONSTCOND*/(void)0,0)
 
 #else /* !TRE_MULTIBYTE */
 
@@ -102,9 +103,8 @@
         pos += pos_add_next;					      	      \
 	str_user_end = str_source->get_next_char(&next_c, &pos_add_next,      \
                                                  str_source->context);	      \
-        break;								      \
-    }									      \
-  } while(/*CONSTCOND*/0)
+      }									      \
+  } while(/*CONSTCOND*/(void)0,0)
 
 #endif /* !TRE_MULTIBYTE */
 
@@ -127,9 +127,8 @@
 	pos += pos_add_next;						      \
 	str_user_end = str_source->get_next_char(&next_c, &pos_add_next,      \
 						 str_source->context);	      \
-        break;								      \
-    }									      \
-  } while(/*CONSTCOND*/0)
+      }									      \
+  } while(/*CONSTCOND*/(void)0,0)
 
 #endif /* !TRE_WCHAR */
 

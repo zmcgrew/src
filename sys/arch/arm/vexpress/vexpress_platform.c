@@ -1,4 +1,4 @@
-/* $NetBSD: vexpress_platform.c,v 1.3 2017/06/06 09:56:57 jmcneill Exp $ */
+/* $NetBSD: vexpress_platform.c,v 1.6 2017/12/19 09:04:19 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_fdt_arm.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.3 2017/06/06 09:56:57 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.6 2017/12/19 09:04:19 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -58,20 +58,8 @@ __KERNEL_RCSID(0, "$NetBSD: vexpress_platform.c,v 1.3 2017/06/06 09:56:57 jmcnei
 #include <libfdt.h>
 
 #define	VEXPRESS_CLCD_NODE_PATH	\
-	"/smb@08000000/motherboard/iofpga@3,00000000/clcd@1f0000"
+	"/smb@8000000/motherboard/iofpga@3,00000000/clcd@1f0000"
 #define	VEXPRESS_REF_FREQ	24000000
-
-#define	DEVMAP_ALIGN(a)	((a) & ~L1_S_OFFSET)
-#define	DEVMAP_SIZE(s)	roundup2((s), L1_S_SIZE)
-#define	DEVMAP_ENTRY(va, pa, sz)			\
-	{						\
-		.pd_va = DEVMAP_ALIGN(va),		\
-		.pd_pa = DEVMAP_ALIGN(pa),		\
-		.pd_size = DEVMAP_SIZE(sz),		\
-		.pd_prot = VM_PROT_READ|VM_PROT_WRITE,	\
-		.pd_cache = PTE_NOCACHE			\
-	}
-#define	DEVMAP_ENTRY_END	{ 0 }
 
 extern struct bus_space armv7_generic_bs_tag;
 extern struct bus_space armv7_generic_a4x_bs_tag;
@@ -155,7 +143,7 @@ vexpress_platform_devmap(void)
 			     VEXPRESS_GIC_PBASE,
 			     VEXPRESS_GIC_SIZE),
 		DEVMAP_ENTRY_END
-	};	
+	};
 
 	return devmap;
 }

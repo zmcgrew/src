@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6_nbr.c,v 1.138 2017/03/14 04:25:10 ozaki-r Exp $	*/
+/*	$NetBSD: nd6_nbr.c,v 1.140 2017/12/26 02:26:45 ozaki-r Exp $	*/
 /*	$KAME: nd6_nbr.c,v 1.61 2001/02/10 16:06:14 jinmei Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.138 2017/03/14 04:25:10 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.140 2017/12/26 02:26:45 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1097,7 +1097,11 @@ nd6_dad_stoptimer(struct dadq *dp)
 #ifdef NET_MPSAFE
 	callout_halt(&dp->dad_timer_ch, NULL);
 #else
-	callout_halt(&dp->dad_timer_ch, softnet_lock);
+	/* XXX still need the trick for softnet_lock */
+	if (mutex_owned(softnet_lock))
+		callout_halt(&dp->dad_timer_ch, softnet_lock);
+	else
+		callout_halt(&dp->dad_timer_ch, NULL);
 #endif
 }
 
@@ -1228,10 +1232,7 @@ nd6_dad_timer(struct ifaddr *ifa)
 	char ip6buf[INET6_ADDRSTRLEN];
 	bool need_free = false;
 
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-	KERNEL_LOCK(1, NULL);
-#endif
+	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	mutex_enter(&nd6_dad_lock);
 
 	/* Sanity check */
@@ -1327,10 +1328,7 @@ done:
 	if (duplicate)
 		nd6_dad_duplicated(ifa);
 
-#ifndef NET_MPSAFE
-	KERNEL_UNLOCK_ONE(NULL);
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 static void

@@ -1,4 +1,4 @@
-/*	$NetBSD: ex.c,v 1.4 2014/01/26 21:43:45 christos Exp $ */
+/*	$NetBSD: ex.c,v 1.7 2017/11/22 13:13:18 rin Exp $ */
 /*-
  * Copyright (c) 1992, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
@@ -16,7 +16,7 @@
 static const char sccsid[] = "Id: ex.c,v 10.75 2004/03/16 14:13:35 skimo Exp  (Berkeley) Date: 2004/03/16 14:13:35 ";
 #endif /* not lint */
 #else
-__RCSID("$NetBSD: ex.c,v 1.4 2014/01/26 21:43:45 christos Exp $");
+__RCSID("$NetBSD: ex.c,v 1.7 2017/11/22 13:13:18 rin Exp $");
 #endif
 
 #include <sys/types.h>
@@ -441,7 +441,7 @@ loop:	ecp = LIST_FIRST(&wp->ecq);
 			break;
 		case 'E': case 'F': case 'N': case 'P': case 'T': case 'V':
 			newscreen = 1;
-			p[0] = TOLOWER(p[0]);
+			p[0] = TOLOWER((UCHAR_T)p[0]);
 			break;
 		}
 
@@ -1512,7 +1512,7 @@ addr_verify:
 
 		ecp->save_cmd -= arg1_len;
 		ecp->save_cmdlen += arg1_len;
-		MEMCPYW(ecp->save_cmd, arg1, arg1_len);
+		MEMMOVEW(ecp->save_cmd, arg1, arg1_len);
 
 		/*
 		 * Any commands executed from a +cmd are executed starting at
@@ -2259,7 +2259,7 @@ ex_comm_search(SCR *sp, CHAR_T *name, size_t len)
 			return (NULL);
 		if (cp->name[0] != name[0])
 			continue;
-		if (!MEMCMP(name, cp->name, len))
+		if (STRLEN(cp->name) >= len && !MEMCMP(name, cp->name, len))
 			return (cp);
 	}
 	return (NULL);

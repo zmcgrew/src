@@ -1,4 +1,4 @@
-#	$NetBSD: files.sunxi,v 1.23 2017/09/09 12:01:04 jmcneill Exp $
+#	$NetBSD: files.sunxi,v 1.38 2017/11/10 00:09:23 jmcneill Exp $
 #
 # Configuration info for Allwinner sunxi family SoCs
 #
@@ -21,11 +21,17 @@ file	arch/arm/sunxi/sunxi_platform.c		soc_sunxi
 define	sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_div.c		sunxi_ccu
+file	arch/arm/sunxi/sunxi_ccu_fixed_factor.c	sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_gate.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_nm.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_nkmp.c		sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_phase.c	sunxi_ccu
 file	arch/arm/sunxi/sunxi_ccu_prediv.c	sunxi_ccu
+
+# CCU (A10/A20)
+device	sun4ia10ccu: sunxi_ccu
+attach	sun4ia10ccu at fdt with sunxi_a10_ccu
+file	arch/arm/sunxi/sun4i_a10_ccu.c		sunxi_a10_ccu
 
 # CCU (A13)
 device	sun5ia13ccu: sunxi_ccu
@@ -47,6 +53,16 @@ device	sun8ih3ccu: sunxi_ccu
 attach	sun8ih3ccu at fdt with sunxi_h3_ccu
 file	arch/arm/sunxi/sun8i_h3_ccu.c		sunxi_h3_ccu
 
+# CCU (H3 PRCM)
+device	sun8ih3rccu: sunxi_ccu
+attach	sun8ih3rccu at fdt with sunxi_h3_r_ccu
+file	arch/arm/sunxi/sun8i_h3_r_ccu.c		sunxi_h3_r_ccu
+
+# CCU (A80)
+device	sun9ia80ccu: sunxi_ccu
+attach	sun9ia80ccu at fdt with sunxi_a80_ccu
+file	arch/arm/sunxi/sun9i_a80_ccu.c		sunxi_a80_ccu
+
 # CCU (A64)
 device	sun50ia64ccu: sunxi_ccu
 attach	sun50ia64ccu at fdt with sunxi_a64_ccu
@@ -62,6 +78,16 @@ device	sunxigates
 attach	sunxigates at fdt with sunxi_gates
 file	arch/arm/sunxi/sunxi_gates.c		sunxi_gates
 
+# GMAC MII/RGMII clock mux
+device	sunxigmacclk
+attach	sunxigmacclk at fdt with sunxi_gmacclk
+file	arch/arm/sunxi/sunxi_gmacclk.c		sunxi_gmacclk
+
+# SD/MMC-COMM (A80)
+device	sun9immcclk
+attach	sun9immcclk at fdt with sunxi_a80_mmcclk
+file	arch/arm/sunxi/sun9i_a80_mmcclk.c	sunxi_a80_mmcclk
+
 # Interrupt controller
 device	sunxiintc: pic, pic_splfuncs
 attach	sunxiintc at fdt with sunxi_intc
@@ -71,10 +97,13 @@ file	arch/arm/sunxi/sunxi_intc.c		sunxi_intc
 device	sunxigpio: gpiobus
 attach	sunxigpio at fdt with sunxi_gpio
 file	arch/arm/sunxi/sunxi_gpio.c		sunxi_gpio
+file	arch/arm/sunxi/sun4i_a10_gpio.c		sunxi_gpio & soc_sun4i_a10
 file	arch/arm/sunxi/sun5i_a13_gpio.c		sunxi_gpio & soc_sun5i_a13
 file	arch/arm/sunxi/sun6i_a31_gpio.c		sunxi_gpio & soc_sun6i_a31
+file	arch/arm/sunxi/sun7i_a20_gpio.c		sunxi_gpio & soc_sun7i_a20
 file	arch/arm/sunxi/sun8i_a83t_gpio.c	sunxi_gpio & soc_sun8i_a83t
-file	arch/arm/sunxi/sun8i_h3_gpio.c		sunxi_gpio & soc_sun8i_h3
+file	arch/arm/sunxi/sun8i_h3_gpio.c		sunxi_gpio & (soc_sun8i_h3 | soc_sun50i_h5)
+file	arch/arm/sunxi/sun9i_a80_gpio.c		sunxi_gpio & soc_sun9i_a80
 file	arch/arm/sunxi/sun50i_a64_gpio.c	sunxi_gpio & soc_sun50i_a64
 
 # UART
@@ -85,6 +114,7 @@ file	arch/arm/sunxi/sunxi_com.c		sunxi_com needs-flag
 device	sunximmc: sdmmcbus
 attach	sunximmc at fdt with sunxi_mmc
 file	arch/arm/sunxi/sunxi_mmc.c		sunxi_mmc
+defparam opt_sunximmc.h				SUNXI_MMC_DEBUG
 
 # USB PHY
 device	sunxiusbphy
@@ -114,10 +144,19 @@ device	sunxirtc
 attach	sunxirtc at fdt with sunxi_rtc
 file	arch/arm/sunxi/sunxi_rtc.c		sunxi_rtc
 
-# EMAC
+# EMAC (sun4i/sun7i)
+device	sun4iemac: arp, ether, ifnet, mii
+attach	sun4iemac at fdt with sun4i_emac
+file	arch/arm/sunxi/sun4i_emac.c		sun4i_emac
+
+# EMAC (sun8i/sun50i)
 device	sunxiemac: arp, ether, ifnet, mii
 attach	sunxiemac at fdt with sunxi_emac
 file	arch/arm/sunxi/sunxi_emac.c		sunxi_emac
+
+# GMAC
+attach	awge at fdt with sunxi_gmac
+file	arch/arm/sunxi/sunxi_gmac.c		sunxi_gmac
 
 # Timer
 device	sunxitimer
@@ -144,6 +183,7 @@ device	sunxicodec: audiobus, auconv, mulaw, aurateconv
 attach	sunxicodec at fdt with sunxi_codec
 file	arch/arm/sunxi/sunxi_codec.c		sunxi_codec
 file	arch/arm/sunxi/sun4i_a10_codec.c	sunxi_codec
+file	arch/arm/sunxi/sun6i_a31_codec.c	sunxi_codec
 
 # H3 Audio codec (analog part)
 device	h3codec
@@ -155,7 +195,7 @@ attach	genfb at fdt with simplefb
 file	dev/fdt/simplefb.c			simplefb
 
 # Touch Screen controller
-device	sunxits: wsmousedev, tpcalib
+device	sunxits: wsmousedev, tpcalib, sysmon_envsys
 attach	sunxits at fdt with sunxi_ts
 file	arch/arm/sunxi/sunxi_ts.c		sunxi_ts
 
@@ -163,14 +203,45 @@ file	arch/arm/sunxi/sunxi_ts.c		sunxi_ts
 attach	motg at fdt with sunxi_musb
 file	arch/arm/sunxi/sunxi_musb.c		sunxi_musb
 
+# Security ID EFUSE
+device	sunxisid
+attach	sunxisid at fdt with sunxi_sid
+file	arch/arm/sunxi/sunxi_sid.c		sunxi_sid
+
+# Thermal sensor controller
+device	sunxithermal: sysmon_envsys, sysmon_taskq
+attach	sunxithermal at fdt with sunxi_thermal
+file	arch/arm/sunxi/sunxi_thermal.c		sunxi_thermal
+
+# SATA
+attach	ahcisata at fdt with sunxi_sata
+file	arch/arm/sunxi/sunxi_sata.c		sunxi_sata
+
+# SRAM Controller
+device	sunxisramc
+attach	sunxisramc at fdt with sunxi_sramc
+file	arch/arm/sunxi/sunxi_sramc.c		sunxi_sramc
+
+# NAND Flash Controller
+device	sunxinand: nandbus
+attach	sunxinand at fdt with sunxi_nand
+file	arch/arm/sunxi/sunxi_nand.c		sunxi_nand
+
 # SOC parameters
 defflag	opt_soc.h			SOC_SUNXI
+defflag	opt_soc.h			SOC_SUN4I: SOC_SUNXI
+defflag	opt_soc.h			SOC_SUN4I_A10: SOC_SUN4I
 defflag	opt_soc.h			SOC_SUN5I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN5I_A13: SOC_SUN5I
 defflag	opt_soc.h			SOC_SUN6I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN6I_A31: SOC_SUN6I
+defflag	opt_soc.h			SOC_SUN7I: SOC_SUNXI
+defflag	opt_soc.h			SOC_SUN7I_A20: SOC_SUN7I
 defflag	opt_soc.h			SOC_SUN8I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN8I_A83T: SOC_SUN8I
 defflag	opt_soc.h			SOC_SUN8I_H3: SOC_SUN8I
+defflag	opt_soc.h			SOC_SUN9I: SOC_SUNXI
+defflag	opt_soc.h			SOC_SUN9I_A80: SOC_SUN9I
 defflag	opt_soc.h			SOC_SUN50I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN50I_A64: SOC_SUN50I
+defflag	opt_soc.h			SOC_SUN50I_H5: SOC_SUN50I

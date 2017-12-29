@@ -1,4 +1,4 @@
-/*	$NetBSD: if_arp.c,v 1.253 2017/06/27 12:21:54 roy Exp $	*/
+/*	$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.253 2017/06/27 12:21:54 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_arp.c,v 1.255 2017/11/17 07:37:12 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -754,10 +754,15 @@ notfound:
 	}
 #undef _IFF_NOARP
 	if (la == NULL) {
+		struct rtentry *_rt;
+
 		create_lookup = "create";
+		_rt = rtalloc1(dst, 0);
 		IF_AFDATA_WLOCK(ifp);
-		la = lla_create(LLTABLE(ifp), LLE_EXCLUSIVE, dst);
+		la = lla_create(LLTABLE(ifp), LLE_EXCLUSIVE, dst, _rt);
 		IF_AFDATA_WUNLOCK(ifp);
+		if (_rt != NULL)
+			rt_unref(_rt);
 		if (la == NULL)
 			ARP_STATINC(ARP_STAT_ALLOCFAIL);
 		else {
@@ -915,10 +920,7 @@ arpintr(void)
 	int s;
 	int arplen;
 
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-	KERNEL_LOCK(1, NULL);
-#endif
+	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	for (;;) {
 		struct ifnet *rcvif;
 
@@ -975,12 +977,8 @@ free:
 		m_freem(m);
 	}
 out:
-#ifndef NET_MPSAFE
-	KERNEL_UNLOCK_ONE(NULL);
-	mutex_exit(softnet_lock);
-#else
+	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 	return; /* XXX gcc */
-#endif
 }
 
 /*
@@ -1452,9 +1450,14 @@ arpcreate(struct ifnet *ifp, struct mbuf *m, const struct in_addr *addr,
 	la = arplookup(ifp, m, addr, sa, wlock);
 
 	if (la == NULL) {
+		struct rtentry *rt;
+
+		rt = rtalloc1(sa, 0);
 		IF_AFDATA_WLOCK(ifp);
-		la = lla_create(LLTABLE(ifp), flags, sa);
+		la = lla_create(LLTABLE(ifp), flags, sa, rt);
 		IF_AFDATA_WUNLOCK(ifp);
+		if (rt != NULL)
+			rt_unref(rt);
 
 		if (la != NULL)
 			arp_init_llentry(ifp, la);
@@ -1679,10 +1682,7 @@ arp_dad_timer(struct ifaddr *ifa)
 	char ipbuf[INET_ADDRSTRLEN];
 	bool need_free = false;
 
-#ifndef NET_MPSAFE
-	mutex_enter(softnet_lock);
-	KERNEL_LOCK(1, NULL);
-#endif
+	SOFTNET_KERNEL_LOCK_UNLESS_NET_MPSAFE();
 	mutex_enter(&arp_dad_lock);
 
 	/* Sanity check */
@@ -1773,10 +1773,7 @@ done:
 		ifafree(ifa);
 	}
 
-#ifndef NET_MPSAFE
-	KERNEL_UNLOCK_ONE(NULL);
-	mutex_exit(softnet_lock);
-#endif
+	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
 static void

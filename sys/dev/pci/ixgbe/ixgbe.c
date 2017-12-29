@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.100 2017/08/31 02:48:55 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.119 2017/12/28 06:10:01 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -172,12 +172,14 @@ static void     ixgbe_media_status(struct ifnet *, struct ifmediareq *);
 static int      ixgbe_media_change(struct ifnet *);
 static int      ixgbe_allocate_pci_resources(struct adapter *,
 		    const struct pci_attach_args *);
+static void      ixgbe_free_softint(struct adapter *);
 static void	ixgbe_get_slot_info(struct adapter *);
 static int      ixgbe_allocate_msix(struct adapter *,
 		    const struct pci_attach_args *);
 static int      ixgbe_allocate_legacy(struct adapter *,
 		    const struct pci_attach_args *);
 static int      ixgbe_configure_interrupts(struct adapter *);
+static void	ixgbe_free_pciintr_resources(struct adapter *);
 static void	ixgbe_free_pci_resources(struct adapter *);
 static void	ixgbe_local_timer(void *);
 static void	ixgbe_local_timer1(void *);
@@ -257,7 +259,6 @@ static void	ixgbe_handle_msf(void *);
 static void	ixgbe_handle_mod(void *);
 static void	ixgbe_handle_phy(void *);
 
-const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 static ixgbe_vendor_info_t *ixgbe_lookup(const struct pci_attach_args *);
 
 /************************************************************************
@@ -273,6 +274,9 @@ DRIVER_MODULE(ix, pci, ix_driver, ix_devclass, 0, 0);
 
 MODULE_DEPEND(ix, pci, 1, 1, 1);
 MODULE_DEPEND(ix, ether, 1, 1, 1);
+#ifdef DEV_NETMAP
+MODULE_DEPEND(ix, netmap, 1, 1, 1);
+#endif
 #endif
 
 /*
@@ -499,9 +503,6 @@ ixgbe_initialize_rss_mapping(struct adapter *adapter)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_EX_TCP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV4_UDP;
-	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4_EX)
-		device_printf(adapter->dev, "%s: RSS_HASHTYPE_RSS_UDP_IPV4_EX defined, but not supported\n",
-		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_UDP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6_EX)
@@ -823,14 +824,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	case ixgbe_mac_82599EB:
 		str = "82599EB";
 		break;
-	case ixgbe_mac_82599_vf:
-		str = "82599 VF";
-		break;
 	case ixgbe_mac_X540:
 		str = "X540";
-		break;
-	case ixgbe_mac_X540_vf:
-		str = "X540 VF";
 		break;
 	case ixgbe_mac_X550:
 		str = "X550";
@@ -840,15 +835,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		break;
 	case ixgbe_mac_X550EM_a:
 		str = "X550EM A";
-		break;
-	case ixgbe_mac_X550_vf:
-		str = "X550 VF";
-		break;
-	case ixgbe_mac_X550EM_x_vf:
-		str = "X550EM X VF";
-		break;
-	case ixgbe_mac_X550EM_a_vf:
-		str = "X550EM A VF";
 		break;
 	default:
 		str = "Unknown";
@@ -868,6 +854,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	} else
 		adapter->num_segs = IXGBE_82598_SCATTER;
 
+	hw->mac.ops.set_lan_id(hw);
 	ixgbe_init_device_features(adapter);
 
 	if (ixgbe_configure_interrupts(adapter)) {
@@ -987,8 +974,13 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		high = (nvmreg >> 12) & 0x0f;
 		low = (nvmreg >> 4) & 0xff;
 		id = nvmreg & 0x0f;
-		aprint_normal(" NVM Image Version %u.%u ID 0x%x,", high, low,
-		    id);
+		aprint_normal(" NVM Image Version %u.", high);
+		if (hw->mac.type == ixgbe_mac_X540)
+			str = "%x";
+		else
+			str = "%02x";
+		aprint_normal(str, low);
+		aprint_normal(" ID 0x%x,", id);
 		break;
 	case ixgbe_mac_X550EM_x:
 	case ixgbe_mac_X550:
@@ -997,7 +989,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			break;
 		high = (nvmreg >> 12) & 0x0f;
 		low = nvmreg & 0xff;
-		aprint_normal(" NVM Image Version %u.%u,", high, low);
+		aprint_normal(" NVM Image Version %u.%02x,", high, low);
 		break;
 	default:
 		break;
@@ -1013,8 +1005,13 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		high = (nvmreg >> 12) & 0x0f;
 		low = (nvmreg >> 4) & 0xff;
 		id = nvmreg & 0x000f;
-		aprint_normal(" PHY FW Revision %u.%u ID 0x%x,", high, low,
-		    id);
+		aprint_normal(" PHY FW Revision %u.", high);
+		if (hw->mac.type == ixgbe_mac_X540)
+			str = "%x";
+		else
+			str = "%02x";
+		aprint_normal(str, low);
+		aprint_normal(" ID 0x%x,", id);
 		break;
 	default:
 		break;
@@ -1032,7 +1029,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			aprint_normal(" NVM Map version %u.%02x,", high, low);
 		}
 		hw->eeprom.ops.read(hw, IXGBE_OEM_NVM_IMAGE_VER, &nvmreg);
-		if (nvmreg == 0xffff) {
+		if (nvmreg != 0xffff) {
 			high = (nvmreg >> 12) & 0x0f;
 			low = nvmreg & 0x00ff;
 			aprint_verbose(" OEM NVM Image version %u.%02x,", high,
@@ -1048,16 +1045,53 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	hw->eeprom.ops.read(hw, IXGBE_ETRACKID_L, &low);
 	aprint_normal(" ETrackID %08x\n", ((uint32_t)high << 16) | low);
 
-	/* Setup OS specific network interface */
-	if (ixgbe_setup_interface(dev, adapter) != 0)
-		goto err_late;
-
-	if (adapter->feat_en & IXGBE_FEATURE_MSIX)
+	if (adapter->feat_en & IXGBE_FEATURE_MSIX) {
 		error = ixgbe_allocate_msix(adapter, pa);
-	else
+		if (error) {
+			/* Free allocated queue structures first */
+			ixgbe_free_transmit_structures(adapter);
+			ixgbe_free_receive_structures(adapter);
+			free(adapter->queues, M_DEVBUF);
+
+			/* Fallback to legacy interrupt */
+			adapter->feat_en &= ~IXGBE_FEATURE_MSIX;
+			if (adapter->feat_cap & IXGBE_FEATURE_MSI)
+				adapter->feat_en |= IXGBE_FEATURE_MSI;
+			adapter->num_queues = 1;
+
+			/* Allocate our TX/RX Queues again */
+			if (ixgbe_allocate_queues(adapter)) {
+				error = ENOMEM;
+				goto err_out;
+			}
+		}
+	}
+	if ((adapter->feat_en & IXGBE_FEATURE_MSIX) == 0)
 		error = ixgbe_allocate_legacy(adapter, pa);
 	if (error) 
 		goto err_late;
+
+	/* Tasklets for Link, SFP, Multispeed Fiber and Flow Director */
+	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_link, adapter);
+	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_mod, adapter);
+	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_msf, adapter);
+	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+	    ixgbe_handle_phy, adapter);
+	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
+		adapter->fdir_si =
+		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
+			ixgbe_reinit_fdir, adapter);
+	if ((adapter->link_si == NULL) || (adapter->mod_si == NULL)
+	    || (adapter->msf_si == NULL) || (adapter->phy_si == NULL)
+	    || ((adapter->feat_en & IXGBE_FEATURE_FDIR)
+		&& (adapter->fdir_si == NULL))) {
+		aprint_error_dev(dev,
+		    "could not establish software interrupts ()\n");
+		goto err_out;
+	}
 
 	error = ixgbe_start_hw(hw);
 	switch (error) {
@@ -1079,7 +1113,15 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		break;
 	}
 
-	if (hw->phy.id != 0) {
+	/* Setup OS specific network interface */
+	if (ixgbe_setup_interface(dev, adapter) != 0)
+		goto err_late;
+
+	/*
+	 *  Print PHY ID only for copper PHY. On device which has SFP(+) cage
+	 * and a module is inserted, phy.id is not MII PHY id but SFF 8024 ID.
+	 */
+	if (hw->phy.media_type == ixgbe_media_type_copper) {
 		uint16_t id1, id2;
 		int oui, model, rev;
 		const char *descr;
@@ -1156,11 +1198,10 @@ err_late:
 	ixgbe_free_receive_structures(adapter);
 	free(adapter->queues, M_DEVBUF);
 err_out:
-	if (adapter->ifp != NULL)
-		if_free(adapter->ifp);
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_CTRL_EXT, ctrl_ext);
+	ixgbe_free_softint(adapter);
 	ixgbe_free_pci_resources(adapter);
 	if (adapter->mta != NULL)
 		free(adapter->mta, M_DEVBUF);
@@ -1208,6 +1249,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ifnet   *ifp;
+	int rv;
 
 	INIT_DEBUGOUT("ixgbe_setup_interface: begin");
 
@@ -1219,7 +1261,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef IXGBE_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = ixgbe_ioctl;
 #if __FreeBSD_version >= 1100045
@@ -1242,7 +1284,11 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	IFQ_SET_MAXLEN(&ifp->if_snd, adapter->num_tx_desc - 2);
 	IFQ_SET_READY(&ifp->if_snd);
 
-	if_initialize(ifp);
+	rv = if_initialize(ifp);
+	if (rv != 0) {
+		aprint_error_dev(dev, "if_initialize failed(%d)\n", rv);
+		return rv;
+	}
 	adapter->ipq = if_percpuq_create(&adapter->osdep.ec.ec_if);
 	ether_ifattach(ifp, adapter->hw.mac.addr);
 	/*
@@ -1318,92 +1364,76 @@ ixgbe_add_media_types(struct adapter *adapter)
 
 	/* Media types with matching NetBSD media defines */
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_T) {
-		ADD(IFM_10G_T, 0);
 		ADD(IFM_10G_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_T) {
-		ADD(IFM_1000_T, 0);
 		ADD(IFM_1000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_100BASE_TX) {
-		ADD(IFM_100_TX, 0);
 		ADD(IFM_100_TX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10BASE_T) {
-		ADD(IFM_10_T, 0);
 		ADD(IFM_10_T | IFM_FDX, 0);
 	}
 
 	if (layer & IXGBE_PHYSICAL_LAYER_SFP_PLUS_CU ||
 	    layer & IXGBE_PHYSICAL_LAYER_SFP_ACTIVE_DA) {
-		ADD(IFM_10G_TWINAX, 0);
 		ADD(IFM_10G_TWINAX | IFM_FDX, 0);
 	}
 
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_LR) {
-		ADD(IFM_10G_LR, 0);
 		ADD(IFM_10G_LR | IFM_FDX, 0);
 		if (hw->phy.multispeed_fiber) {
-			ADD(IFM_1000_LX, 0);
 			ADD(IFM_1000_LX | IFM_FDX, 0);
 		}
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_SR) {
-		ADD(IFM_10G_SR, 0);
 		ADD(IFM_10G_SR | IFM_FDX, 0);
 		if (hw->phy.multispeed_fiber) {
-			ADD(IFM_1000_SX, 0);
 			ADD(IFM_1000_SX | IFM_FDX, 0);
 		}
 	} else if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_SX) {
-		ADD(IFM_1000_SX, 0);
 		ADD(IFM_1000_SX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_CX4) {
-		ADD(IFM_10G_CX4, 0);
 		ADD(IFM_10G_CX4 | IFM_FDX, 0);
 	}
 
 #ifdef IFM_ETH_XTYPE
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
-		ADD(IFM_10G_KR, 0);
 		ADD(IFM_10G_KR | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
-		ADD(AIFM_10G_KX4, 0);
 		ADD(AIFM_10G_KX4 | IFM_FDX, 0);
 	}
 #else
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KR) {
 		device_printf(dev, "Media supported: 10GbaseKR\n");
 		device_printf(dev, "10GbaseKR mapped to 10GbaseSR\n");
-		ADD(IFM_10G_SR, 0);
 		ADD(IFM_10G_SR | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_KX4) {
 		device_printf(dev, "Media supported: 10GbaseKX4\n");
 		device_printf(dev, "10GbaseKX4 mapped to 10GbaseCX4\n");
-		ADD(IFM_10G_CX4, 0);
 		ADD(IFM_10G_CX4 | IFM_FDX, 0);
 	}
 #endif
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_KX) {
-		ADD(IFM_1000_KX, 0);
 		ADD(IFM_1000_KX | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_2500BASE_KX) {
-		ADD(IFM_2500_KX, 0);
 		ADD(IFM_2500_KX | IFM_FDX, 0);
+	}
+	if (layer & IXGBE_PHYSICAL_LAYER_2500BASE_T) {
+		ADD(IFM_2500_T | IFM_FDX, 0);
+	}
+	if (layer & IXGBE_PHYSICAL_LAYER_5GBASE_T) {
+		ADD(IFM_5000_T | IFM_FDX, 0);
 	}
 	if (layer & IXGBE_PHYSICAL_LAYER_1000BASE_BX)
 		device_printf(dev, "Media supported: 1000baseBX\n");
 	/* XXX no ifmedia_set? */
 	
-	if (hw->device_id == IXGBE_DEV_ID_82598AT) {
-		ADD(IFM_1000_T | IFM_FDX, 0);
-		ADD(IFM_1000_T, 0);
-	}
-
 	ADD(IFM_AUTO, 0);
 
 #undef ADD
@@ -2197,15 +2227,17 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		return;
 
 	/* Setup the queues for vlans */
-	for (i = 0; i < adapter->num_queues; i++) {
-		rxr = &adapter->rx_rings[i];
-		/* On 82599 the VLAN enable is per/queue in RXDCTL */
-		if (hw->mac.type != ixgbe_mac_82598EB) {
-			ctrl = IXGBE_READ_REG(hw, IXGBE_RXDCTL(rxr->me));
-			ctrl |= IXGBE_RXDCTL_VME;
-			IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(rxr->me), ctrl);
+	if (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING) {
+		for (i = 0; i < adapter->num_queues; i++) {
+			rxr = &adapter->rx_rings[i];
+			/* On 82599 the VLAN enable is per/queue in RXDCTL */
+			if (hw->mac.type != ixgbe_mac_82598EB) {
+				ctrl = IXGBE_READ_REG(hw, IXGBE_RXDCTL(rxr->me));
+				ctrl |= IXGBE_RXDCTL_VME;
+				IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(rxr->me), ctrl);
+			}
+			rxr->vtag_strip = TRUE;
 		}
-		rxr->vtag_strip = TRUE;
 	}
 
 	if ((ec->ec_capenable & ETHERCAP_VLAN_HWFILTER) == 0)
@@ -2505,12 +2537,20 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	layer = adapter->phy_layer;
 
 	if (layer & IXGBE_PHYSICAL_LAYER_10GBASE_T ||
+	    layer & IXGBE_PHYSICAL_LAYER_5GBASE_T ||
+	    layer & IXGBE_PHYSICAL_LAYER_2500BASE_T ||
 	    layer & IXGBE_PHYSICAL_LAYER_1000BASE_T ||
 	    layer & IXGBE_PHYSICAL_LAYER_100BASE_TX ||
 	    layer & IXGBE_PHYSICAL_LAYER_10BASE_T)
 		switch (adapter->link_speed) {
 		case IXGBE_LINK_SPEED_10GB_FULL:
 			ifmr->ifm_active |= IFM_10G_T | IFM_FDX;
+			break;
+		case IXGBE_LINK_SPEED_5GB_FULL:
+			ifmr->ifm_active |= IFM_5000_T | IFM_FDX;
+			break;
+		case IXGBE_LINK_SPEED_2_5GB_FULL:
+			ifmr->ifm_active |= IFM_2500_T | IFM_FDX;
 			break;
 		case IXGBE_LINK_SPEED_1GB_FULL:
 			ifmr->ifm_active |= IFM_1000_T | IFM_FDX;
@@ -2608,6 +2648,8 @@ ixgbe_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 		ifmr->ifm_active |= IFM_UNKNOWN;
 #endif
 
+	ifp->if_baudrate = ifmedia_baudrate(ifmr->ifm_active);
+
 	/* Display current flow control setting used on link */
 	if (hw->fc.current_mode == ixgbe_fc_rx_pause ||
 	    hw->fc.current_mode == ixgbe_fc_full)
@@ -2675,6 +2717,10 @@ ixgbe_media_change(struct ifnet *ifp)
 #endif
 		speed |= IXGBE_LINK_SPEED_10GB_FULL;
 		break;
+	case IFM_5000_T:
+		speed |= IXGBE_LINK_SPEED_5GB_FULL;
+		break;
+	case IFM_2500_T:
 	case IFM_2500_KX:
 		speed |= IXGBE_LINK_SPEED_2_5GB_FULL;
 		break;
@@ -2696,9 +2742,8 @@ ixgbe_media_change(struct ifnet *ifp)
 
 	hw->mac.autotry_restart = TRUE;
 	hw->mac.ops.setup_link(hw, speed, TRUE);
-	if (IFM_SUBTYPE(ifm->ifm_media) == IFM_AUTO) {
-		adapter->advertise = 0;
-	} else {
+	adapter->advertise = 0;
+	if (IFM_SUBTYPE(ifm->ifm_media) != IFM_AUTO) {
 		if ((speed & IXGBE_LINK_SPEED_10GB_FULL) != 0)
 			adapter->advertise |= 1 << 2;
 		if ((speed & IXGBE_LINK_SPEED_1GB_FULL) != 0)
@@ -2706,7 +2751,11 @@ ixgbe_media_change(struct ifnet *ifp)
 		if ((speed & IXGBE_LINK_SPEED_100_FULL) != 0)
 			adapter->advertise |= 1 << 0;
 		if ((speed & IXGBE_LINK_SPEED_10_FULL) != 0)
+			adapter->advertise |= 1 << 3;
+		if ((speed & IXGBE_LINK_SPEED_2_5GB_FULL) != 0)
 			adapter->advertise |= 1 << 4;
+		if ((speed & IXGBE_LINK_SPEED_5GB_FULL) != 0)
+			adapter->advertise |= 1 << 5;
 	}
 
 	return (0);
@@ -2730,11 +2779,13 @@ ixgbe_set_promisc(struct adapter *adapter)
 	struct ether_multistep step;
 	struct ethercom *ec = &adapter->osdep.ec;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
 	rctl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	rctl &= (~IXGBE_FCTRL_UPE);
 	if (ifp->if_flags & IFF_ALLMULTI)
 		mcnt = MAX_NUM_MULTICAST_ADDRESSES;
 	else {
+		ETHER_LOCK(ec);
 		ETHER_FIRST_MULTI(step, ec, enm);
 		while (enm != NULL) {
 			if (mcnt == MAX_NUM_MULTICAST_ADDRESSES)
@@ -2742,6 +2793,7 @@ ixgbe_set_promisc(struct adapter *adapter)
 			mcnt++;
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(ec);
 	}
 	if (mcnt < MAX_NUM_MULTICAST_ADDRESSES)
 		rctl &= (~IXGBE_FCTRL_MPE);
@@ -3105,6 +3157,53 @@ map_err:
 	return (0);
 } /* ixgbe_allocate_pci_resources */
 
+static void
+ixgbe_free_softint(struct adapter *adapter)
+{
+	struct ix_queue *que = adapter->queues;
+	struct tx_ring *txr = adapter->tx_rings;
+	int i;
+
+	for (i = 0; i < adapter->num_queues; i++, que++, txr++) {
+		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)) {
+			if (txr->txr_si != NULL)
+				softint_disestablish(txr->txr_si);
+		}
+		if (que->que_si != NULL)
+			softint_disestablish(que->que_si);
+	}
+
+	/* Drain the Link queue */
+	if (adapter->link_si != NULL) {
+		softint_disestablish(adapter->link_si);
+		adapter->link_si = NULL;
+	}
+	if (adapter->mod_si != NULL) {
+		softint_disestablish(adapter->mod_si);
+		adapter->mod_si = NULL;
+	}
+	if (adapter->msf_si != NULL) {
+		softint_disestablish(adapter->msf_si);
+		adapter->msf_si = NULL;
+	}
+	if (adapter->phy_si != NULL) {
+		softint_disestablish(adapter->phy_si);
+		adapter->phy_si = NULL;
+	}
+	if (adapter->feat_en & IXGBE_FEATURE_FDIR) {
+		if (adapter->fdir_si != NULL) {
+			softint_disestablish(adapter->fdir_si);
+			adapter->fdir_si = NULL;
+		}
+	}
+	if (adapter->feat_cap & IXGBE_FEATURE_SRIOV) {
+		if (adapter->mbx_si != NULL) {
+			softint_disestablish(adapter->mbx_si);
+			adapter->mbx_si = NULL;
+		}
+	}
+} /* ixgbe_free_softint */
+
 /************************************************************************
  * ixgbe_detach - Device removal routine
  *
@@ -3118,7 +3217,6 @@ static int
 ixgbe_detach(device_t dev, int flags)
 {
 	struct adapter *adapter = device_private(dev);
-	struct ix_queue *que = adapter->queues;
 	struct rx_ring *rxr = adapter->rx_rings;
 	struct tx_ring *txr = adapter->tx_rings;
 	struct ixgbe_hw *hw = &adapter->hw;
@@ -3156,22 +3254,8 @@ ixgbe_detach(device_t dev, int flags)
 	ixgbe_setup_low_power_mode(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
-	for (int i = 0; i < adapter->num_queues; i++, que++, txr++) {
-		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
-			softint_disestablish(txr->txr_si);
-		softint_disestablish(que->que_si);
-	}
-
-	/* Drain the Link queue */
-	softint_disestablish(adapter->link_si);
-	softint_disestablish(adapter->mod_si);
-	softint_disestablish(adapter->msf_si);
-	if (adapter->feat_cap & IXGBE_FEATURE_SRIOV)
-		softint_disestablish(adapter->mbx_si);
-	softint_disestablish(adapter->phy_si);
-	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
-		softint_disestablish(adapter->fdir_si);
-
+	ixgbe_free_softint(adapter);
+	
 	/* let hardware know driver is unloading */
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
@@ -3910,12 +3994,14 @@ ixgbe_set_multi(struct adapter *adapter)
 	struct ether_multi	*enm;
 	struct ether_multistep	step;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
 	IOCTL_DEBUGOUT("ixgbe_set_multi: begin");
 
 	mta = adapter->mta;
 	bzero(mta, sizeof(*mta) * MAX_NUM_MULTICAST_ADDRESSES);
 
 	ifp->if_flags &= ~IFF_ALLMULTI;
+	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
 	while (enm != NULL) {
 		if ((mcnt == MAX_NUM_MULTICAST_ADDRESSES) ||
@@ -3930,6 +4016,7 @@ ixgbe_set_multi(struct adapter *adapter)
 		mcnt++;
 		ETHER_NEXT_MULTI(step, enm);
 	}
+	ETHER_UNLOCK(ec);
 
 	fctrl = IXGBE_READ_REG(&adapter->hw, IXGBE_FCTRL);
 	fctrl &= ~(IXGBE_FCTRL_UPE | IXGBE_FCTRL_MPE);
@@ -4535,10 +4622,10 @@ ixgbe_legacy_irq(void *arg)
 } /* ixgbe_legacy_irq */
 
 /************************************************************************
- * ixgbe_free_pci_resources
+ * ixgbe_free_pciintr_resources
  ************************************************************************/
 static void
-ixgbe_free_pci_resources(struct adapter *adapter)
+ixgbe_free_pciintr_resources(struct adapter *adapter)
 {
 	struct ix_queue *que = adapter->queues;
 	int		rid;
@@ -4547,9 +4634,11 @@ ixgbe_free_pci_resources(struct adapter *adapter)
 	 * Release all msix queue resources:
 	 */
 	for (int i = 0; i < adapter->num_queues; i++, que++) {
-		if (que->res != NULL)
+		if (que->res != NULL) {
 			pci_intr_disestablish(adapter->osdep.pc,
 			    adapter->osdep.ihs[i]);
+			adapter->osdep.ihs[i] = NULL;
+		}
 	}
 
 	/* Clean the Legacy or Link interrupt last */
@@ -4564,8 +4653,23 @@ ixgbe_free_pci_resources(struct adapter *adapter)
 		adapter->osdep.ihs[rid] = NULL;
 	}
 
-	pci_intr_release(adapter->osdep.pc, adapter->osdep.intrs,
-	    adapter->osdep.nintrs);
+	if (adapter->osdep.intrs != NULL) {
+		pci_intr_release(adapter->osdep.pc, adapter->osdep.intrs,
+		    adapter->osdep.nintrs);
+		adapter->osdep.intrs = NULL;
+	}
+
+	return;
+} /* ixgbe_free_pciintr_resources */
+
+/************************************************************************
+ * ixgbe_free_pci_resources
+ ************************************************************************/
+static void
+ixgbe_free_pci_resources(struct adapter *adapter)
+{
+
+	ixgbe_free_pciintr_resources(adapter);
 
 	if (adapter->osdep.mem_size != 0) {
 		bus_space_unmap(adapter->osdep.mem_bus_space_tag,
@@ -4743,11 +4847,13 @@ ixgbe_sysctl_advertise(SYSCTLFN_ARGS)
  * ixgbe_set_advertise - Control advertised link speed
  *
  *   Flags:
- *     0x0 - Default (all capable link speed)
- *     0x1 - advertise 100 Mb
- *     0x2 - advertise 1G
- *     0x4 - advertise 10G
- *     0x8 - advertise 10 Mb (yes, Mb)
+ *     0x00 - Default (all capable link speed)
+ *     0x01 - advertise 100 Mb
+ *     0x02 - advertise 1G
+ *     0x04 - advertise 10G
+ *     0x08 - advertise 10 Mb
+ *     0x10 - advertise 2.5G
+ *     0x20 - advertise 5G
  ************************************************************************/
 static int
 ixgbe_set_advertise(struct adapter *adapter, int advertise)
@@ -4778,7 +4884,7 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 		return (EINVAL);
 	}
 
-	if (advertise < 0x0 || advertise > 0xF) {
+	if (advertise < 0x0 || advertise > 0x2f) {
 		device_printf(dev,
 		    "Invalid advertised speed; valid modes are 0x0 through 0x7\n");
 		return (EINVAL);
@@ -4822,6 +4928,20 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 		}
 		speed |= IXGBE_LINK_SPEED_10_FULL;
 	}
+	if (advertise & 0x10) {
+		if (!(link_caps & IXGBE_LINK_SPEED_2_5GB_FULL)) {
+			device_printf(dev, "Interface does not support 2.5Gb advertised speed\n");
+			return (EINVAL);
+		}
+		speed |= IXGBE_LINK_SPEED_2_5GB_FULL;
+	}
+	if (advertise & 0x20) {
+		if (!(link_caps & IXGBE_LINK_SPEED_5GB_FULL)) {
+			device_printf(dev, "Interface does not support 5Gb advertised speed\n");
+			return (EINVAL);
+		}
+		speed |= IXGBE_LINK_SPEED_5GB_FULL;
+	}
 	if (advertise == 0)
 		speed = link_caps; /* All capable link speed */
 
@@ -4837,10 +4957,12 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
  *
  *   Formatted for sysctl usage.
  *   Flags:
- *     0x1 - advertise 100 Mb
- *     0x2 - advertise 1G
- *     0x4 - advertise 10G
- *     0x8 - advertise 10 Mb (yes, Mb)
+ *     0x01 - advertise 100 Mb
+ *     0x02 - advertise 1G
+ *     0x04 - advertise 10G
+ *     0x08 - advertise 10 Mb (yes, Mb)
+ *     0x10 - advertise 2.5G
+ *     0x20 - advertise 5G
  ************************************************************************/
 static int
 ixgbe_get_advertise(struct adapter *adapter)
@@ -4864,10 +4986,12 @@ ixgbe_get_advertise(struct adapter *adapter)
 		return (0);
 
 	speed =
-	    ((link_caps & IXGBE_LINK_SPEED_10GB_FULL) ? 4 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_1GB_FULL)  ? 2 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_100_FULL)  ? 1 : 0) |
-	    ((link_caps & IXGBE_LINK_SPEED_10_FULL)   ? 8 : 0);
+	    ((link_caps & IXGBE_LINK_SPEED_10GB_FULL)  ? 0x04 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_1GB_FULL)   ? 0x02 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_100_FULL)   ? 0x01 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_10_FULL)    ? 0x08 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_2_5GB_FULL) ? 0x10 : 0) |
+	    ((link_caps & IXGBE_LINK_SPEED_5GB_FULL)   ? 0x20 : 0);
 
 	return speed;
 } /* ixgbe_get_advertise */
@@ -5635,8 +5759,9 @@ ixgbe_allocate_legacy(struct adapter *adapter,
 	counts[PCI_INTR_TYPE_MSIX] = 0;
 	counts[PCI_INTR_TYPE_MSI] =
 	    (adapter->feat_en & IXGBE_FEATURE_MSI) ? 1 : 0;
+	/* Check not feat_en but feat_cap to fallback to INTx */
 	counts[PCI_INTR_TYPE_INTX] =
-	    (adapter->feat_en & IXGBE_FEATURE_LEGACY_IRQ) ? 1 : 0;
+	    (adapter->feat_cap & IXGBE_FEATURE_LEGACY_IRQ) ? 1 : 0;
 
 alloc_retry:
 	if (pci_intr_alloc(pa, &adapter->osdep.intrs, counts, max_type) != 0) {
@@ -5649,29 +5774,39 @@ alloc_retry:
 	adapter->osdep.ihs[0] = pci_intr_establish_xname(adapter->osdep.pc,
 	    adapter->osdep.intrs[0], IPL_NET, ixgbe_legacy_irq, que,
 	    device_xname(dev));
+	intr_type = pci_intr_type(adapter->osdep.pc, adapter->osdep.intrs[0]);
 	if (adapter->osdep.ihs[0] == NULL) {
-		intr_type = pci_intr_type(adapter->osdep.pc,
-		    adapter->osdep.intrs[0]);
 		aprint_error_dev(dev,"unable to establish %s\n",
 		    (intr_type == PCI_INTR_TYPE_MSI) ? "MSI" : "INTx");
 		pci_intr_release(adapter->osdep.pc, adapter->osdep.intrs, 1);
+		adapter->osdep.intrs = NULL;
 		switch (intr_type) {
 		case PCI_INTR_TYPE_MSI:
 			/* The next try is for INTx: Disable MSI */
 			max_type = PCI_INTR_TYPE_INTX;
 			counts[PCI_INTR_TYPE_INTX] = 1;
-			goto alloc_retry;
+			adapter->feat_en &= ~IXGBE_FEATURE_MSI;
+			if (adapter->feat_cap & IXGBE_FEATURE_LEGACY_IRQ) {
+				adapter->feat_en |= IXGBE_FEATURE_LEGACY_IRQ;
+				goto alloc_retry;
+			} else
+				break;
 		case PCI_INTR_TYPE_INTX:
 		default:
 			/* See below */
 			break;
 		}
 	}
+	if (intr_type == PCI_INTR_TYPE_INTX) {
+		adapter->feat_en &= ~IXGBE_FEATURE_MSI;
+		adapter->feat_en |= IXGBE_FEATURE_LEGACY_IRQ;
+	}
 	if (adapter->osdep.ihs[0] == NULL) {
 		aprint_error_dev(dev,
 		    "couldn't establish interrupt%s%s\n",
 		    intrstr ? " at " : "", intrstr ? intrstr : "");
 		pci_intr_release(adapter->osdep.pc, adapter->osdep.intrs, 1);
+		adapter->osdep.intrs = NULL;
 		return ENXIO;
 	}
 	aprint_normal_dev(dev, "interrupting at %s\n", intrstr);
@@ -5686,29 +5821,8 @@ alloc_retry:
 	que->que_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_que, que);
 
-	/* Tasklets for Link, SFP and Multispeed Fiber */
-	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_link, adapter);
-	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_mod, adapter);
-	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_msf, adapter);
-	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_phy, adapter);
-
-	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
-		adapter->fdir_si =
-		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-			ixgbe_reinit_fdir, adapter);
-
-	if ((!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX) &
-		(txr->txr_si == NULL)) ||
-	    que->que_si == NULL ||
-	    adapter->link_si == NULL ||
-	    adapter->mod_si == NULL ||
-	    ((adapter->feat_en & IXGBE_FEATURE_FDIR) &
-		(adapter->fdir_si == NULL)) ||
-	    adapter->msf_si == NULL) {
+	if ((!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)
+		& (txr->txr_si == NULL)) || (que->que_si == NULL)) {
 		aprint_error_dev(dev,
 		    "could not establish software interrupts\n"); 
 
@@ -5788,12 +5902,10 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 		    adapter->osdep.intrs[i], IPL_NET, ixgbe_msix_que, que,
 		    intr_xname);
 		if (que->res == NULL) {
-			pci_intr_release(pc, adapter->osdep.intrs,
-			    adapter->osdep.nintrs);
 			aprint_error_dev(dev,
 			    "Failed to register QUE handler\n");
-			kcpuset_destroy(affinity);
-			return ENXIO;
+			error = ENXIO;
+			goto err_out;
 		}
 		que->msix = vector;
 		adapter->active_queues |= (u64)(1 << que->msix);
@@ -5839,22 +5951,32 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 		}
 		aprint_normal("\n");
 
-		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX))
+		if (!(adapter->feat_en & IXGBE_FEATURE_LEGACY_TX)) {
 			txr->txr_si = softint_establish(
 				SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 				ixgbe_deferred_mq_start, txr);
+			if (txr->txr_si == NULL) {
+				aprint_error_dev(dev,
+				    "couldn't establish software interrupt\n");
+				error = ENXIO;
+				goto err_out;
+			}
+		}
 		que->que_si
 		    = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_handle_que, que);
 		if (que->que_si == NULL) {
 			aprint_error_dev(dev,
-			    "could not establish software interrupt\n"); 
+			    "couldn't establish software interrupt\n"); 
+			error = ENXIO;
+			goto err_out;
 		}
 	}
 
 	/* and Link */
 	cpu_id++;
 	snprintf(intr_xname, sizeof(intr_xname), "%s link", device_xname(dev));
+	adapter->vector = vector;
 	intrstr = pci_intr_string(pc, adapter->osdep.intrs[vector], intrbuf,
 	    sizeof(intrbuf));
 #ifdef IXGBE_MPSAFE
@@ -5868,13 +5990,14 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	if (adapter->osdep.ihs[vector] == NULL) {
 		adapter->res = NULL;
 		aprint_error_dev(dev, "Failed to register LINK handler\n");
-		kcpuset_destroy(affinity);
-		return (ENXIO);
+		error = ENXIO;
+		goto err_out;
 	}
 	/* Round-robin affinity */
 	kcpuset_zero(affinity);
 	kcpuset_set(affinity, cpu_id % ncpu);
-	error = interrupt_distribute(adapter->osdep.ihs[vector], affinity,NULL);
+	error = interrupt_distribute(adapter->osdep.ihs[vector], affinity,
+	    NULL);
 
 	aprint_normal_dev(dev,
 	    "for link, interrupting at %s", intrstr);
@@ -5883,28 +6006,30 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 	else
 		aprint_normal("\n");
 
-	adapter->vector = vector;
-	/* Tasklets for Link, SFP and Multispeed Fiber */
-	adapter->link_si = softint_establish(SOFTINT_NET |IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_link, adapter);
-	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_mod, adapter);
-	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_msf, adapter);
-	if (adapter->feat_cap & IXGBE_FEATURE_SRIOV)
+	if (adapter->feat_cap & IXGBE_FEATURE_SRIOV) {
 		adapter->mbx_si =
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_handle_mbx, adapter);
-	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-		ixgbe_handle_phy, adapter);
-	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
-		adapter->fdir_si =
-		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-			ixgbe_reinit_fdir, adapter);
+		if (adapter->mbx_si == NULL) {
+			aprint_error_dev(dev,
+			    "could not establish software interrupts\n"); 
+
+			error = ENXIO;
+			goto err_out;
+		}
+	}
 
 	kcpuset_destroy(affinity);
+	aprint_normal_dev(dev,
+	    "Using MSI-X interrupts with %d vectors\n", vector + 1);
 
 	return (0);
+
+err_out:
+	kcpuset_destroy(affinity);
+	ixgbe_free_softint(adapter);
+	ixgbe_free_pciintr_resources(adapter);
+	return (error);
 } /* ixgbe_allocate_msix */
 
 /************************************************************************
@@ -5927,6 +6052,13 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 	if (!(adapter->feat_cap & IXGBE_FEATURE_MSIX))
 		goto msi;
 
+	/*
+	 *  NetBSD only: Use single vector MSI when number of CPU is 1 to save
+	 * interrupt slot.
+	 */
+	if (ncpu == 1)
+		goto msi;
+	
 	/* First try MSI-X */
 	msgs = pci_msix_count(adapter->osdep.pc, adapter->osdep.tag);
 	msgs = MIN(msgs, IXG_MAX_NINTR);
@@ -5950,7 +6082,6 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 
 	if (ixgbe_num_queues != 0)
 		queues = ixgbe_num_queues;
-	/* Set max queues to 8 when autoconfiguring */
 	else
 		queues = min(queues,
 		    min(mac->max_tx_queues, mac->max_rx_queues));
@@ -5971,8 +6102,6 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 		    msgs, want);
 		goto msi;
 	}
-	device_printf(dev,
-	    "Using MSI-X interrupts with %d vectors\n", msgs);
 	adapter->num_queues = queues;
 	adapter->feat_en |= IXGBE_FEATURE_MSIX;
 	return (0);
@@ -5996,7 +6125,6 @@ msi:
 	if (msgs != 0) {
 		msgs = 1;
 		adapter->feat_en |= IXGBE_FEATURE_MSI;
-		aprint_normal_dev(dev, "Using an MSI interrupt\n");
 		return (0);
 	}
 
@@ -6007,7 +6135,6 @@ msi:
 	}
 
 	adapter->feat_en |= IXGBE_FEATURE_LEGACY_IRQ;
-	aprint_normal_dev(dev, "Using a Legacy interrupt\n");
 
 	return (0);
 } /* ixgbe_configure_interrupts */

@@ -1,4 +1,4 @@
-/*	$NetBSD: pciidevar.h,v 1.47 2015/08/24 23:55:04 pooka Exp $	*/
+/*	$NetBSD: pciidevar.h,v 1.49 2017/10/22 13:13:55 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998 Christopher G. Demetriou.  All rights reserved.
@@ -122,6 +122,9 @@ struct pciide_softc {
 	int sc_ba5_en;
 #endif	/* NATA_DMA */
 
+	/* for CMD Technology 064x */
+	uint sc_cmd_act_channel;
+
 	/* Vendor info (for interpreting Chip description) */
 	pcireg_t sc_pci_id;
 	/* Chip description */
@@ -176,6 +179,7 @@ struct pciide_product_desc {
 
 /* Flags for ide_flags */
 #define	IDE_16BIT_IOSPACE	0x0002 /* I/O space BARS ignore upper word */
+#define	IDE_SHARED_CHANNELS	0x0004 /* channels are not independant */
 
 
 /* inlines for reading/writing 8-bit PCI registers */

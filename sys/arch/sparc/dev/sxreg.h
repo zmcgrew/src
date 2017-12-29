@@ -1,4 +1,4 @@
-/*	$NetBSD: sxreg.h,v 1.13 2017/01/13 21:49:46 macallan Exp $	*/
+/*	$NetBSD: sxreg.h,v 1.16 2017/12/08 22:28:54 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -158,6 +158,14 @@
 				SX_UQUAD_16 | (dreg << 7) | (o))
 #define SX_LDUQ24(dreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_LOAD | \
 				SX_UQUAD_24 | (dreg << 7) | (o))
+#define SX_LDUC0(dreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_LOAD | \
+				SX_UCHAN_0 | (dreg << 7) | (o))
+#define SX_LDUC8(dreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_LOAD | \
+				SX_UCHAN_8 | (dreg << 7) | (o))
+#define SX_LDUC16(dreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_LOAD | \
+				SX_UCHAN_16 | (dreg << 7) | (o))
+#define SX_LDUC24(dreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_LOAD | \
+				SX_UCHAN_24 | (dreg << 7) | (o))
 #define SX_ST(sreg, cnt, o)  (0x80000000 | ((cnt) << 23) | SX_STORE | \
 				SX_LONG | (sreg << 7) | (o))
 #define SX_STM(sreg, cnt, o)  (0x80000000 | ((cnt) << 23) | SX_STORE_MASK | \
@@ -184,6 +192,16 @@
 				SX_UQUAD_16 | (sreg << 7) | (o))
 #define SX_STUQ24(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE | \
 				SX_UQUAD_24 | (sreg << 7) | (o))
+#define SX_STUC0(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE | \
+				SX_UCHAN_0 | (sreg << 7) | (o))
+#define SX_STUC0C(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE_CLAMP | \
+				SX_UCHAN_0 | (sreg << 7) | (o))
+#define SX_STUC8(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE | \
+				SX_UCHAN_8 | (sreg << 7) | (o))
+#define SX_STUC16(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE | \
+				SX_UCHAN_16 | (sreg << 7) | (o))
+#define SX_STUC24(sreg, cnt, o) (0x80000000 | ((cnt) << 23) | SX_STORE | \
+				SX_UCHAN_24 | (sreg << 7) | (o))
 
 /* ROP and SELECT instructions */
 #define SX_ROPB	(0x0 << 21)	/* mask bits apply to bytes */
@@ -271,5 +289,13 @@
 
 #define SX_ADDV(sa, sb, d, cnt) (0xa0000000 | ((cnt) << 24) | SX_ADD_V | \
 		((sa) << 14) | ((d) << 7) | (sb))
+
+/* MISC group */
+#define SX_GTHR		(3 << 21)	/* sa with spacing sb -> d */
+#define SX_SCTR		(2 << 21)	/* sa -> d with spacing sb */
+#define SX_GATHER(sa, sb, d, cnt) (0xe0000000 | ((cnt) << 24) | SX_GTHR | \
+		 ((sa) << 14) | ((d) << 7) | (sb))
+#define SX_SCATTER(sa, sb, d, cnt) (0xe0000000 | ((cnt) << 24) | SX_SCTR | \
+		 ((sa) << 14) | ((d) << 7) | (sb))
 
 #endif /* SXREG_H */

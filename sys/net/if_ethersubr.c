@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.243 2017/07/23 10:55:00 para Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.250 2017/12/09 10:51:30 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.243 2017/07/23 10:55:00 para Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.250 2017/12/09 10:51:30 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -192,7 +192,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 {
 	uint16_t etype = 0;
 	int error = 0, hdrcmplt = 0;
- 	uint8_t esrc[6], edst[6];
+	uint8_t esrc[6], edst[6];
 	struct mbuf *m = m0;
 	struct mbuf *mcopy = NULL;
 	struct ether_header *eh;
@@ -203,13 +203,6 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 #ifdef NETATALK
 	struct at_ifaddr *aa;
 #endif /* NETATALK */
-
-	/*
-	 * some paths such as carp_output() call ethr_output() with "ifp"
-	 * argument as other than ether ifnet.
-	 */
-	KASSERT(ifp->if_output != ether_output
-	    || ifp->if_extflags & IFEF_OUTPUT_MPSAFE);
 
 #ifdef MBUFTRACE
 	m_claimm(m, ifp->if_mowner);
@@ -233,13 +226,13 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		ifp = ifp->if_carpdev;
 		/* ac = (struct arpcom *)ifp; */
 
-		if ((ifp0->if_flags & (IFF_UP|IFF_RUNNING)) !=
-		    (IFF_UP|IFF_RUNNING))
+		if ((ifp0->if_flags & (IFF_UP | IFF_RUNNING)) !=
+		    (IFF_UP | IFF_RUNNING))
 			senderr(ENETDOWN);
 	}
 #endif /* NCARP > 0 */
 
-	if ((ifp->if_flags & (IFF_UP|IFF_RUNNING)) != (IFF_UP|IFF_RUNNING))
+	if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) != (IFF_UP | IFF_RUNNING))
 		senderr(ENETDOWN);
 
 	switch (dst->sa_family) {
@@ -308,7 +301,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		break;
 #endif
 #ifdef NETATALK
-    case AF_APPLETALK: {
+	case AF_APPLETALK: {
 		struct ifaddr *ifa;
 		int s;
 
@@ -354,7 +347,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		pserialize_read_exit(s);
 		KERNEL_UNLOCK_ONE(NULL);
 		break;
-	    }
+	}
 #endif /* NETATALK */
 	case pseudo_AF_HDRCMPLT:
 		hdrcmplt = 1;
@@ -364,7 +357,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		/* FALLTHROUGH */
 
 	case AF_UNSPEC:
- 		memcpy(edst,
+		memcpy(edst,
 		    ((const struct ether_header *)dst->sa_data)->ether_dhost,
 		    sizeof(edst));
 		/* AF_UNSPEC doesn't swap the byte order of the ether_type. */
@@ -408,7 +401,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 	eh = mtod(m, struct ether_header *);
 	/* Note: etype is already in network byte order. */
 	(void)memcpy(&eh->ether_type, &etype, sizeof(eh->ether_type));
- 	memcpy(eh->ether_dhost, edst, sizeof(edst));
+	memcpy(eh->ether_dhost, edst, sizeof(edst));
 	if (hdrcmplt)
 		memcpy(eh->ether_shost, esrc, sizeof(eh->ether_shost));
 	else
@@ -545,7 +538,7 @@ altq_etherclassify(struct ifaltq *ifq, struct mbuf *m)
 
 	return;
 
- bad:
+bad:
 	m->m_pkthdr.pattr_class = NULL;
 	m->m_pkthdr.pattr_hdr = NULL;
 	m->m_pkthdr.pattr_af = AF_UNSPEC;
@@ -586,7 +579,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	etype = ntohs(eh->ether_type);
 	ehlen = sizeof(*eh);
 
-	if(__predict_false(earlypkts < 100 || !rnd_initial_entropy)) {
+	if (__predict_false(earlypkts < 100 || !rnd_initial_entropy)) {
 		rnd_add_data(NULL, eh, ehlen, 0);
 		earlypkts++;
 	}
@@ -647,7 +640,8 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 			return;
 	}
 #endif /* NCARP > 0 */
-	if ((m->m_flags & (M_BCAST|M_MCAST|M_PROMISC)) == 0 &&
+
+	if ((m->m_flags & (M_BCAST | M_MCAST | M_PROMISC)) == 0 &&
 	    (ifp->if_flags & IFF_PROMISC) != 0 &&
 	    memcmp(CLLADDR(ifp->if_sadl), eh->ether_dhost,
 		   ETHER_ADDR_LEN) != 0) {
@@ -679,7 +673,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	 * see if the device performed the decapsulation and
 	 * provided us with the tag.
 	 */
-	if (ec->ec_nvlans && m_tag_find(m, PACKET_TAG_VLAN, NULL) != NULL) {
+	if (ec->ec_nvlans && vlan_has_tag(m)) {
 #if NVLAN > 0
 		/*
 		 * vlan_input() will either recursively call ether_input()
@@ -702,7 +696,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		/*
 		 * If there is a tag of 0, then the VLAN header was probably
 		 * just being used to store the priority.  Extract the ether
-		 * type, and if IP or IPV6, let them deal with it. 
+		 * type, and if IP or IPV6, let them deal with it.
 		 */
 		if (m->m_len <= sizeof(*evl)
 		    && EVL_VLANOFTAG(evl->evl_tag) == 0) {
@@ -811,7 +805,7 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 				m_freem(m);
 				return;
 			}
-#ifdef GATEWAY  
+#ifdef GATEWAY
 			if (ip6flow_fastforward(&m))
 				return;
 #endif
@@ -840,6 +834,9 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		}
 	} else {
 #if defined (LLC) || defined (NETATALK)
+		if (m->m_len < ehlen + sizeof(struct llc)) {
+			goto dropanyway;
+		}
 		l = (struct llc *)(eh+1);
 		switch (l->llc_dsap) {
 #ifdef NETATALK
@@ -876,16 +873,16 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 				goto dropanyway;
 			}
 			break;
-		dropanyway:
 #endif
+		dropanyway:
 		default:
 			m_freem(m);
 			return;
 		}
-#else /* ISO || LLC || NETATALK*/
+#else /* LLC || NETATALK */
 		m_freem(m);
 		return;
-#endif /* ISO || LLC || NETATALK*/
+#endif /* LLC || NETATALK */
 	}
 
 	if (__predict_true(pktq)) {
@@ -951,7 +948,6 @@ ether_ifattach(struct ifnet *ifp, const uint8_t *lla)
 {
 	struct ethercom *ec = (struct ethercom *)ifp;
 
-	ifp->if_extflags |= IFEF_OUTPUT_MPSAFE;
 	ifp->if_type = IFT_ETHER;
 	ifp->if_hdrlen = ETHER_HDR_LEN;
 	ifp->if_dlt = DLT_EN10MB;
@@ -1010,13 +1006,13 @@ ether_ifdetach(struct ifnet *ifp)
 		vlan_ifdetach(ifp);
 #endif
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	while ((enm = LIST_FIRST(&ec->ec_multiaddrs)) != NULL) {
 		LIST_REMOVE(enm, enm_list);
-		kmem_intr_free(enm, sizeof(*enm));
+		kmem_free(enm, sizeof(*enm));
 		ec->ec_multicnt--;
 	}
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
 	mutex_destroy(ec->ec_lock);
 
@@ -1118,7 +1114,7 @@ const uint8_t ether_ip6multicast_max[ETHER_ADDR_LEN] =
 int
 ether_aton_r(u_char *dest, size_t len, const char *str)
 {
-        const u_char *cp = (const void *)str;
+	const u_char *cp = (const void *)str;
 	u_char *ep;
 
 #define atox(c)	(((c) <= '9') ? ((c) - '0') : ((toupper(c) - 'A') + 10))
@@ -1127,18 +1123,19 @@ ether_aton_r(u_char *dest, size_t len, const char *str)
 		return ENOSPC;
 
 	ep = dest + ETHER_ADDR_LEN;
-	 
+
 	while (*cp) {
-                if (!isxdigit(*cp))
-                        return EINVAL;
+		if (!isxdigit(*cp))
+			return EINVAL;
 		*dest = atox(*cp);
 		cp++;
-                if (isxdigit(*cp)) {
-                        *dest = (*dest << 4) | atox(*cp);
+		if (isxdigit(*cp)) {
+			*dest = (*dest << 4) | atox(*cp);
 			dest++;
 			cp++;
-                } else
+		} else {
 			dest++;
+		}
 		if (dest == ep)
 			return *cp == '\0' ? 0 : ENAMETOOLONG;
 		switch (*cp) {
@@ -1148,7 +1145,7 @@ ether_aton_r(u_char *dest, size_t len, const char *str)
 			cp++;
 			break;
 		}
-        }
+	}
 	return ENOBUFS;
 }
 
@@ -1231,12 +1228,11 @@ ether_addmulti(const struct sockaddr *sa, struct ethercom *ec)
 	int error = 0;
 
 	/* Allocate out of lock */
-	/* XXX still can be called in softint */
-	enm = kmem_intr_alloc(sizeof(*enm), KM_SLEEP);
+	enm = kmem_alloc(sizeof(*enm), KM_SLEEP);
 	if (enm == NULL)
 		return ENOBUFS;
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	error = ether_multiaddr(sa, addrlo, addrhi);
 	if (error != 0)
 		goto out;
@@ -1275,9 +1271,9 @@ ether_addmulti(const struct sockaddr *sa, struct ethercom *ec)
 	error = ENETRESET;
 	enm = NULL;
 out:
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 	if (enm != NULL)
-		kmem_intr_free(enm, sizeof(*enm));
+		kmem_free(enm, sizeof(*enm));
 	return error;
 }
 
@@ -1292,7 +1288,7 @@ ether_delmulti(const struct sockaddr *sa, struct ethercom *ec)
 	u_char addrhi[ETHER_ADDR_LEN];
 	int error;
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	error = ether_multiaddr(sa, addrlo, addrhi);
 	if (error != 0)
 		goto error;
@@ -1317,16 +1313,16 @@ ether_delmulti(const struct sockaddr *sa, struct ethercom *ec)
 	 */
 	LIST_REMOVE(enm, enm_list);
 	ec->ec_multicnt--;
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
-	kmem_intr_free(enm, sizeof(*enm));
+	kmem_free(enm, sizeof(*enm));
 	/*
 	 * Return ENETRESET to inform the driver that the list has changed
 	 * and its reception filter should be adjusted accordingly.
 	 */
 	return ENETRESET;
 error:
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 	return error;
 }
 
@@ -1356,8 +1352,8 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	    {
 		struct ifaddr *ifa = (struct ifaddr *)data;
 		if (ifa->ifa_addr->sa_family != AF_LINK
-		    && (ifp->if_flags & (IFF_UP|IFF_RUNNING)) !=
-		       (IFF_UP|IFF_RUNNING)) {
+		    && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) !=
+		       (IFF_UP | IFF_RUNNING)) {
 			ifp->if_flags |= IFF_UP;
 			if ((error = (*ifp->if_init)(ifp)) != 0)
 				return error;
@@ -1392,7 +1388,7 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	case SIOCSIFFLAGS:
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			return error;
-		switch (ifp->if_flags & (IFF_UP|IFF_RUNNING)) {
+		switch (ifp->if_flags & (IFF_UP | IFF_RUNNING)) {
 		case IFF_RUNNING:
 			/*
 			 * If interface is marked down and it is running,
@@ -1406,18 +1402,21 @@ ether_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * start it.
 			 */
 			return (*ifp->if_init)(ifp);
-		case IFF_UP|IFF_RUNNING:
+		case IFF_UP | IFF_RUNNING:
 			error = 0;
-			if (ec->ec_ifflags_cb == NULL ||
-			    (error = (*ec->ec_ifflags_cb)(ec)) == ENETRESET) {
-				/*
-				 * Reset the interface to pick up
-				 * changes in any other flags that
-				 * affect the hardware state.
-				 */
-				return (*ifp->if_init)(ifp);
-			} else 
-				return error;
+			if (ec->ec_ifflags_cb != NULL) {
+				error = (*ec->ec_ifflags_cb)(ec);
+				if (error == ENETRESET) {
+					/*
+					 * Reset the interface to pick up
+					 * changes in any other flags that
+					 * affect the hardware state.
+					 */
+					return (*ifp->if_init)(ifp);
+				}
+			} else
+				error = (*ifp->if_init)(ifp);
+			return error;
 		case 0:
 			break;
 		}
@@ -1504,7 +1503,7 @@ ether_disable_vlan_mtu(struct ifnet *ifp)
 	 * Disable Tx/Rx of VLAN-sized frames.
 	 */
 	ec->ec_capenable &= ~ETHERCAP_VLAN_MTU;
-	
+
 	/* Interface is down, defer for later */
 	if ((ifp->if_flags & IFF_UP) == 0)
 		return 0;
@@ -1561,10 +1560,10 @@ retry:
 	multicnt = ec->ec_multicnt;
 	addrs = kmem_alloc(sizeof(*addrs) * multicnt, KM_SLEEP);
 
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	if (multicnt < ec->ec_multicnt) {
 		/* The number of multicast addresses have increased */
-		mutex_exit(ec->ec_lock);
+		ETHER_UNLOCK(ec);
 		kmem_free(addrs, sizeof(*addrs) * multicnt);
 		goto retry;
 	}
@@ -1577,7 +1576,7 @@ retry:
 		memcpy(addr->enm_addrhi, enm->enm_addrhi, ETHER_ADDR_LEN);
 		i++;
 	}
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 
 	error = 0;
 	written = 0;

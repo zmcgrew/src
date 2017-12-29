@@ -30,6 +30,7 @@
 #ifdef HAVE_MALLOC_H
 #include <malloc.h>
 #endif /* HAVE_MALLOC_H */
+#include <stdint.h>
 
 #include "tre-internal.h"
 #include "tre-match-utils.h"
@@ -225,6 +226,8 @@ tre_tnfa_run_approx(const tre_tnfa_t *tnfa, const void *string, int len,
 
   size_t i, id;
 
+  reg_errcode_t ret;
+
   if (!match_tags)
     num_tags = 0;
   else
@@ -250,6 +253,16 @@ tre_tnfa_run_approx(const tre_tnfa_t *tnfa, const void *string, int len,
      or with malloc() if alloca is unavailable. */
   {
     unsigned char *buf_cursor;
+
+    /* Ensure that tag_bytes*num_states cannot overflow, and that it don't
+     * contribute more than 1/8 of SIZE_MAX to total_bytes. */
+    if (num_tags > SIZE_MAX/(8 * sizeof(*tmp_tags) * tnfa->num_states))
+      return REG_ESPACE;
+
+    /* Likewise check reach_bytes. */
+    if (tnfa->num_states > SIZE_MAX/(8 * sizeof(*reach_next)))
+      return REG_ESPACE;
+
     /* Space needed for one array of tags. */
     size_t tag_bytes = sizeof(*tmp_tags) * num_tags;
     /* Space needed for one reach table. */
@@ -307,7 +320,7 @@ tre_tnfa_run_approx(const tre_tnfa_t *tnfa, const void *string, int len,
   GET_NEXT_WCHAR();
   pos = 0;
 
-  while (/*CONSTCOND*/1)
+  while (/*CONSTCOND*/(void)1,1)
     {
       DPRINT(("%03d:%2lc/%05d\n", pos, (tre_cint_t)next_c, (int)next_c));
 
@@ -781,16 +794,17 @@ tre_tnfa_run_approx(const tre_tnfa_t *tnfa, const void *string, int len,
   DPRINT(("match end offset = %d, match cost = %d\n", match_eo,
 	  match_costs[TRE_M_COST]));
 
-#ifndef TRE_USE_ALLOCA
-  if (buf)
-    xfree(buf);
-#endif /* !TRE_USE_ALLOCA */
-
   match->cost = match_costs[TRE_M_COST];
   match->num_ins = match_costs[TRE_M_NUM_INS];
   match->num_del = match_costs[TRE_M_NUM_DEL];
   match->num_subst = match_costs[TRE_M_NUM_SUBST];
   *match_end_ofs = match_eo;
 
-  return match_eo >= 0 ? REG_OK : REG_NOMATCH;
+  ret = match_eo >= 0 ? REG_OK : REG_NOMATCH;
+error_exit:
+#ifndef TRE_USE_ALLOCA
+  if (buf)
+    xfree(buf);
+#endif /* !TRE_USE_ALLOCA */
+  return ret;
 }

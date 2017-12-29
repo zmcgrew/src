@@ -61,6 +61,7 @@ tre_add_tag_left(tre_mem_t mem, tre_ast_node_t *node, int tag_id)
   c->right->firstpos = NULL;
   c->right->lastpos = NULL;
   c->right->num_tags = 0;
+  c->right->num_submatches = 0;
   node->obj = c;
   node->type = CATENATION;
   return REG_OK;
@@ -93,6 +94,7 @@ tre_add_tag_right(tre_mem_t mem, tre_ast_node_t *node, int tag_id)
   c->left->firstpos = NULL;
   c->left->lastpos = NULL;
   c->left->num_tags = 0;
+  c->left->num_submatches = 0;
   node->obj = c;
   node->type = CATENATION;
   return REG_OK;
@@ -594,7 +596,8 @@ tre_add_tags(tre_mem_t mem, tre_stack_t *stack, tre_ast_node_t *tree,
 		  {
 		    status = tre_add_tag_right(mem, left, tag_left);
 		    tnfa->tag_directions[tag_left] = TRE_TAG_MAXIMIZE;
-		    status = tre_add_tag_right(mem, right, tag_right);
+		    if (status == REG_OK)
+		      status = tre_add_tag_right(mem, right, tag_right);
 		    tnfa->tag_directions[tag_right] = TRE_TAG_MAXIMIZE;
 		  }
 		DPRINT(("  num_tags += 2\n"));
@@ -1619,8 +1622,8 @@ tre_make_trans(tre_pos_and_tags_t *p1, tre_pos_and_tags_t *p2,
 	      (trans + 1)->state = NULL;
 	    /* Use the character ranges, assertions, etc. from `p1' for
 	       the transition from `p1' to `p2'. */
-	    trans->code_min = p1->code_min;
-	    trans->code_max = p1->code_max;
+	    trans->code_min = (tre_cint_t) p1->code_min;
+	    trans->code_max = (tre_cint_t) p1->code_max;
 	    trans->state = transitions + offs[p2->position];
 	    trans->state_id = p2->position;
 	    trans->assertions = p1->assertions | p2->assertions
@@ -1845,10 +1848,10 @@ tre_ast_to_tnfa(tre_ast_node_t *node, tre_tnfa_transition_t *transitions,
   do				  \
     {				  \
       errcode = err;		  \
-      if (/*CONSTCOND*/1)	  \
+      if (/*CONSTCOND*/(void)1,1)	  \
       	goto error_exit;	  \
     }				  \
- while (/*CONSTCOND*/0)
+ while (/*CONSTCOND*/(void)0,0)
 
 
 int
@@ -1890,6 +1893,12 @@ tre_compile(regex_t *preg, const tre_char_t *regex, size_t n, int cflags)
   parse_ctx.len = n;
   parse_ctx.cflags = cflags;
   parse_ctx.max_backref = -1;
+  /* workaround for PR#14408: use 8-bit optimizations in 8-bit mode */
+#ifdef REG_USEBYTES
+  parse_ctx.cur_max = (cflags & REG_USEBYTES) ? 1 : TRE_MB_CUR_MAX;
+#else
+  parse_ctx.cur_max = TRE_MB_CUR_MAX;
+#endif
   DPRINT(("tre_compile: parsing '%.*" STRF "'\n", (int)n, regex));
   errcode = tre_parse(&parse_ctx);
   if (errcode != REG_OK)
@@ -1943,7 +1952,7 @@ tre_compile(regex_t *preg, const tre_char_t *regex, size_t n, int cflags)
 		 sizeof(*tag_directions) * (tnfa->num_tags + 1));
 	}
       tnfa->minimal_tags = xcalloc((unsigned)tnfa->num_tags * 2 + 1,
-				   sizeof(tnfa->minimal_tags));
+				   sizeof(*tnfa->minimal_tags));
       if (tnfa->minimal_tags == NULL)
 	ERROR_EXIT(REG_ESPACE);
 

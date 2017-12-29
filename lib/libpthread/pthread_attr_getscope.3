@@ -1,4 +1,4 @@
-.\" $NetBSD: pthread_attr_getscope.3,v 1.2 2010/07/07 10:22:33 njoly Exp $
+.\" $NetBSD: pthread_attr_getscope.3,v 1.4 2017/10/23 01:03:23 wiz Exp $
 .\"
 .\" Copyright (c) 2010 Jukka Ruohonen <jruohonen@iki.fi>
 .\" All rights reserved.
@@ -29,7 +29,8 @@
 .Dt PTHREAD_ATTR_GETSCOPE 3
 .Os
 .Sh NAME
-.Nm pthread_attr_getscope
+.Nm pthread_attr_getscope ,
+.Nm pthread_attr_setscope
 .Nd get and set the contention scope attribute
 .Sh LIBRARY
 .Lb libpthread
@@ -56,8 +57,7 @@ It is only possible to set the scope of a thread before the thread is created.
 There are two possible contention scopes:
 .Bl -tag -width PTHREAD_SCOPE_PROCESS -offset 2n
 .It Dv PTHREAD_SCOPE_SYSTEM
-The thread will contend for
-.Tn CPU
+The thread will contend for CPU
 resources with all other processes and threads in the system.
 Generally this means that the user thread is bound directly to the
 kernel scheduling for its entire lifetime.
@@ -66,8 +66,7 @@ The thread will contend with other threads with the same scope attribute.
 In general, this means that all
 .Dv PTHREAD_SCOPE_PROCESS
 threads are grouped together and this group of threads contends for
-.Tn CPU
-resources.
+CPU resources.
 This is commonly seen to require a hybrid
 .Pq Dq M:N
 threading model in order to multiplex the user and kernel space scheduling.

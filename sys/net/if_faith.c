@@ -1,4 +1,4 @@
-/*	$NetBSD: if_faith.c,v 1.55 2016/12/12 03:55:57 ozaki-r Exp $	*/
+/*	$NetBSD: if_faith.c,v 1.57 2017/12/06 07:40:16 ozaki-r Exp $	*/
 /*	$KAME: if_faith.c,v 1.21 2001/02/20 07:59:26 itojun Exp $	*/
 
 /*
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_faith.c,v 1.55 2016/12/12 03:55:57 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_faith.c,v 1.57 2017/12/06 07:40:16 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -140,6 +140,7 @@ static int
 faith_clone_create(struct if_clone *ifc, int unit)
 {
 	struct ifnet *ifp;
+	int rv;
 
 	ifp = if_alloc(IFT_FAITH);
 
@@ -154,7 +155,11 @@ faith_clone_create(struct if_clone *ifc, int unit)
 	ifp->if_hdrlen = 0;
 	ifp->if_addrlen = 0;
 	ifp->if_dlt = DLT_NULL;
-	if_attach(ifp);
+	rv = if_attach(ifp);
+	if (rv != 0) {
+		if_free(ifp);
+		return rv;
+	}
 	if_alloc_sadl(ifp);
 	bpf_attach(ifp, DLT_NULL, sizeof(u_int));
 	atomic_inc_uint(&faith_count);
@@ -258,9 +263,9 @@ faithioctl(struct ifnet *ifp, u_long cmd, void *data)
 	switch (cmd) {
 
 	case SIOCINITIFADDR:
-		ifp->if_flags |= IFF_UP | IFF_RUNNING;
 		ifa = (struct ifaddr *)data;
 		ifa->ifa_rtrequest = faithrtrequest;
+		ifp->if_flags |= IFF_UP | IFF_RUNNING;
 		/*
 		 * Everything else is done at a higher level.
 		 */

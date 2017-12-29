@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.99 2017/02/12 09:47:31 skrll Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.105 2017/12/19 03:32:35 ozaki-r Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.99 2017/02/12 09:47:31 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.105 2017/12/19 03:32:35 ozaki-r Exp $");
 
 #if defined(_KERNEL_OPT)
 
@@ -54,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.99 2017/02/12 09:47:31 skrll Exp $");
 #include <sys/kmem.h>
 #include <sys/module.h>
 #include <sys/mutex.h>
+#include <sys/condvar.h>
 #include <sys/poll.h>
 #include <sys/proc.h>
 #include <sys/select.h>
@@ -109,8 +110,8 @@ struct tap_softc {
 #define TAP_GOING	0x00000008	/* interface is being destroyed */
 	struct selinfo	sc_rsel;
 	pid_t		sc_pgid; /* For async. IO */
-	kmutex_t	sc_rdlock;
-	kmutex_t	sc_kqlock;
+	kmutex_t	sc_lock;
+	kcondvar_t	sc_cv;
 	void		*sc_sih;
 	struct timespec sc_atime;
 	struct timespec sc_mtime;
@@ -147,6 +148,7 @@ static int	tap_fops_stat(file_t *, struct stat *);
 static int	tap_fops_kqfilter(file_t *, struct knote *);
 
 static const struct fileops tap_fileops = {
+	.fo_name = "tap",
 	.fo_read = tap_fops_read,
 	.fo_write = tap_fops_write,
 	.fo_ioctl = tap_fops_ioctl,
@@ -182,7 +184,7 @@ const struct cdevsw tap_cdevsw = {
 	.d_mmap = nommap,
 	.d_kqfilter = tap_cdev_kqfilter,
 	.d_discard = nodiscard,
-	.d_flag = D_OTHER
+	.d_flag = D_OTHER | D_MPSAFE
 };
 
 #define TAP_CLONER	0xfffff		/* Maximal minor value */
@@ -315,22 +317,8 @@ tap_attach(device_t parent, device_t self, void *aux)
 	sc->sc_flags = 0;
 	selinit(&sc->sc_rsel);
 
-	/*
-	 * Initialize the two locks for the device.
-	 *
-	 * We need a lock here because even though the tap device can be
-	 * opened only once, the file descriptor might be passed to another
-	 * process, say a fork(2)ed child.
-	 *
-	 * The Giant saves us from most of the hassle, but since the read
-	 * operation can sleep, we don't want two processes to wake up at
-	 * the same moment and both try and dequeue a single packet.
-	 *
-	 * The queue for event listeners (used by kqueue(9), see below) has
-	 * to be protected too, so use a spin lock.
-	 */
-	mutex_init(&sc->sc_rdlock, MUTEX_DEFAULT, IPL_NONE);
-	mutex_init(&sc->sc_kqlock, MUTEX_DEFAULT, IPL_VM);
+	cv_init(&sc->sc_cv, "tapread");
+	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NET);
 
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
@@ -370,6 +358,10 @@ tap_attach(device_t parent, device_t self, void *aux)
 	strcpy(ifp->if_xname, device_xname(self));
 	ifp->if_softc	= sc;
 	ifp->if_flags	= IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
+#ifdef NET_MPSAFE
+	ifp->if_extflags |= IFEF_MPSAFE;
+#endif
 	ifp->if_ioctl	= tap_ioctl;
 	ifp->if_start	= tap_start;
 	ifp->if_stop	= tap_stop;
@@ -379,7 +371,17 @@ tap_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ec.ec_capabilities = ETHERCAP_VLAN_MTU | ETHERCAP_JUMBO_MTU;
 
 	/* Those steps are mandatory for an Ethernet driver. */
-	if_initialize(ifp);
+	error = if_initialize(ifp);
+	if (error != 0) {
+		aprint_error_dev(self, "if_initialize failed(%d)\n", error);
+		ifmedia_removeall(&sc->sc_im);
+		pmf_device_deregister(self);
+		mutex_destroy(&sc->sc_lock);
+		seldestroy(&sc->sc_rsel);
+
+		return; /* Error */
+	}
+	ifp->if_percpuq = if_percpuq_create(ifp);
 	ether_ifattach(ifp, enaddr);
 	if_register(ifp);
 
@@ -403,8 +405,8 @@ tap_attach(device_t parent, device_t self, void *aux)
 	    tap_sysctl_handler, 0, (void *)sc, 18,
 	    CTL_NET, AF_LINK, tap_node, device_unit(sc->sc_dev),
 	    CTL_EOL)) != 0)
-		aprint_error_dev(self, "sysctl_createv returned %d, ignoring\n",
-		    error);
+		aprint_error_dev(self,
+		    "sysctl_createv returned %d, ignoring\n", error);
 }
 
 /*
@@ -417,13 +419,10 @@ tap_detach(device_t self, int flags)
 	struct tap_softc *sc = device_private(self);
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
 	int error;
-	int s;
 
 	sc->sc_flags |= TAP_GOING;
-	s = splnet();
 	tap_stop(ifp, 1);
 	if_down(ifp);
-	splx(s);
 
 	if (sc->sc_sih != NULL) {
 		softint_disestablish(sc->sc_sih);
@@ -441,10 +440,10 @@ tap_detach(device_t self, int flags)
 		    "sysctl_destroyv returned %d, ignoring\n", error);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
-	ifmedia_delete_instance(&sc->sc_im, IFM_INST_ANY);
+	ifmedia_removeall(&sc->sc_im);
 	seldestroy(&sc->sc_rsel);
-	mutex_destroy(&sc->sc_rdlock);
-	mutex_destroy(&sc->sc_kqlock);
+	mutex_destroy(&sc->sc_lock);
+	cv_destroy(&sc->sc_cv);
 
 	pmf_device_deregister(self);
 
@@ -505,12 +504,13 @@ tap_start(struct ifnet *ifp)
 	struct tap_softc *sc = (struct tap_softc *)ifp->if_softc;
 	struct mbuf *m0;
 
+	mutex_enter(&sc->sc_lock);
 	if ((sc->sc_flags & TAP_INUSE) == 0) {
 		/* Simply drop packets */
 		for(;;) {
 			IFQ_DEQUEUE(&ifp->if_snd, m0);
 			if (m0 == NULL)
-				return;
+				goto done;
 
 			ifp->if_opackets++;
 			bpf_mtap(ifp, m0);
@@ -519,11 +519,13 @@ tap_start(struct ifnet *ifp)
 		}
 	} else if (!IFQ_IS_EMPTY(&ifp->if_snd)) {
 		ifp->if_flags |= IFF_OACTIVE;
-		wakeup(sc);
+		cv_broadcast(&sc->sc_cv);
 		selnotify(&sc->sc_rsel, 0, 1);
 		if (sc->sc_flags & TAP_ASYNCIO)
 			softint_schedule(sc->sc_sih);
 	}
+done:
+	mutex_exit(&sc->sc_lock);
 }
 
 static void
@@ -634,11 +636,13 @@ tap_stop(struct ifnet *ifp, int disable)
 {
 	struct tap_softc *sc = (struct tap_softc *)ifp->if_softc;
 
+	mutex_enter(&sc->sc_lock);
 	ifp->if_flags &= ~IFF_RUNNING;
-	wakeup(sc);
+	cv_broadcast(&sc->sc_cv);
 	selnotify(&sc->sc_rsel, 0, 1);
 	if (sc->sc_flags & TAP_ASYNCIO)
 		softint_schedule(sc->sc_sih);
+	mutex_exit(&sc->sc_lock);
 }
 
 /*
@@ -920,7 +924,7 @@ tap_dev_read(int unit, struct uio *uio, int flags)
 	struct tap_softc *sc = device_lookup_private(&tap_cd, unit);
 	struct ifnet *ifp;
 	struct mbuf *m, *n;
-	int error = 0, s;
+	int error = 0;
 
 	if (sc == NULL)
 		return ENXIO;
@@ -935,43 +939,34 @@ tap_dev_read(int unit, struct uio *uio, int flags)
 	 * In the TAP_NBIO case, we have to make sure we won't be sleeping
 	 */
 	if ((sc->sc_flags & TAP_NBIO) != 0) {
-		if (!mutex_tryenter(&sc->sc_rdlock))
+		if (!mutex_tryenter(&sc->sc_lock))
 			return EWOULDBLOCK;
 	} else {
-		mutex_enter(&sc->sc_rdlock);
+		mutex_enter(&sc->sc_lock);
 	}
 
-	s = splnet();
 	if (IFQ_IS_EMPTY(&ifp->if_snd)) {
 		ifp->if_flags &= ~IFF_OACTIVE;
-		/*
-		 * We must release the lock before sleeping, and re-acquire it
-		 * after.
-		 */
-		mutex_exit(&sc->sc_rdlock);
 		if (sc->sc_flags & TAP_NBIO)
 			error = EWOULDBLOCK;
 		else
-			error = tsleep(sc, PSOCK|PCATCH, "tap", 0);
-		splx(s);
+			error = cv_wait_sig(&sc->sc_cv, &sc->sc_lock);
 
-		if (error != 0)
+		if (error != 0) {
+			mutex_exit(&sc->sc_lock);
 			return error;
-		/* The device might have been downed */
-		if ((ifp->if_flags & IFF_UP) == 0)
-			return EHOSTDOWN;
-		if ((sc->sc_flags & TAP_NBIO)) {
-			if (!mutex_tryenter(&sc->sc_rdlock))
-				return EWOULDBLOCK;
-		} else {
-			mutex_enter(&sc->sc_rdlock);
 		}
-		s = splnet();
+		/* The device might have been downed */
+		if ((ifp->if_flags & IFF_UP) == 0) {
+			mutex_exit(&sc->sc_lock);
+			return EHOSTDOWN;
+		}
 	}
 
 	IFQ_DEQUEUE(&ifp->if_snd, m);
+	mutex_exit(&sc->sc_lock);
+
 	ifp->if_flags &= ~IFF_OACTIVE;
-	splx(s);
 	if (m == NULL) {
 		error = 0;
 		goto out;
@@ -993,7 +988,6 @@ tap_dev_read(int unit, struct uio *uio, int flags)
 		m_freem(m);
 
 out:
-	mutex_exit(&sc->sc_rdlock);
 	return error;
 }
 
@@ -1050,7 +1044,6 @@ tap_dev_write(int unit, struct uio *uio, int flags)
 	struct ifnet *ifp;
 	struct mbuf *m, **mp;
 	int error = 0;
-	int s;
 
 	if (sc == NULL)
 		return ENXIO;
@@ -1087,9 +1080,7 @@ tap_dev_write(int unit, struct uio *uio, int flags)
 
 	m_set_rcvif(m, ifp);
 
-	s = splnet();
-	if_input(ifp, m);
-	splx(s);
+	if_percpuq_enqueue(ifp->if_percpuq, m);
 
 	return 0;
 }
@@ -1210,9 +1201,9 @@ tap_dev_poll(int unit, int events, struct lwp *l)
 		if (m != NULL)
 			revents |= events & (POLLIN|POLLRDNORM);
 		else {
-			mutex_spin_enter(&sc->sc_kqlock);
+			mutex_spin_enter(&sc->sc_lock);
 			selrecord(l, &sc->sc_rsel);
-			mutex_spin_exit(&sc->sc_kqlock);
+			mutex_spin_exit(&sc->sc_lock);
 		}
 		splx(s);
 	}
@@ -1261,9 +1252,9 @@ tap_dev_kqfilter(int unit, struct knote *kn)
 	}
 
 	kn->kn_hook = sc;
-	mutex_spin_enter(&sc->sc_kqlock);
+	mutex_spin_enter(&sc->sc_lock);
 	SLIST_INSERT_HEAD(&sc->sc_rsel.sel_klist, kn, kn_selnext);
-	mutex_spin_exit(&sc->sc_kqlock);
+	mutex_spin_exit(&sc->sc_lock);
 	KERNEL_UNLOCK_ONE(NULL);
 	return 0;
 }
@@ -1274,9 +1265,9 @@ tap_kqdetach(struct knote *kn)
 	struct tap_softc *sc = (struct tap_softc *)kn->kn_hook;
 
 	KERNEL_LOCK(1, NULL);
-	mutex_spin_enter(&sc->sc_kqlock);
+	mutex_spin_enter(&sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
-	mutex_spin_exit(&sc->sc_kqlock);
+	mutex_spin_exit(&sc->sc_lock);
 	KERNEL_UNLOCK_ONE(NULL);
 }
 

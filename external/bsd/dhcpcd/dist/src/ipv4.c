@@ -266,7 +266,7 @@ inet_dhcproutes(struct rt_head *routes, struct interface *ifp)
 	/* First, add a subnet route. */
 	if (!(ifp->flags & IFF_POINTOPOINT) &&
 #ifndef BSD
-		/* BSD adds a route in this instance */
+	    /* BSD adds a route in this instance */
 	    state->addr->mask.s_addr != INADDR_BROADCAST &&
 #endif
 	    state->addr->mask.s_addr != INADDR_ANY)
@@ -291,6 +291,7 @@ inet_dhcproutes(struct rt_head *routes, struct interface *ifp)
 				break;
 			if ((rt = rt_new(ifp)) == NULL)
 				return -1;
+			rt->rt_dflags = RTDF_STATIC;
 			memcpy(rt, r, sizeof(*rt));
 			TAILQ_INSERT_TAIL(&nroutes, rt, rt_next);
 		}
@@ -319,6 +320,8 @@ inet_dhcproutes(struct rt_head *routes, struct interface *ifp)
 	n = 0;
 	TAILQ_FOREACH(rt, &nroutes, rt_next) {
 		rt->rt_mtu = mtu;
+		if (!(rt->rt_dflags & RTDF_STATIC))
+			rt->rt_dflags |= RTDF_DHCP;
 		sa_in_init(&rt->rt_ifa, &state->addr->addr);
 		n++;
 	}
@@ -338,13 +341,11 @@ inet_routerhostroute(struct rt_head *routes, struct interface *ifp)
 	struct if_options *ifo;
 	const struct dhcp_state *state;
 	struct in_addr in;
-	int n;
 
 	/* Don't add a host route for these interfaces. */
 	if (ifp->flags & (IFF_LOOPBACK | IFF_POINTOPOINT))
 		return 0;
 
-	n = 0;
 	TAILQ_FOREACH(rt, routes, rt_next) {
 		if (rt->rt_dest.sa_family != AF_INET)
 			continue;
@@ -414,9 +415,8 @@ inet_routerhostroute(struct rt_head *routes, struct interface *ifp)
 		rth->rt_mtu = dhcp_get_mtu(ifp);
 		sa_in_init(&rth->rt_ifa, &state->addr->addr);
 		TAILQ_INSERT_BEFORE(rt, rth, rt_next);
-		n++;
 	}
-	return n;
+	return 0;
 }
 
 bool

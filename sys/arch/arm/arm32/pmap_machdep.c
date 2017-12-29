@@ -3932,6 +3932,20 @@ pmap_remove_all(pmap_t pm)
 #ifdef PMAP_CACHE_VIVT
 	pmap_cache_wbinv_all(pm, PVF_EXEC);
 #endif
+
+#ifdef MULTIPROCESSOR
+	struct cpu_info * const ci = curcpu();
+	// This should be the last CPU with this pmap onproc
+	KASSERT(!kcpuset_isotherset(pm->pm_onproc, cpu_index(ci)));
+	if (kcpuset_isset(pm->pm_onproc, cpu_index(ci)))
+#endif
+		pmap_tlb_asid_deactivate(pm);
+#ifdef MULTIPROCESSOR
+	KASSERT(kcpuset_iszero(pm->pm_onproc));
+#endif
+
+	pmap_tlb_asid_release_all(pm);
+
 	pm->pm_remove_all = true;
 }
 
@@ -7160,3 +7174,69 @@ pmap_impl_bootstrap_pools(void)
 {
 }
 
+
+void
+pmap_md_pdetab_activate(pmap_t pm, struct lwp *l)
+{
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
+
+	/*
+	 * Assume that TTBR1 has only global mappings and TTBR0 only
+	 * has non-global mappings.  To prevent speculation from doing
+	 * evil things we disable translation table walks using TTBR0
+	 * before setting the CONTEXTIDR (ASID) or new TTBR0 value.
+	 * Once both are set, table walks are reenabled.
+	 */
+	const uint32_t old_ttbcr = armreg_ttbcr_read();
+	armreg_ttbcr_write(old_ttbcr | TTBCR_S_PD0);
+	arm_isb();
+
+	pmap_tlb_asid_acquire(pm, l);
+
+	struct cpu_info * const ci = curcpu();
+	struct pmap_asid_info * const pai = PMAP_PAI(pm, cpu_tlb_info(ci));
+
+	cpu_setttb(pm->pm_l1_pa, pai->pai_asid);
+	/*
+	 * Now we can reenable tablewalks since the CONTEXTIDR and TTRB0
+	 * have been updated.
+	 */
+	arm_isb();
+
+	if (pm != pmap_kernel()) {
+		armreg_ttbcr_write(old_ttbcr & ~TTBCR_S_PD0);
+	}
+	cpu_cpwait();
+
+	UVMHIST_LOG(maphist, " pm %#jx pm->pm_l1_pa %08jx asid %ju... done",
+	    (uintptr_t)pm, pm->pm_l1_pa, pai->pai_asid, 0);
+
+	KASSERTMSG(ci->ci_pmap_asid_cur == pai->pai_asid, "%u vs %u",
+	    ci->ci_pmap_asid_cur, pai->pai_asid);
+	ci->ci_pmap_cur = pm;
+}
+
+void
+pmap_md_pdetab_deactivate(pmap_t pm)
+{
+
+	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
+
+	kpreempt_disable();
+	struct cpu_info * const ci = curcpu();
+	/*
+	 * Disable translation table walks from TTBR0 while no pmap has been
+	 * activated.
+	 */
+	const uint32_t old_ttbcr = armreg_ttbcr_read();
+	armreg_ttbcr_write(old_ttbcr | TTBCR_S_PD0);
+	arm_isb();
+	pmap_tlb_asid_deactivate(pm);
+	cpu_setttb(pmap_kernel()->pm_l1_pa, KERNEL_PID);
+	arm_isb();
+
+	ci->ci_pmap_cur = pmap_kernel();
+	KASSERTMSG(ci->ci_pmap_asid_cur == KERNEL_PID, "ci_pmap_asid_cur %u",
+	    ci->ci_pmap_asid_cur);
+	kpreempt_enable();
+}

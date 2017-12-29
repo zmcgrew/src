@@ -1,4 +1,4 @@
-/*	$NetBSD: var.c,v 1.215 2017/04/16 21:39:49 riastradh Exp $	*/
+/*	$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $	*/
 
 /*
  * Copyright (c) 1988, 1989, 1990, 1993
@@ -69,14 +69,14 @@
  */
 
 #ifndef MAKE_NATIVE
-static char rcsid[] = "$NetBSD: var.c,v 1.215 2017/04/16 21:39:49 riastradh Exp $";
+static char rcsid[] = "$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $";
 #else
 #include <sys/cdefs.h>
 #ifndef lint
 #if 0
 static char sccsid[] = "@(#)var.c	8.3 (Berkeley) 3/19/94";
 #else
-__RCSID("$NetBSD: var.c,v 1.215 2017/04/16 21:39:49 riastradh Exp $");
+__RCSID("$NetBSD: var.c,v 1.217 2017/12/08 03:36:42 sjg Exp $");
 #endif
 #endif /* not lint */
 #endif
@@ -1061,11 +1061,11 @@ Var_Append(const char *name, const char *val, GNode *ctxt)
 	name = expanded_name;
     }
 
-    v = VarFind(name, ctxt, (ctxt == VAR_GLOBAL) ? FIND_ENV : 0);
+    v = VarFind(name, ctxt, (ctxt == VAR_GLOBAL) ? (FIND_CMD|FIND_ENV) : 0);
 
     if (v == NULL) {
-	VarAdd(name, val, ctxt);
-    } else {
+	Var_Set(name, val, ctxt, 0);
+    } else if (ctxt == VAR_CMD || !(v->flags & VAR_FROM_CMD)) {
 	Buf_AddByte(&v->val, ' ');
 	Buf_AddBytes(&v->val, strlen(val), val);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: viaide.c,v 1.84 2014/03/29 19:28:25 christos Exp $	*/
+/*	$NetBSD: viaide.c,v 1.86 2017/10/20 07:06:08 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000, 2001 Manuel Bouyer.
@@ -26,11 +26,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: viaide.c,v 1.84 2014/03/29 19:28:25 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: viaide.c,v 1.86 2017/10/20 07:06:08 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
@@ -1071,14 +1070,7 @@ via_vt6421_chansetup(struct pciide_softc *sc, int channel)
 
 	cp->ata_channel.ch_channel = channel;
 	cp->ata_channel.ch_atac = &sc->sc_wdcdev.sc_atac;
-	cp->ata_channel.ch_queue =
-	    malloc(sizeof(struct ata_queue), M_DEVBUF, M_NOWAIT);
-	if (cp->ata_channel.ch_queue == NULL) {
-		aprint_error("%s channel %d: "
-		    "can't allocate memory for command queue",
-		    device_xname(sc->sc_wdcdev.sc_atac.atac_dev), channel);
-		return 0;
-	}
+
 	return 1;
 }
 
@@ -1206,7 +1198,7 @@ via_sata_chip_map_new(struct pciide_softc *sc,
 			    "couldn't map channel %d ctl regs\n", channel);
 			return;
 		}
-		wdc_init_shadow_regs(wdc_cp);
+		wdc_init_shadow_regs(wdr);
 		wdr->data32iot = wdr->cmd_iot;
 		wdr->data32ioh = wdr->cmd_iohs[wd_data];
 		wdcattach(wdc_cp);

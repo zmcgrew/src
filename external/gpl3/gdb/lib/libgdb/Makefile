@@ -1,4 +1,7 @@
-#	$NetBSD: Makefile,v 1.11 2016/10/14 16:38:27 christos Exp $
+#	$NetBSD: Makefile,v 1.19 2017/12/13 21:52:55 joerg Exp $
+
+NOCTF=
+HOSTPROG_CXX=   1
 
 .include <bsd.own.mk>
 
@@ -9,8 +12,6 @@ LIB=		gdb
 GDBARCHDIR=	${.CURDIR}/arch/${GDB_MACHINE_ARCH}
 
 .include "${GDBARCHDIR}/defs.mk"
-
-DIST=		${NETBSDSRCDIR}/gnu/dist/gdb6
 
 SRCS=		${G_LIBGDB_OBS:.o=.c}
 GCPPFLAGS=	${G_INTERNAL_CFLAGS}
@@ -37,17 +38,34 @@ CPPFLAGS+=	-I${.CURDIR} \
 # code that's never exercised on NetBSD.
 CPPFLAGS.inf-ptrace.c=	-Wno-error
 
+# XXX: I should fix these...
+CPPFLAGS.i386-nbsd-tdep.c+= -Wno-narrowing
+CPPFLAGS.arm-get-next-pcs.c+= -Wno-narrowing
+CPPFLAGS.mips-tdep.c+= -Wno-narrowing
+CPPFLAGS.sh-nbsd-tdep.c+= -Wno-narrowing
+CPPFLAGS.ppc-nbsd-tdep.c+= -Wno-narrowing
+CPPFLAGS.alpha-nbsd-tdep.c+= -Wno-narrowing
+CPPFLAGS.alpha-tdep.c+= -Wno-narrowing
+CPPFLAGS.rs6000-tdep.c+= -Wno-narrowing
+CPPFLAGS.hppa-nbsd-tdep.c+= -Wno-narrowing
+
 CWARNFLAGS.clang+=	-Wno-switch
 
 .include "../../Makefile.inc"
 .include <bsd.lib.mk>
 
+# Force c++
+CWARNFLAGS.clang+=	-Wno-deprecated
+HOST_CC:=		${HOST_CXX}
+CC:=			${CXX}
+CFLAGS:=		${CXXFLAGS} -std=gnu++11 -Wno-error=stack-protector
+
 .PATH: ${DIST}/gdb ${DIST}/gdb/arch ${DIST}/gdb/mi ${DIST}/gdb/cli  \
     ${DIST}/gdb/tui ${DIST}/gdb/python ${DIST}/gdb/common ${DIST}/gdb/target \
-    ${DIST}/gdb/guile ${DIST}/gdb/compile ${DIST}/gdb/doc ${GDBARCHDIR}
+    ${DIST}/gdb/nat ${DIST}/gdb/guile ${DIST}/gdb/compile ${DIST}/gdb/doc \
+    ${GDBARCHDIR}
 
 #
-COPTS+=	-Wno-stack-protector
 
 ada-exp.c: ada-lex.c
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_netbsd.c,v 1.207 2017/07/31 15:38:01 maxv Exp $	*/
+/*	$NetBSD: netbsd32_netbsd.c,v 1.212 2017/12/26 08:30:58 kamil Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.207 2017/07/31 15:38:01 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.212 2017/12/26 08:30:58 kamil Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ddb.h"
@@ -159,7 +159,11 @@ struct emul emul_netbsd32 = {
 	.e_usertrap =		NULL,
 	.e_ucsize =		sizeof(ucontext32_t),
 	.e_startlwp =		startlwp32,
-	.e_ktrpsig =		netbsd32_ktrpsig
+#ifdef notyet
+	.e_ktrpsig =		netbsd32_ktrpsig,
+#else
+	.e_ktrpsig =		NULL,
+#endif
 };
 
 /*
@@ -694,30 +698,6 @@ netbsd32_chroot(struct lwp *l, const struct netbsd32_chroot_args *uap, register_
 
 	NETBSD32TOP_UAP(path, const char);
 	return (sys_chroot(l, &ua, retval));
-}
-
-int
-netbsd32_sbrk(struct lwp *l, const struct netbsd32_sbrk_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(int) incr;
-	} */
-	struct sys_sbrk_args ua;
-
-	NETBSD32TO64_UAP(incr);
-	return (sys_sbrk(l, &ua, retval));
-}
-
-int
-netbsd32_sstk(struct lwp *l, const struct netbsd32_sstk_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(int) incr;
-	} */
-	struct sys_sstk_args ua;
-
-	NETBSD32TO64_UAP(incr);
-	return (sys_sstk(l, &ua, retval));
 }
 
 int
@@ -2026,17 +2006,6 @@ netbsd32___fhopen40(struct lwp *l, const struct netbsd32___fhopen40_args *uap, r
 }
 
 /* virtual memory syscalls */
-int
-netbsd32_ovadvise(struct lwp *l, const struct netbsd32_ovadvise_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(int) anom;
-	} */
-	struct sys_ovadvise_args ua;
-
-	NETBSD32TO64_UAP(anom);
-	return (sys_ovadvise(l, &ua, retval));
-}
 
 void
 netbsd32_adjust_limits(struct proc *p)
@@ -2718,12 +2687,9 @@ netbsd32_pipe2(struct lwp *l, const struct netbsd32_pipe2_args *uap,
 	} */
 	int fd[2], error;
 
-	error = pipe1(l, retval, SCARG(uap, flags));
+	error = pipe1(l, fd, SCARG(uap, flags));
 	if (error != 0)
 		return error;
-
-	fd[0] = retval[0];
-	fd[1] = retval[1];
 
 	error = copyout(fd, SCARG_P32(uap, fildes), sizeof(fd));
 	if (error != 0)

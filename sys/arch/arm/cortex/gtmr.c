@@ -1,4 +1,4 @@
-/*	$NetBSD: gtmr.c,v 1.20 2017/09/09 13:14:30 jmcneill Exp $	*/
+/*	$NetBSD: gtmr.c,v 1.23 2017/11/30 14:50:34 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.20 2017/09/09 13:14:30 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.23 2017/11/30 14:50:34 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -129,12 +129,14 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 	evcnt_attach_dynamic(&sc->sc_ev_missing_ticks, EVCNT_TYPE_MISC, NULL,
 	    device_xname(self), "missing interrupts");
 
-	sc->sc_global_ih = intr_establish(mpcaa->mpcaa_irq, IPL_CLOCK,
-	    IST_LEVEL | IST_MPSAFE, gtmr_intr, NULL);
-	if (sc->sc_global_ih == NULL)
-		panic("%s: unable to register timer interrupt", __func__);
-	aprint_normal_dev(self, "interrupting on irq %d\n",
-	    mpcaa->mpcaa_irq);
+	if (mpcaa->mpcaa_irq != -1) {
+		sc->sc_global_ih = intr_establish(mpcaa->mpcaa_irq, IPL_CLOCK,
+		    IST_LEVEL | IST_MPSAFE, gtmr_intr, NULL);
+		if (sc->sc_global_ih == NULL)
+			panic("%s: unable to register timer interrupt", __func__);
+		aprint_normal_dev(self, "interrupting on irq %d\n",
+		    mpcaa->mpcaa_irq);
+	}
 
 	const uint32_t cnt_frq = armreg_cnt_frq_read();
 	if (cnt_frq == 0) {
@@ -245,19 +247,25 @@ gtmr_delay(unsigned int n)
 	uint32_t freq = sc->sc_freq ? sc->sc_freq : armreg_cnt_frq_read();
 	KASSERT(freq != 0);
 
-	/*
-	 * not quite divide by 1000000 but close enough
-	 * (higher by 1.3% which means we wait 1.3% longer).
-	 */
-	const uint64_t incr_per_us = (freq >> 20) + (freq >> 24);
+	const unsigned int incr_per_us = howmany(freq, 1000000);
+	unsigned int delta = 0, usecs = 0;
 
 	arm_isb();
-	const uint64_t base = armreg_cntp_ct_read();
-	const uint64_t delta = n * incr_per_us;
-	const uint64_t finish = base + delta;
+	uint64_t last = armreg_cntp_ct_read();
 
-	while (armreg_cntp_ct_read() < finish) {
-		arm_isb();	/* spin */
+	while (n > usecs) {
+		arm_isb();
+		uint64_t curr = armreg_cntp_ct_read();
+		if (curr < last)
+			delta += curr + (UINT64_MAX - last);
+		else
+			delta += curr - last;
+
+		last = curr;
+		if (delta >= incr_per_us) {
+			usecs += delta / incr_per_us;
+			delta %= incr_per_us;
+		}
 	}
 }
 
@@ -308,7 +316,7 @@ gtmr_intr(void *arg)
 #endif
 
 #if 0
-	printf("%s(%p): %s: now %#"PRIx64" delta %"PRIu64"\n", 
+	printf("%s(%p): %s: now %#"PRIx64" delta %"PRIu64"\n",
 	     __func__, cf, ci->ci_data.cpu_name, now, delta);
 #endif
 	KASSERTMSG(delta > sc->sc_autoinc / 100,

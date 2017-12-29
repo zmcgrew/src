@@ -1,4 +1,4 @@
-/*	$NetBSD: satalink.c,v 1.53 2016/08/23 09:46:45 msaitoh Exp $	*/
+/*	$NetBSD: satalink.c,v 1.55 2017/10/20 07:06:08 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: satalink.c,v 1.53 2016/08/23 09:46:45 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: satalink.c,v 1.55 2017/10/20 07:06:08 jdolecek Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -600,14 +600,7 @@ sii3114_chansetup(struct pciide_softc *sc, int channel)
 	cp->name = channel_names[channel];
 	cp->ata_channel.ch_channel = channel;
 	cp->ata_channel.ch_atac = &sc->sc_wdcdev.sc_atac;
-	cp->ata_channel.ch_queue =
-	    malloc(sizeof(struct ata_queue), M_DEVBUF, M_NOWAIT);
-	if (cp->ata_channel.ch_queue == NULL) {
-		aprint_error("%s %s channel: "
-		    "can't allocate memory for command queue",
-		    device_xname(sc->sc_wdcdev.sc_atac.atac_dev), cp->name);
-		return (0);
-	}
+
 	return (1);
 }
 
@@ -651,7 +644,7 @@ sii3114_mapchan(struct pciide_channel *cp)
 			goto bad;
 		}
 	}
-	wdc_init_shadow_regs(wdc_cp);
+	wdc_init_shadow_regs(wdr);
 	wdr->data32iot = wdr->cmd_iot;
 	wdr->data32ioh = wdr->cmd_iohs[0];
 	wdcattach(wdc_cp);

@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.75 2017/08/31 19:55:43 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.80 2017/12/28 23:23:47 christos Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -222,8 +222,10 @@ attach  mpl115a at iic
 file    dev/i2c/mpl115a.c		mpl115a
 
 # AXP20x Power Management Unit
-device	axp20x: sysmon_envsys
+device	axp20x { }: sysmon_envsys
+device	axp20xreg: axp20x
 attach	axp20x at iic
+attach	axp20xreg at axp20x
 file	dev/i2c/axp20x.c			axp20x		needs-flag
 
 # AXP22x Power Management Unit
@@ -267,3 +269,47 @@ file	dev/i2c/as3722.c			as3722pmic	needs-flag
 device	tcakp: wskbddev, linux_keymap
 attach	tcakp at iic
 file	dev/i2c/tcakp.c				tcakp
+
+# MAXIM MAX77620 Power Management IC
+device	max77620pmic
+attach	max77620pmic at iic
+file	dev/i2c/max77620.c			max77620pmic
+
+# Texas Instruments TCA9539 I/O Expander
+device	tcagpio
+attach	tcagpio at iic
+file	dev/i2c/tcagpio.c			tcagpio
+
+# Silicon Lab SI7013/SI7020/SI7021 Temperature and Humidity sensor
+device si70xxtemp
+attach si70xxtemp at iic
+file dev/i2c/si70xx.c				si70xxtemp
+
+# Aosong AM2315 Temperature and Humidity sensor
+device am2315temp
+attach am2315temp at iic
+file dev/i2c/am2315.c				am2315temp
+
+# Silergy SY8106A regulator
+device	sy8106a
+attach	sy8106a at iic
+file	dev/i2c/sy8106a.c			sy8106a
+
+# HID over i2c
+# HID "bus"
+define  ihidbus {[ reportid = -1 ]}
+
+# HID root device for multiple report IDs
+device  ihidev: hid, ihidbus
+attach  ihidev at iic
+file    dev/i2c/ihidev.c			ihidev
+
+#HID mice
+device	ims: hid, hidms, wsmousedev
+attach	ims at ihidbus
+file	dev/i2c/ims.c				ims
+
+#HID multitouch
+device	imt: hid, hidmt, wsmousedev
+attach	imt at ihidbus
+file	dev/i2c/imt.c				imt

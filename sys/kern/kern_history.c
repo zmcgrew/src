@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_history.c,v 1.14 2017/01/10 22:08:14 pgoyette Exp $	 */
+/*	$NetBSD: kern_history.c,v 1.16 2017/11/03 22:45:14 pgoyette Exp $	 */
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_history.c,v 1.14 2017/01/10 22:08:14 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_history.c,v 1.16 2017/11/03 22:45:14 pgoyette Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kernhist.h"
@@ -463,9 +463,9 @@ sysctl_kernhist_helper(SYSCTLFN_ARGS)
 	 * Copy history header info to the export structure
 	 */
 	j = find_string(xlate_t, &xlate_c, h->name, h->namelen);
-	buf->sh_listentry.shle_nameoffset = xlate_t[j].offset;
-	buf->sh_listentry.shle_numentries = h->n;
-	buf->sh_listentry.shle_nextfree = h->f;
+	buf->sh_nameoffset = xlate_t[j].offset;
+	buf->sh_numentries = h->n;
+	buf->sh_nextfree = h->f;
 
 	/*
 	 * Loop through the history events again, copying the data to

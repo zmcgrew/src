@@ -1,4 +1,5 @@
 /******************************************************************************
+  SPDX-License-Identifier: BSD-3-Clause
 
   Copyright (c) 2001-2017, Intel Corporation
   All rights reserved.
@@ -349,6 +350,11 @@ u64 ixgbe_get_supported_physical_layer_X540(struct ixgbe_hw *hw)
 		physical_layer |= IXGBE_PHYSICAL_LAYER_1000BASE_T;
 	if (ext_ability & IXGBE_MDIO_PHY_100BASETX_ABILITY)
 		physical_layer |= IXGBE_PHYSICAL_LAYER_100BASE_TX;
+
+	if (hw->mac.type == ixgbe_mac_X550) {
+		physical_layer |= IXGBE_PHYSICAL_LAYER_2500BASE_T
+		    | IXGBE_PHYSICAL_LAYER_5GBASE_T;
+	}
 
 	return physical_layer;
 }

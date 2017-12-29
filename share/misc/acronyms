@@ -1,4 +1,4 @@
-$NetBSD: acronyms,v 1.260 2017/09/18 03:14:02 riastradh Exp $
+$NetBSD: acronyms,v 1.264 2017/12/02 01:36:38 ginsbach Exp $
 10Q	thank you
 10X	thanks
 1337	elite ("leet")
@@ -73,6 +73,8 @@ BNYA	burned now you are
 BOC	but of course
 BOFH	bastard operator from hell
 BOT	back on topic
+BPM	beam propagation method
+BPM	beats per minute
 BRB	[I'll] be right back
 BSD	booze, sex, drugs
 BTDT	been there, done that
@@ -121,6 +123,7 @@ DTRT	do the right thing
 DTWT	do the wrong thing
 DWIM	do what I mean
 DYK	do you know?
+EA	early adopter
 ECR	electronic cash register
 EDS	eternal downward spiral
 EFT	electronic funds transfer
@@ -332,6 +335,8 @@ MOTAS	member of the appropriate sex
 MOTOS	member of the opposite sex
 MOTSS	member of the same sex
 MTF	more to follow
+MVP	minimum viable product
+MVP	most valuable player
 MYOB	mind your own business
 N/A	not {applicable,available}
 N/M	never mind
@@ -423,6 +428,7 @@ POV	point of view
 PPL	people
 PPL	pretty please
 PPP	petty pet peeve
+PPS	pulse per second (signal)
 PR	public relations
 PSA 	prostate-specific antigen
 PSA 	public service announcement

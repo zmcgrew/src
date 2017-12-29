@@ -1,4 +1,4 @@
-/*	$NetBSD: t_fmtcheck.c,v 1.3 2014/06/14 08:19:02 apb Exp $	*/
+/*	$NetBSD: t_fmtcheck.c,v 1.5 2017/12/13 06:47:04 rin Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.

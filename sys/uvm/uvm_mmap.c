@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_mmap.c,v 1.166 2017/05/20 07:27:15 chs Exp $	*/
+/*	$NetBSD: uvm_mmap.c,v 1.169 2017/12/19 18:34:47 kamil Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -46,7 +46,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.166 2017/05/20 07:27:15 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_mmap.c,v 1.169 2017/12/19 18:34:47 kamil Exp $");
 
 #include "opt_compat_netbsd.h"
 #include "opt_pax.h"
@@ -86,40 +86,6 @@ range_test(struct vm_map *map, vaddr_t addr, vsize_t size, bool ismmap)
 #endif
 
 	return res;
-}
-
-/*
- * unimplemented VM system calls:
- */
-
-/*
- * sys_sbrk: sbrk system call.
- */
-
-/* ARGSUSED */
-int
-sys_sbrk(struct lwp *l, const struct sys_sbrk_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(intptr_t) incr;
-	} */
-
-	return ENOSYS;
-}
-
-/*
- * sys_sstk: sstk system call.
- */
-
-/* ARGSUSED */
-int
-sys_sstk(struct lwp *l, const struct sys_sstk_args *uap, register_t *retval)
-{
-	/* {
-		syscallarg(int) incr;
-	} */
-
-	return ENOSYS;
 }
 
 /*
@@ -398,10 +364,12 @@ sys_mmap(struct lwp *l, const struct sys_mmap_args *uap, register_t *retval)
 	}
 
 	maxprot = PAX_MPROTECT_MAXPROTECT(l, prot, extraprot, maxprot);
-	if (((prot | extraprot) & maxprot) != (prot | extraprot))
-		return EACCES;
+	if (((prot | extraprot) & maxprot) != (prot | extraprot)) {
+		error = EACCES;
+		goto out;
+	}
 	if ((error = PAX_MPROTECT_VALIDATE(l, prot)))
-		return error;
+		goto out;
 
 	pax_aslr_mmap(l, &addr, orig_addr, flags);
 

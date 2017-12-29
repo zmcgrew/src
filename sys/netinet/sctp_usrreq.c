@@ -1,5 +1,5 @@
 /*	$KAME: sctp_usrreq.c,v 1.50 2005/06/16 20:45:29 jinmei Exp $	*/
-/*	$NetBSD: sctp_usrreq.c,v 1.6 2016/07/07 09:32:02 ozaki-r Exp $	*/
+/*	$NetBSD: sctp_usrreq.c,v 1.9 2017/12/10 11:52:14 rjs Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,7 +33,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.6 2016/07/07 09:32:02 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.9 2017/12/10 11:52:14 rjs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -528,6 +528,7 @@ sctp_attach(struct socket *so, int proto)
 	inp->sctp_flags &= ~SCTP_PCB_FLAGS_BOUND_V6;	/* I'm not v6! */
 #ifdef IPSEC
 	ip_inp = &inp->ip_inp.inp;
+	ip_inp->inp_af = proto;
 #endif
 	inp->inp_vflag |= INP_IPV4;
 	inp->inp_ip_ttl = ip_defttl;
@@ -571,6 +572,7 @@ static int
 sctp_detach(struct socket *so)
 {
 	struct sctp_inpcb *inp;
+
 	inp = (struct sctp_inpcb *)so->so_pcb;
 	if (inp == 0)
 		return EINVAL;
@@ -685,16 +687,19 @@ static int
 sctp_disconnect(struct socket *so)
 {
 	struct sctp_inpcb *inp;
+	int s;
 
 	inp = (struct sctp_inpcb *)so->so_pcb;
 	if (inp == NULL) {
 		return (ENOTCONN);
 	}
+	s = splsoftnet();
 	SCTP_INP_RLOCK(inp);
 	if (inp->sctp_flags & SCTP_PCB_FLAGS_TCPTYPE) {
 		if (LIST_EMPTY(&inp->sctp_asoc_list)) {
 			/* No connection */
 			SCTP_INP_RUNLOCK(inp);
+			splx(s);
 			return (0);
 		} else {
 			int some_on_streamwheel = 0;
@@ -704,6 +709,7 @@ sctp_disconnect(struct socket *so)
 			stcb = LIST_FIRST(&inp->sctp_asoc_list);
 			if (stcb == NULL) {
 				SCTP_INP_RUNLOCK(inp);
+				splx(s);
 				return (EINVAL);
 			}
 			asoc = &stcb->asoc;
@@ -730,6 +736,7 @@ sctp_disconnect(struct socket *so)
 				SCTP_INP_RUNLOCK(inp);
 				sctp_free_assoc(inp, stcb);
 				/* No unlock tcb assoc is gone */
+				splx(s);
 				return (0);
 			}
 			if (!TAILQ_EMPTY(&asoc->out_wheel)) {
@@ -777,22 +784,18 @@ sctp_disconnect(struct socket *so)
 				 * we still got (or just got) data to send,
 				 * so set SHUTDOWN_PENDING
 				 */
-				/*
-				 * XXX sockets draft says that MSG_EOF should
-				 * be sent with no data.
-				 * currently, we will allow user data to be
-				 * sent first and move to SHUTDOWN-PENDING
-				 */
 				asoc->state |= SCTP_STATE_SHUTDOWN_PENDING;
 			}
 			SCTP_TCB_UNLOCK(stcb);
 			SCTP_INP_RUNLOCK(inp);
+			splx(s);
 			return (0);
 		}
 		/* not reached */
 	} else {
 		/* UDP model does not support this */
 		SCTP_INP_RUNLOCK(inp);
+		splx(s);
 		return EOPNOTSUPP;
 	}
 }
@@ -2776,8 +2779,8 @@ sctp_optsset(struct socket *so, struct sockopt *sopt)
 		}
 		/* Mask off the flags that are allowed */
 		s_info->sinfo_flags = (s_info->sinfo_flags &
-				       (MSG_UNORDERED | MSG_ADDR_OVER |
-					MSG_PR_SCTP_TTL | MSG_PR_SCTP_BUF));
+				       (SCTP_UNORDERED | SCTP_ADDR_OVER |
+					SCTP_PR_SCTP_TTL | SCTP_PR_SCTP_BUF));
 		/* Copy it in */
 		stcb->asoc.def_send = *s_info;
 		SCTP_TCB_UNLOCK(stcb);

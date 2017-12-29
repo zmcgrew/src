@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig.c,v 1.337 2017/08/28 00:46:07 kamil Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.339 2017/12/07 19:49:43 christos Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.337 2017/08/28 00:46:07 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.339 2017/12/07 19:49:43 christos Exp $");
 
 #include "opt_ptrace.h"
 #include "opt_dtrace.h"
@@ -903,9 +903,10 @@ trapsignal(struct lwp *l, ksiginfo_t *ksi)
 	mask = &l->l_sigmask;
 	ps = p->p_sigacts;
 
-	if ((p->p_slflag & PSL_TRACED) == 0 &&
-	    sigismember(&p->p_sigctx.ps_sigcatch, signo) &&
-	    !sigismember(mask, signo)) {
+	const bool traced = (p->p_slflag & PSL_TRACED) != 0;
+	const bool caught = sigismember(&p->p_sigctx.ps_sigcatch, signo);
+	const bool masked = sigismember(mask, signo);
+	if (!traced && caught && !masked) {
 		mutex_exit(proc_lock);
 		l->l_ru.ru_nsignals++;
 		kpsendsig(l, ksi, mask);
@@ -920,11 +921,28 @@ trapsignal(struct lwp *l, ksiginfo_t *ksi)
 				    SIGACTION_PS(ps, signo).sa_handler,
 				    mask, ksi);
 		}
-	} else {
-		kpsignal2(p, ksi);
-		mutex_exit(p->p_lock);
-		mutex_exit(proc_lock);
+		return;
 	}
+
+	/*
+	 * If the signal is masked or ignored, then unmask it and
+	 * reset it to the default action so that the process or
+	 * its tracer will be notified.
+	 */
+	const bool ignored = SIGACTION_PS(ps, signo).sa_handler == SIG_IGN;
+	if (masked || ignored) {
+		mutex_enter(&ps->sa_mutex);
+		sigdelset(mask, signo);	
+		sigdelset(&p->p_sigctx.ps_sigcatch, signo);
+		sigdelset(&p->p_sigctx.ps_sigignore, signo);
+		sigdelset(&SIGACTION_PS(ps, signo).sa_mask, signo);
+		SIGACTION_PS(ps, signo).sa_handler = SIG_DFL;
+		mutex_exit(&ps->sa_mutex);
+	}
+
+	kpsignal2(p, ksi);
+	mutex_exit(p->p_lock);
+	mutex_exit(proc_lock);
 }
 
 /*
@@ -1215,7 +1233,6 @@ int
 kpsignal2(struct proc *p, ksiginfo_t *ksi)
 {
 	int prop, signo = ksi->ksi_signo;
-	struct sigacts *sa;
 	struct lwp *l = NULL;
 	ksiginfo_t *kp;
 	lwpid_t lid;
@@ -1275,20 +1292,6 @@ kpsignal2(struct proc *p, ksiginfo_t *ksi)
 				goto out;
 		}
 	} else {
-		/*
-		 * If the signal was the result of a trap and is not being
-		 * caught, then reset it to default action so that the
-		 * process dumps core immediately.
-		 */
-		if (KSI_TRAP_P(ksi)) {
-			sa = p->p_sigacts;
-			mutex_enter(&sa->sa_mutex);
-			if (!sigismember(&p->p_sigctx.ps_sigcatch, signo)) {
-				sigdelset(&p->p_sigctx.ps_sigignore, signo);
-				SIGACTION(p, signo).sa_handler = SIG_DFL;
-			}
-			mutex_exit(&sa->sa_mutex);
-		}
 
 		/*
 		 * If the signal is being ignored, then drop it.  Note: we
@@ -1365,7 +1368,8 @@ kpsignal2(struct proc *p, ksiginfo_t *ksi)
 			if ((error = sigput(&l->l_sigpend, p, kp)) != 0)
 				goto out;
 			membar_producer();
-			(void)sigpost(l, action, prop, kp->ksi_signo);
+			if (sigpost(l, action, prop, kp->ksi_signo) != 0)
+				signo = -1;
 		}
 		goto out;
 	}
@@ -2328,5 +2332,8 @@ filt_signal(struct knote *kn, long hint)
 }
 
 const struct filterops sig_filtops = {
-	0, filt_sigattach, filt_sigdetach, filt_signal
+		.f_isfd = 0,
+		.f_attach = filt_sigattach,
+		.f_detach = filt_sigdetach,
+		.f_event = filt_signal,
 };

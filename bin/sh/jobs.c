@@ -1,4 +1,4 @@
-/*	$NetBSD: jobs.c,v 1.88 2017/07/24 14:17:11 kre Exp $	*/
+/*	$NetBSD: jobs.c,v 1.95 2017/10/28 06:36:17 kre Exp $	*/
 
 /*-
  * Copyright (c) 1991, 1993
@@ -37,10 +37,11 @@
 #if 0
 static char sccsid[] = "@(#)jobs.c	8.5 (Berkeley) 5/4/95";
 #else
-__RCSID("$NetBSD: jobs.c,v 1.88 2017/07/24 14:17:11 kre Exp $");
+__RCSID("$NetBSD: jobs.c,v 1.95 2017/10/28 06:36:17 kre Exp $");
 #endif
 #endif /* not lint */
 
+#include <stdio.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
@@ -71,6 +72,7 @@ __RCSID("$NetBSD: jobs.c,v 1.88 2017/07/24 14:17:11 kre Exp $");
 #include "parser.h"
 #include "nodes.h"
 #include "jobs.h"
+#include "var.h"
 #include "options.h"
 #include "builtins.h"
 #include "trap.h"
@@ -80,6 +82,14 @@ __RCSID("$NetBSD: jobs.c,v 1.88 2017/07/24 14:17:11 kre Exp $");
 #include "memalloc.h"
 #include "error.h"
 #include "mystring.h"
+
+
+#ifndef	WCONTINUED
+#define	WCONTINUED 0		/* So we can compile on old systems */
+#endif
+#ifndef	WIFCONTINUED
+#define	WIFCONTINUED(x)	(0)		/* ditto */
+#endif
 
 
 static struct job *jobtab;		/* array of jobs */
@@ -95,9 +105,11 @@ static int ttyfd = -1;
 STATIC void restartjob(struct job *);
 STATIC void freejob(struct job *);
 STATIC struct job *getjob(const char *, int);
-STATIC int dowait(int, struct job *);
+STATIC int dowait(int, struct job *, struct job **);
 #define WBLOCK	1
 #define WNOFREE 2
+#define WSILENT 4
+STATIC int jobstatus(const struct job *, int);
 STATIC int waitproc(int, struct job *, int *);
 STATIC void cmdtxt(union node *);
 STATIC void cmdlist(union node *, int);
@@ -246,6 +258,8 @@ do_fgcmd(const char *arg_ptr)
 	int i;
 	int status;
 
+	if (jobs_invalid)
+		error("No current jobs");
 	jp = getjob(arg_ptr, 0);
 	if (jp->jobctl == 0)
 		error("job not created under job control");
@@ -338,6 +352,8 @@ bgcmd(int argc, char **argv)
 	int i;
 
 	nextopt("");
+	if (jobs_invalid)
+		error("No current jobs");
 	do {
 		jp = getjob(*argptr, 0);
 		if (jp->jobctl == 0)
@@ -370,6 +386,10 @@ restartjob(struct job *jp)
 		error("Cannot continue job (%s)", strerror(errno));
 	for (ps = jp->ps, i = jp->nprocs ; --i >= 0 ; ps++) {
 		if (WIFSTOPPED(ps->status)) {
+			VTRACE(DBG_JOBS, (
+			   "restartjob: [%zu] pid %d status change"
+			   " from %#x (stopped) to -1 (running)\n",
+			   (size_t)(jp-jobtab+1), ps->pid, ps->status));
 			ps->status = -1;
 			jp->state = JOBRUNNING;
 		}
@@ -467,7 +487,7 @@ showjob(struct output *out, struct job *jp, int mode)
 				fmtstr(s + col, 16, "Done");
 		} else {
 #if JOBS
-			if (WIFSTOPPED(ps->status)) 
+			if (WIFSTOPPED(ps->status))
 				st = WSTOPSIG(ps->status);
 			else /* WIFSIGNALED(ps->status) */
 #endif
@@ -501,32 +521,30 @@ showjob(struct output *out, struct job *jp, int mode)
 		outc('\n', out);
 	}
 	flushout(out);
-	jp->changed = 0;
+	jp->flags &= ~JOBCHANGED;
 	if (jp->state == JOBDONE && !(mode & SHOW_NO_FREE))
 		freejob(jp);
 }
-
 
 int
 jobscmd(int argc, char **argv)
 {
 	int mode, m;
-	int sv = jobs_invalid;
 
-	jobs_invalid = 0;
 	mode = 0;
 	while ((m = nextopt("lp")))
 		if (m == 'l')
 			mode = SHOW_PID;
 		else
 			mode = SHOW_PGID;
+	if (!iflag)
+		mode |= SHOW_NO_FREE;
 	if (*argptr)
 		do
 			showjob(out1, getjob(*argptr,0), mode);
 		while (*++argptr);
 	else
 		showjobs(out1, mode);
-	jobs_invalid = sv;
 	return 0;
 }
 
@@ -550,8 +568,8 @@ showjobs(struct output *out, int mode)
 	CTRACE(DBG_JOBS, ("showjobs(%x) called\n", mode));
 
 	/* If not even one one job changed, there is nothing to do */
-	gotpid = dowait(0, NULL);
-	while (dowait(0, NULL) > 0)
+	gotpid = dowait(WSILENT, NULL, NULL);
+	while (dowait(WSILENT, NULL, NULL) > 0)
 		continue;
 #ifdef JOBS
 	/*
@@ -576,10 +594,10 @@ showjobs(struct output *out, int mode)
 			freejob(jp);
 			continue;
 		}
-		if ((mode & SHOW_CHANGED) && !jp->changed)
+		if ((mode & SHOW_CHANGED) && !(jp->flags & JOBCHANGED))
 			continue;
-		if (silent && jp->changed) {
-			jp->changed = 0;
+		if (silent && (jp->flags & JOBCHANGED)) {
+			jp->flags &= ~JOBCHANGED;
 			continue;
 		}
 		showjob(out, jp, mode);
@@ -606,76 +624,254 @@ freejob(struct job *jp)
 	INTON;
 }
 
+/*
+ * Extract the status of a completed job (for $?)
+ */
+STATIC int
+jobstatus(const struct job *jp, int raw)
+{
+	int status = 0;
+	int retval;
+
+	if (pipefail && jp->nprocs) {
+		int i;
+
+		for (i = 0; i < jp->nprocs; i++)
+			if (jp->ps[i].status != 0)
+				status = jp->ps[i].status;
+	} else
+		status = jp->ps[jp->nprocs ? jp->nprocs - 1 : 0].status;
+
+	if (raw)
+		return status;
+
+	if (WIFEXITED(status))
+		retval = WEXITSTATUS(status);
+#if JOBS
+	else if (WIFSTOPPED(status))
+		retval = WSTOPSIG(status) + 128;
+#endif
+	else {
+		/* XXX: limits number of signals */
+		retval = WTERMSIG(status) + 128;
+	}
+
+	return retval;
+}
+
 
 
 int
 waitcmd(int argc, char **argv)
 {
-	struct job *job;
-	int status, retval;
+	struct job *job, *last;
+	int retval;
 	struct job *jp;
+	int i;
+	int any = 0;
+	int found;
+	char *pid = NULL, *fpid;
+	char **arg;
+	char idstring[20];
 
-	nextopt("");
-
-	if (!*argptr) {
-		/* wait for all jobs */
-		jp = jobtab;
-		if (jobs_invalid)
-			return 0;
-		for (;;) {
-			if (jp >= jobtab + njobs) {
-				/* no running procs */
-				return 0;
-			}
-			if (!jp->used || jp->state != JOBRUNNING) {
-				jp++;
-				continue;
-			}
-			if (dowait(WBLOCK, NULL) == -1)
-			       return 128 + lastsig();
-			jp = jobtab;
+	while ((i = nextopt("np:")) != '\0') {
+		switch (i) {
+		case 'n':
+			any = 1;
+			break;
+		case 'p':
+			if (pid)
+				error("more than one -p unsupported");
+			pid = optionarg;
+			break;
 		}
 	}
 
-	retval = 127;		/* XXXGCC: -Wuninitialized */
-	for (; *argptr; argptr++) {
-		job = getjob(*argptr, 1);
-		if (!job) {
-			retval = 127;
+	if (pid != NULL) {
+		if (!validname(pid, '\0', NULL))
+			error("invalid name: -p '%s'", pid);
+		if (unsetvar(pid, 0))
+			error("%s readonly", pid);
+	}
+
+	/*
+	 * If we have forked, and not yet created any new jobs, then
+	 * we have no children, whatever jobtab claims,
+	 * so simply return in that case.
+	 *
+	 * The return code is 127 if we had any pid args (none are found)
+	 * or if we had -n (nothing exited), but 0 for plain old "wait".
+	 */
+	if (jobs_invalid) {
+		CTRACE(DBG_WAIT, ("builtin wait%s%s in child, invalid jobtab\n",
+		    any ? " -n" : "", *argptr ? " pid..." : ""));
+		return (any || *argptr) ? 127 : 0;
+	}
+
+	/* clear stray flags left from previous waitcmd */
+	for (jp = jobtab, i = njobs ; --i >= 0 ; jp++) {
+		jp->flags &= ~JOBWANTED;
+		jp->ref = NULL;
+	}
+
+	CTRACE(DBG_WAIT,
+	    ("builtin wait%s%s\n", any ? " -n" : "", *argptr ? " pid..." : ""));
+
+	/*
+	 * First, validate the jobnum args, count how many refer to
+	 * (different) running jobs, and if we had -n, and found that one has
+	 * already finished, we return that one.   Otherwise remember
+	 * which ones we are looking for (JOBWANTED).
+	 */
+	found = 0;
+	last = NULL;
+	for (arg = argptr; *arg; arg++) {
+		last = jp = getjob(*arg, 1);
+		if (!jp)
+			continue;
+		if (jp->ref == NULL)
+			jp->ref = *arg;
+		if (any && jp->state == JOBDONE) {
+			/*
+			 * We just want any of them, and this one is
+			 * ready for consumption, bon apetit ...
+			 */
+			retval = jobstatus(jp, 0);
+			if (pid)
+				setvar(pid, *arg, 0);
+			if (!iflag)
+				freejob(jp);
+			CTRACE(DBG_WAIT, ("wait -n found %s already done: %d\n",			    *arg, retval));
+			return retval;
+		}
+		if (!(jp->flags & JOBWANTED)) {
+			/*
+			 * It is possible to list the same job several
+			 * times - the obvious "wait 1 1 1" or
+			 * "wait %% %2 102" where job 2 is current and pid 102
+			 * However many times it is requested, it is found once.
+			 */
+			found++;
+			jp->flags |= JOBWANTED;
+		}
+		job = jp;
+	}
+
+	VTRACE(DBG_WAIT, ("wait %s%s%sfound %d candidates (last %s)\n",
+	    any ? "-n " : "", *argptr ? *argptr : "",
+	    argptr[0] && argptr[1] ? "... " : " ", found,
+	    job ? (job->ref ? job->ref : "<no-arg>") : "none"));
+
+	/*
+	 * If we were given a list of jobnums:
+	 * and none of those exist, then we're done.
+	 */
+	if (*argptr && found == 0)
+		return 127;
+
+	/*
+	 * Otherwise we need to wait for something to complete
+	 * When it does, we check and see if it is one of the
+	 * jobs we're waiting on, and if so, we clean it up.
+	 * If we had -n, then we're done, otherwise we do it all again
+	 * until all we had listed are done, of if there were no
+	 * jobnum args, all are done.
+	 */
+
+	retval = any || *argptr ? 127 : 0;
+	fpid = NULL;
+	for (;;) {
+		VTRACE(DBG_WAIT, ("wait waiting (%d remain): ", found));
+		for (jp = jobtab, i = njobs; --i >= 0; jp++) {
+			if (jp->used && jp->flags & JOBWANTED &&
+			    jp->state == JOBDONE)
+				break;
+			if (jp->used && jp->state == JOBRUNNING)
+				break;
+		}
+		if (i < 0) {
+			CTRACE(DBG_WAIT, ("nothing running (ret: %d) fpid %s\n",
+			    retval, fpid ? fpid : "unset"));
+			if (pid && fpid)
+				setvar(pid, fpid, 0);
+			return retval;
+		}
+		VTRACE(DBG_WAIT, ("found @%d/%d state: %d\n", njobs-i, njobs,
+		    jp->state));
+
+		/*
+		 * There is at least 1 job running, so we can
+		 * safely wait() for something to exit.
+		 */
+		if (jp->state == JOBRUNNING) {
+			job = NULL;
+			if ((i = dowait(WBLOCK|WNOFREE, NULL, &job)) == -1)
+			       return 128 + lastsig();
+
+			/*
+			 * one of the job's processes exited,
+			 * but there are more
+			 */
+			if (job->state == JOBRUNNING)
+				continue;
+		} else
+			job = jp;	/* we want this, and it is done */
+
+		if (job->flags & JOBWANTED || (*argptr == 0 && any)) {
+			int rv;
+
+			job->flags &= ~JOBWANTED;	/* got it */
+			rv = jobstatus(job, 0);
+			VTRACE(DBG_WAIT, (
+			    "wanted %d (%s) done: st=%d", i,
+			    job->ref ? job->ref : "", rv));
+			if (any || job == last) {
+				retval = rv;
+				fpid = job->ref;
+
+				VTRACE(DBG_WAIT, (" save"));
+				if (pid) {
+				   /*
+				    * don't need fpid unless we are going
+				    * to return it.
+				    */
+				   if (fpid == NULL) {
+					/*
+					 * this only happens with "wait -n"
+					 * (that is, no pid args)
+					 */
+					snprintf(idstring, sizeof idstring,
+					    "%d", job->ps[ job->nprocs ? 
+						    job->nprocs-1 :
+						    0 ].pid);
+					fpid = idstring;
+				    }
+				    VTRACE(DBG_WAIT, (" (for %s)", fpid));
+				}
+			}
+
+			if (job->state == JOBDONE) {
+				VTRACE(DBG_WAIT, (" free"));
+				freejob(job);
+			}
+
+			if (any || (found > 0 && --found == 0)) {
+				if (pid && fpid)
+					setvar(pid, fpid, 0);
+				VTRACE(DBG_WAIT, (" return %d\n", retval));
+				return retval;
+			}
+			VTRACE(DBG_WAIT, ("\n"));
 			continue;
 		}
-		/* loop until process terminated or stopped */
-		while (job->state == JOBRUNNING) {
-			if (dowait(WBLOCK|WNOFREE, job) == -1)
-			       return 128 + lastsig();
-		}
-		if (pipefail && job->nprocs) {
-			int i;
 
-			status = 0;
-			for (i = 0; i < job->nprocs; i++)
-				if (job->ps[i].status != 0)
-					status = job->ps[i].status;
-		} else
-			status =
-			    job->ps[job->nprocs ? job->nprocs - 1 : 0].status;
-
-		if (WIFEXITED(status))
-			retval = WEXITSTATUS(status);
-#if JOBS
-		else if (WIFSTOPPED(status))
-			retval = WSTOPSIG(status) + 128;
-#endif
-		else {
-			/* XXX: limits number of signals */
-			retval = WTERMSIG(status) + 128;
-		}
-		if (!iflag)
+		/* this is to handle "wait" (no args) */
+		if (found == 0 && job->state == JOBDONE) {
+			VTRACE(DBG_JOBS|DBG_WAIT, ("Cleanup: %d\n", i));
 			freejob(job);
+		}
 	}
-	return retval;
 }
-
 
 
 int
@@ -683,9 +879,43 @@ jobidcmd(int argc, char **argv)
 {
 	struct job *jp;
 	int i;
+	int pg = 0, onep = 0, job = 0;
 
-	nextopt("");
+	while ((i = nextopt("gjp"))) {
+		switch (i) {
+		case 'g':	pg = 1;		break;
+		case 'j':	job = 1;	break;
+		case 'p':	onep = 1;	break;
+		}
+	}
+	CTRACE(DBG_JOBS, ("jobidcmd%s%s%s%s %s\n", pg ? " -g" : "",
+	    onep ? " -p" : "", job ? " -j" : "", jobs_invalid ? " [inv]" : "",
+	    *argptr ? *argptr : "<implicit %%>"));
+	if (pg + onep + job > 1)
+		error("-g -j and -p options cannot be combined");
+
+	if (argptr[0] && argptr[1])
+		error("usage: jobid [-g|-p|-r] jobid");
+
 	jp = getjob(*argptr, 0);
+	if (job) {
+		out1fmt("%%%zu\n", (size_t)(jp - jobtab + 1));
+		return 0;
+	}
+	if (pg) {
+		if (jp->pgrp != 0) {
+			out1fmt("%ld\n", (long)jp->pgrp);
+			return 0;
+		}
+		return 1;
+	}
+	if (onep) {
+		i = jp->nprocs - 1;
+		if (i < 0)
+			return 1;
+		out1fmt("%ld\n", (long)jp->ps[i].pid);
+		return 0;
+	}
 	for (i = 0 ; i < jp->nprocs ; ) {
 		out1fmt("%ld", (long)jp->ps[i].pid);
 		out1c(++i < jp->nprocs ? ' ' : '\n');
@@ -698,6 +928,8 @@ getjobpgrp(const char *name)
 {
 	struct job *jp;
 
+	if (jobs_invalid)
+		error("No such job: %s", name);
 	jp = getjob(name, 1);
 	if (jp == 0)
 		return 0;
@@ -716,7 +948,7 @@ getjob(const char *name, int noerror)
 	int pid;
 	int i;
 	const char *err_msg = "No such job: %s";
-		
+
 	if (name == NULL) {
 #if JOBS
 		jobno = curjob;
@@ -725,7 +957,7 @@ getjob(const char *name, int noerror)
 	} else if (name[0] == '%') {
 		if (is_number(name + 1)) {
 			jobno = number(name + 1) - 1;
-		} else if (!name[2]) {
+		} else if (!name[1] || !name[2]) {
 			switch (name[1]) {
 #if JOBS
 			case 0:
@@ -775,7 +1007,7 @@ getjob(const char *name, int noerror)
 		}
 	}
 
-	if (!jobs_invalid && jobno >= 0 && jobno < njobs) {
+	if (jobno >= 0 && jobno < njobs) {
 		jp = jobtab + jobno;
 		if (jp->used)
 			return jp;
@@ -832,8 +1064,9 @@ makejob(union node *node, int nprocs)
 	INTOFF;
 	jp->state = JOBRUNNING;
 	jp->used = 1;
-	jp->changed = 0;
+	jp->flags = 0;
 	jp->nprocs = 0;
+	jp->pgrp = 0;
 #if JOBS
 	jp->jobctl = jobctl;
 	set_curjob(jp, 1);
@@ -900,6 +1133,7 @@ forkparent(struct job *jp, union node *n, int mode, pid_t pid)
 			pgrp = pid;
 		else
 			pgrp = jp->ps[0].pid;
+		jp->pgrp = pgrp;
 		/* This can fail because we are doing it in the child also */
 		(void)setpgid(pid, pgrp);
 	}
@@ -913,7 +1147,7 @@ forkparent(struct job *jp, union node *n, int mode, pid_t pid)
 		if (/* iflag && rootshell && */ n)
 			commandtext(ps, n);
 	}
-	CTRACE(DBG_JOBS, ("In parent shell:  child = %d\n", pid));
+	CTRACE(DBG_JOBS, ("In parent shell: child = %d (mode %d)\n",pid,mode));
 	return pid;
 }
 
@@ -926,7 +1160,8 @@ forkchild(struct job *jp, union node *n, int mode, int vforked)
 	const char *nullerr = "Can't open %s";
 
 	wasroot = rootshell;
-	CTRACE(DBG_JOBS, ("Child shell %d\n", getpid()));
+	CTRACE(DBG_JOBS, ("Child shell %d %sforked from %d (mode %d)\n",
+	    getpid(), vforked?"v":"", getppid(), mode));
 	if (!vforked)
 		rootshell = 0;
 
@@ -1012,7 +1247,7 @@ waitforjob(struct job *jp)
 	INTOFF;
 	VTRACE(DBG_JOBS, ("waitforjob(%%%d) called\n", jp - jobtab + 1));
 	while (jp->state == JOBRUNNING) {
-		dowait(WBLOCK, jp);
+		dowait(WBLOCK, jp, NULL);
 	}
 #if JOBS
 	if (jp->jobctl) {
@@ -1023,13 +1258,8 @@ waitforjob(struct job *jp)
 	if (jp->state == JOBSTOPPED && curjob != jp - jobtab)
 		set_curjob(jp, 2);
 #endif
-	if (pipefail) {
-		status = 0;
-		for (st = 0; st < jp->nprocs; st++)
-			if (jp->ps[st].status != 0)
-				status = jp->ps[st].status;
-	} else
-		status = jp->ps[jp->nprocs - 1].status;
+	status = jobstatus(jp, 1);
+
 	/* convert to 8 bits */
 	if (WIFEXITED(status))
 		st = WEXITSTATUS(status);
@@ -1069,7 +1299,7 @@ waitforjob(struct job *jp)
  */
 
 STATIC int
-dowait(int flags, struct job *job)
+dowait(int flags, struct job *job, struct job **changed)
 {
 	int pid;
 	int status;
@@ -1080,6 +1310,10 @@ dowait(int flags, struct job *job)
 	int stopped;
 
 	VTRACE(DBG_JOBS|DBG_PROCS, ("dowait(%x) called\n", flags));
+
+	if (changed != NULL)
+		*changed = NULL;
+
 	do {
 		pid = waitproc(flags & WBLOCK, job, &status);
 		VTRACE(DBG_JOBS|DBG_PROCS, ("wait returns pid %d, status %#x\n",
@@ -1096,13 +1330,22 @@ dowait(int flags, struct job *job)
 			for (sp = jp->ps ; sp < jp->ps + jp->nprocs ; sp++) {
 				if (sp->pid == -1)
 					continue;
-				if (sp->pid == pid) {
+				if (sp->pid == pid &&
+				  (sp->status==-1 || WIFSTOPPED(sp->status))) {
 					VTRACE(DBG_JOBS | DBG_PROCS,
 			("Job %d: changing status of proc %d from %#x to %#x\n",
 						jp - jobtab + 1, pid,
 						sp->status, status));
-					sp->status = status;
+					if (WIFCONTINUED(status)) {
+						if (sp->status != -1)
+							jp->flags |= JOBCHANGED;
+						sp->status = -1;
+						jp->state = 0;
+					} else
+						sp->status = status;
 					thisjob = jp;
+					if (changed != NULL)
+						*changed = jp;
 				}
 				if (sp->status == -1)
 					stopped = 0;
@@ -1111,6 +1354,7 @@ dowait(int flags, struct job *job)
 			}
 			if (stopped) {		/* stopped or done */
 				int state = done ? JOBDONE : JOBSTOPPED;
+
 				if (jp->state != state) {
 					VTRACE(DBG_JOBS,
 				("Job %d: changing state from %d to %d\n",
@@ -1125,20 +1369,22 @@ dowait(int flags, struct job *job)
 		}
 	}
 
-	if (thisjob && thisjob->state != JOBRUNNING) {
+	if (thisjob &&
+	    (thisjob->state != JOBRUNNING || thisjob->flags & JOBCHANGED)) {
 		int mode = 0;
+
 		if (!rootshell || !iflag)
 			mode = SHOW_SIGNALLED;
 		if ((job == thisjob && (flags & WNOFREE) == 0) ||
-		    (job != thisjob && (flags & WNOFREE) != 0))
+		    job != thisjob)
 			mode = SHOW_SIGNALLED | SHOW_NO_FREE;
-		if (mode)
+		if (mode && (flags & WSILENT) == 0)
 			showjob(out2, thisjob, mode);
 		else {
 			VTRACE(DBG_JOBS,
 			    ("Not printing status, rootshell=%d, job=%p\n",
 			    rootshell, job));
-			thisjob->changed = 1;
+			thisjob->flags |= JOBCHANGED;
 		}
 	}
 
@@ -1193,11 +1439,12 @@ waitproc(int block, struct job *jp, int *status)
 	int flags = 0;
 
 #if JOBS
-	if (jp != NULL && jp->jobctl)
-		flags |= WUNTRACED;
+	if (mflag || (jp != NULL && jp->jobctl))
+		flags |= WUNTRACED | WCONTINUED;
 #endif
 	if (block == 0)
 		flags |= WNOHANG;
+	VTRACE(DBG_WAIT, ("waitproc: doing waitpid(flags=%#x)\n", flags));
 	return waitpid(-1, status, flags);
 #else
 #ifdef SYSV

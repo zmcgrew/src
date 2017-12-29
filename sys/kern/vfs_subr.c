@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_subr.c,v 1.468 2017/06/04 07:58:29 hannken Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.470 2017/10/27 12:25:15 joerg Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.468 2017/06/04 07:58:29 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.470 2017/10/27 12:25:15 joerg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"

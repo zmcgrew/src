@@ -1,4 +1,4 @@
-/* $NetBSD: tegra210_car.c,v 1.6 2017/09/22 10:54:44 jmcneill Exp $ */
+/* $NetBSD: tegra210_car.c,v 1.17 2017/09/28 09:44:29 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra210_car.c,v 1.6 2017/09/22 10:54:44 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra210_car.c,v 1.17 2017/09/28 09:44:29 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -436,6 +436,26 @@ static const char *mux_xusb_ss_p[] =
 	{ "CLK_M", "PLL_REF", "CLK_32K", "PLL_U_480M",
 	  NULL, NULL, NULL, NULL };
 
+static const char *mux_mselect_p[] =
+	{ "PLL_P", "PLL_C2", "PLL_C", "PLL_C4_OUT2",
+	  "PLL_C4_OUT1", "CLK_S", "CLK_M", "PLL_C4_OUT0" };
+
+static const char *mux_tsensor_p[] =
+	{ "PLL_P", "PLL_C2", "PLL_C", "PLL_C4_OUT0",
+	  "CLK_M", "PLL_C4_OUT1", "CLK_S", "PLL_C4_OUT2" };
+
+static const char *mux_soc_therm_p[] =
+	{ "CLK_M", "PLL_C", "PLL_P", "PLL_A",
+	  "PLL_C2", "PLL_C4_OUT0", "PLL_C4_OUT1", "PLL_C4_OUT2" };
+
+static const char *mux_hda2codec_2x_p[] =
+	{ "PLL_P", "PLL_C2", "PLL_C4_OUT0", "PLL_A",
+	  "PLL_A", "PLL_C4_OUT1", "CLK_M", "PLL_C4_OUT2" };
+
+static const char *mux_hda_p[] =
+	{ "PLL_P", "PLL_C2", "PLL_C", "PLL_C4_OUT0",
+	  NULL, "PLL_C4_OUT1", "CLK_M", "PLL_C4_OUT2" };
+
 static struct tegra_clk tegra210_car_clocks[] = {
 	CLK_FIXED("CLK_M", TEGRA210_REF_FREQ),
 
@@ -497,6 +517,24 @@ static struct tegra_clk tegra210_car_clocks[] = {
 		CAR_CLKSRC_XUSB_FS_REG, CAR_CLKSRC_XUSB_FS_SRC,
 		mux_xusb_fs_p),
 
+	CLK_MUX("MUX_MSELECT",
+		CAR_CLKSRC_MSELECT_REG, CAR_CLKSRC_MSELECT_SRC,
+		mux_mselect_p),
+
+	CLK_MUX("MUX_TSENSOR",
+		CAR_CLKSRC_TSENSOR_REG, CAR_CLKSRC_TSENSOR_SRC,
+		mux_tsensor_p),
+	CLK_MUX("MUX_SOC_THERM",
+		CAR_CLKSRC_SOC_THERM_REG, CAR_CLKSRC_SOC_THERM_SRC,
+		mux_soc_therm_p),
+
+	CLK_MUX("MUX_HDA2CODEC_2X",
+		CAR_CLKSRC_HDA2CODEC_2X_REG, CAR_CLKSRC_HDA2CODEC_2X_SRC,
+		mux_hda2codec_2x_p),
+	CLK_MUX("MUX_HDA",
+		CAR_CLKSRC_HDA_REG, CAR_CLKSRC_HDA_SRC,
+		mux_hda_p),
+
 	CLK_DIV("DIV_UARTA", "MUX_UARTA",
 		CAR_CLKSRC_UARTA_REG, CAR_CLKSRC_UART_DIV),
 	CLK_DIV("DIV_UARTB", "MUX_UARTB",
@@ -538,6 +576,33 @@ static struct tegra_clk tegra210_car_clocks[] = {
 		CAR_CLKSRC_XUSB_FALCON_REG, CAR_CLKSRC_XUSB_FALCON_DIV),
 	CLK_DIV("USB2_HSIC_TRK", "CLK_M",
 		CAR_CLKSRC_USB2_HSIC_TRK_REG, CAR_CLKSRC_USB2_HSIC_TRK_DIV),
+	CLK_DIV("DIV_PLL_U_OUT1", "PLL_U",
+		CAR_PLLU_OUTA_REG, CAR_PLLU_OUTA_OUT1_RATIO),
+	CLK_DIV("DIV_PLL_U_OUT2", "PLL_U",
+		CAR_PLLU_OUTA_REG, CAR_PLLU_OUTA_OUT2_RATIO),
+
+	CLK_DIV("DIV_MSELECT", "MUX_MSELECT",
+		CAR_CLKSRC_MSELECT_REG, CAR_CLKSRC_MSELECT_DIV),
+
+        CLK_DIV("DIV_TSENSOR", "MUX_TSENSOR",
+                CAR_CLKSRC_TSENSOR_REG, CAR_CLKSRC_TSENSOR_DIV),
+	CLK_DIV("DIV_SOC_THERM", "MUX_SOC_THERM",
+		CAR_CLKSRC_SOC_THERM_REG, CAR_CLKSRC_SOC_THERM_DIV),
+
+	CLK_DIV("DIV_HDA2CODEC_2X", "MUX_HDA2CODEC_2X",
+		CAR_CLKSRC_HDA2CODEC_2X_REG, CAR_CLKSRC_HDA2CODEC_2X_DIV),
+	CLK_DIV("DIV_HDA", "MUX_HDA",
+		CAR_CLKSRC_HDA_REG, CAR_CLKSRC_HDA_DIV),
+
+	CLK_GATE_SIMPLE("PLL_U_OUT1", "DIV_PLL_U_OUT1",
+		 CAR_PLLU_OUTA_REG, CAR_PLLU_OUTA_OUT1_CLKEN),
+	CLK_GATE_SIMPLE("PLL_U_OUT2", "DIV_PLL_U_OUT2",
+		 CAR_PLLU_OUTA_REG, CAR_PLLU_OUTA_OUT2_CLKEN),
+
+	CLK_GATE_SIMPLE("CML0", "PLL_E",
+		 CAR_PLLE_AUX_REG, CAR_PLLE_AUX_CML0_OEN),
+	CLK_GATE_SIMPLE("CML1", "PLL_E",
+		 CAR_PLLE_AUX_REG, CAR_PLLE_AUX_CML1_OEN),
 
 	CLK_GATE_L("UARTA", "DIV_UARTA", CAR_DEV_L_UARTA),
 	CLK_GATE_L("UARTB", "DIV_UARTB", CAR_DEV_L_UARTB),
@@ -553,25 +618,47 @@ static struct tegra_clk tegra210_car_clocks[] = {
 	CLK_GATE_V("I2C4", "DIV_I2C4", CAR_DEV_V_I2C4),
 	CLK_GATE_H("I2C5", "DIV_I2C5", CAR_DEV_H_I2C5),
 	CLK_GATE_X("I2C6", "DIV_I2C6", CAR_DEV_X_I2C6),
+	CLK_GATE_W("XUSB_GATE", "CLK_M", CAR_DEV_W_XUSB),
 	CLK_GATE_U("XUSB_HOST", "XUSB_HOST_SRC", CAR_DEV_U_XUSB_HOST),
 	CLK_GATE_W("XUSB_SS", "XUSB_SS_SRC", CAR_DEV_W_XUSB_SS),
 	CLK_GATE_H("FUSE", "CLK_M", CAR_DEV_H_FUSE),
-	CLK_GATE_Y("USB2_TRK", "UBS2_HSIC_TRK", CAR_DEV_Y_USB2_TRK),
+	CLK_GATE_Y("USB2_TRK", "USB2_HSIC_TRK", CAR_DEV_Y_USB2_TRK),
 	CLK_GATE_Y("HSIC_TRK", "USB2_HSIC_TRK", CAR_DEV_Y_HSIC_TRK),
+	CLK_GATE_H("APBDMA", "CLK_M", CAR_DEV_H_APBDMA),
+	CLK_GATE_L("USBD", "PLL_U_480M", CAR_DEV_L_USBD),
+	CLK_GATE_H("USB2", "PLL_U_480M", CAR_DEV_H_USB2),
+	CLK_GATE_V("MSELECT", "DIV_MSELECT", CAR_DEV_V_MSELECT),
+	CLK_GATE_U("PCIE", "CLK_M", CAR_DEV_U_PCIE),
+	CLK_GATE_U("AFI", "MSELECT", CAR_DEV_U_AFI),
+	CLK_GATE_V("TSENSOR", "DIV_TSENSOR", CAR_DEV_V_TSENSOR),
+	CLK_GATE_U("SOC_THERM", "DIV_SOC_THERM", CAR_DEV_U_SOC_THERM),
+	CLK_GATE_W("HDA2HDMI", "CLK_M", CAR_DEV_W_HDA2HDMICODEC),
+	CLK_GATE_V("HDA2CODEC_2X", "DIV_HDA2CODEC_2X", CAR_DEV_V_HDA2CODEC_2X),
+	CLK_GATE_V("HDA", "DIV_HDA", CAR_DEV_V_HDA),
 };
 
 struct tegra210_init_parent {
 	const char *clock;
 	const char *parent;
+	u_int rate;
+	u_int enable;
 } tegra210_init_parents[] = {
-	{ "SDMMC1", 		"PLL_P" },
-	{ "SDMMC2",		"PLL_P" },
-	{ "SDMMC3",		"PLL_P" },
-	{ "SDMMC4",		"PLL_P" },
-	{ "XUSB_HOST_SRC",	"PLL_P" },
-	{ "XUSB_FALCON_SRC",	"PLL_P" },
-	{ "XUSB_SS_SRC",	"PLL_U_480M" },
-	{ "XUSB_FS_SRC",	"PLL_U_48M" },
+	{ "SDMMC1", 		"PLL_P", 0, 0 },
+	{ "SDMMC2",		"PLL_P", 0, 0 },
+	{ "SDMMC3",		"PLL_P", 0, 0 },
+	{ "SDMMC4",		"PLL_P", 0, 0 },
+	{ "SOC_THERM",		"PLL_P", 0, 0 },
+	{ "TSENSOR",		"CLK_M", 0, 0 },
+	{ "XUSB_GATE",		NULL, 0, 1 },
+	{ "XUSB_HOST_SRC",	"PLL_P", 102000000, 0 },
+	{ "XUSB_FALCON_SRC",	"PLL_P", 204000000, 0 },
+	{ "XUSB_SS_SRC",	"PLL_U_480M", 120000000, 0 },
+	{ "XUSB_FS_SRC",	"PLL_U_48M", 48000000, 0 },
+	{ "PLL_U_OUT1",		NULL, 48000000, 1 },
+	{ "PLL_U_OUT2",		NULL, 60000000, 1 },
+	{ "CML0",		NULL, 0, 1 },
+	{ "AFI",		NULL, 0, 1 },
+	{ "PCIE",		NULL, 0, 1 },
 };
 
 struct tegra210_car_rst {
@@ -716,18 +803,38 @@ tegra210_car_parent_init(struct tegra210_car_softc *sc)
 
 	for (n = 0; n < __arraycount(tegra210_init_parents); n++) {
 		clk = clk_get(&sc->sc_clkdom, tegra210_init_parents[n].clock);
-		KASSERT(clk != NULL);
-		clk_parent = clk_get(&sc->sc_clkdom,
-		    tegra210_init_parents[n].parent);
-		KASSERT(clk_parent != NULL);
+		KASSERTMSG(clk != NULL, "tegra210 clock %s not found", tegra210_init_parents[n].clock);
 
-		error = clk_set_parent(clk, clk_parent);
-		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "couldn't set '%s' parent to '%s': %d\n",
-			    clk->name, clk_parent->name, error);
+		if (tegra210_init_parents[n].parent != NULL) {
+			clk_parent = clk_get(&sc->sc_clkdom,
+			    tegra210_init_parents[n].parent);
+			KASSERT(clk_parent != NULL);
+
+			error = clk_set_parent(clk, clk_parent);
+			if (error) {
+				aprint_error_dev(sc->sc_dev,
+				    "couldn't set '%s' parent to '%s': %d\n",
+				    clk->name, clk_parent->name, error);
+			}
+			clk_put(clk_parent);
 		}
-		clk_put(clk_parent);
+		if (tegra210_init_parents[n].rate != 0) {
+			error = clk_set_rate(clk, tegra210_init_parents[n].rate);
+			if (error) {
+				aprint_error_dev(sc->sc_dev,
+				    "couldn't set '%s' rate to %u Hz: %d\n",
+				    clk->name, tegra210_init_parents[n].rate,
+				    error);
+			}
+		}
+		if (tegra210_init_parents[n].enable) {
+			error = clk_enable(clk);
+			if (error) {
+				aprint_error_dev(sc->sc_dev,
+				    "couldn't enable '%s': %d\n", clk->name,
+				    error);
+			}
+		}
 		clk_put(clk);
 	}
 }
@@ -738,31 +845,66 @@ tegra210_car_utmip_init(struct tegra210_car_softc *sc)
 	bus_space_tag_t bst = sc->sc_bst;
 	bus_space_handle_t bsh = sc->sc_bsh;
 
-	const u_int enable_dly_count = 5;
-	const u_int stable_count = 150;
-	const u_int active_dly_count = 24;
-	const u_int xtal_freq_count = 385;
+	/*
+	 * Set up the UTMI PLL.
+	 */
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG3_REG,
+	    0, CAR_UTMIP_PLL_CFG3_REF_SRC_SEL);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG3_REG,
+	    0, CAR_UTMIP_PLL_CFG3_REF_DIS);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    0, CAR_UTMIPLL_HW_PWRDN_CFG0_IDDQ_OVERRIDE);
+	delay(10);
+	/* TODO UTMIP_PLL_CFG0 */
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG2_REG,
+	    CAR_UTMIP_PLL_CFG2_PHY_XTAL_CLOCKEN, 0);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG2_REG,
+	    0, CAR_UTMIP_PLL_CFG2_ACTIVE_DLY_COUNT);	/* Don't care */
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG2_REG,
+	    0, CAR_UTMIP_PLL_CFG2_STABLE_COUNT);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG1_REG,
+	    0, CAR_UTMIP_PLL_CFG1_ENABLE_DLY_COUNT);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG1_REG,
+	    0x3, CAR_UTMIP_PLL_CFG1_XTAL_FREQ_COUNT);
+
+	bus_space_write_4(bst, bsh, CAR_CLK_ENB_U_SET_REG, CAR_DEV_U_AFI);
+	bus_space_write_4(bst, bsh, CAR_CLK_ENB_U_SET_REG, CAR_DEV_U_PCIE);
+
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_L_CLR_REG, CAR_DEV_L_USBD);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_H_CLR_REG, CAR_DEV_H_USB2);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_W_CLR_REG, CAR_DEV_W_XUSB);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_U_CLR_REG, CAR_DEV_U_AFI);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_U_CLR_REG, CAR_DEV_U_PCIE);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_U_CLR_REG, CAR_DEV_U_PCIEXCLK);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_Y_CLR_REG, CAR_DEV_Y_PEX_USB_UPHY);
+	bus_space_write_4(bst, bsh, CAR_RST_DEV_Y_CLR_REG, CAR_DEV_Y_SATA_USB_UPHY);
 
 	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG2_REG,
-	    __SHIFTIN(stable_count, CAR_UTMIP_PLL_CFG2_STABLE_COUNT) |
-	    __SHIFTIN(active_dly_count, CAR_UTMIP_PLL_CFG2_ACTIVE_DLY_COUNT),
+	    CAR_UTMIP_PLL_CFG2_PD_SAMP_A_POWERUP |
+	    CAR_UTMIP_PLL_CFG2_PD_SAMP_B_POWERUP |
+	    CAR_UTMIP_PLL_CFG2_PD_SAMP_C_POWERUP,
 	    CAR_UTMIP_PLL_CFG2_PD_SAMP_A_POWERDOWN |
 	    CAR_UTMIP_PLL_CFG2_PD_SAMP_B_POWERDOWN |
-	    CAR_UTMIP_PLL_CFG2_PD_SAMP_C_POWERDOWN |
-	    CAR_UTMIP_PLL_CFG2_STABLE_COUNT |
-	    CAR_UTMIP_PLL_CFG2_ACTIVE_DLY_COUNT);
+	    CAR_UTMIP_PLL_CFG2_PD_SAMP_C_POWERDOWN);
 
-        tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG1_REG,
-	    __SHIFTIN(enable_dly_count, CAR_UTMIP_PLL_CFG1_ENABLE_DLY_COUNT) |
-	    __SHIFTIN(xtal_freq_count, CAR_UTMIP_PLL_CFG1_XTAL_FREQ_COUNT),
-	    CAR_UTMIP_PLL_CFG1_ENABLE_DLY_COUNT |
-	    CAR_UTMIP_PLL_CFG1_XTAL_FREQ_COUNT);
-
-	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG1_REG,
-	    0,
-	    CAR_UTMIP_PLL_CFG1_PLLU_POWERDOWN |
-	    CAR_UTMIP_PLL_CFG1_PLL_ENABLE_POWERDOWN);
-
+	/*
+	 * Set up UTMI PLL under hardware control
+	 */
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIP_PLL_CFG1_REG, 0,
+	    CAR_UTMIP_PLL_CFG1_PLL_ENABLE_POWERUP | CAR_UTMIP_PLL_CFG1_PLL_ENABLE_POWERDOWN);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    0, CAR_UTMIPLL_HW_PWRDN_CFG0_IDDQ_SWCTL);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    CAR_UTMIPLL_HW_PWRDN_CFG0_IDDQ_PD_INCLUDE, 0);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    0, CAR_UTMIPLL_HW_PWRDN_CFG0_CLK_ENABLE_SWCTL);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    CAR_UTMIPLL_HW_PWRDN_CFG0_USE_LOCKDET, 0);
+	tegra_reg_set_clear(bst, bsh, CLK_RST_CONTROLLER_XUSB_PLL_CFG0_REG,
+	    0, CLK_RST_CONTROLLER_XUSB_PLL_CFG0_UTMIPLL_LOCK_DLY);
+	delay(1);
+	tegra_reg_set_clear(bst, bsh, CAR_UTMIPLL_HW_PWRDN_CFG0_REG,
+	    CAR_UTMIPLL_HW_PWRDN_CFG0_SEQ_ENABLE, 0);
 }
 
 static void
@@ -781,6 +923,11 @@ tegra210_car_xusb_init(struct tegra210_car_softc *sc)
 	tegra_reg_set_clear(bst, bsh, CAR_PLLU_OUTA_REG, 0, CAR_PLLU_OUTA_OUT1_RSTN);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLU_OUTA_REG, 0, CAR_PLLU_OUTA_OUT2_RSTN);
 	delay(5);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLU_BASE_REG,
+	    __SHIFTIN(0x19, CAR_PLLU_BASE_DIVN) |
+	    __SHIFTIN(0x2, CAR_PLLU_BASE_DIVM) |
+	    __SHIFTIN(0x1, CAR_PLLU_BASE_DIVP),
+	    CAR_PLLU_BASE_DIVN | CAR_PLLU_BASE_DIVM | CAR_PLLU_BASE_DIVP);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLU_BASE_REG, CAR_PLLU_BASE_ENABLE, 0);
 	do {
 		delay(2);
@@ -794,20 +941,78 @@ tegra210_car_xusb_init(struct tegra210_car_softc *sc)
 	delay(2);
 
 	/*
+	 * Now switch PLLU to hw controlled mode.
+	 */
+	tegra_reg_set_clear(bst, bsh, CAR_PLLU_BASE_REG, 0, CAR_PLLU_BASE_OVERRIDE);
+	tegra_reg_set_clear(bst, bsh, CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_REG,
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_IDDQ_PD_INCLUDE |
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_USE_SWITCH_DETECT |
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_USE_LOCKDET,
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_CLK_ENABLE_SWCTL |
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_CLK_SWITCH_SWCTL);
+	tegra_reg_set_clear(bst, bsh, CLK_RST_CONTROLLER_XUSB_PLL_CFG0_REG, 0,
+	    CLK_RST_CONTROLLER_XUSB_PLL_CFG0_PLLU_LOCK_DLY);
+	delay(1);
+	tegra_reg_set_clear(bst, bsh, CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_REG,
+	    CLK_RST_CONTROLLER_PLLU_HW_PWRDN_CFG0_SEQ_ENABLE, 0);
+	delay(1);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLU_BASE_REG, 0, CAR_PLLU_BASE_CLKENABLE_USB);
+
+	/*
+	 * Set up PLLREFE
+	 */
+	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_MISC_REG,
+	    0, CAR_PLLREFE_MISC_IDDQ);
+	delay(5);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_BASE_REG,
+	    __SHIFTIN(0x4, CAR_PLLREFE_BASE_DIVM) |
+	    __SHIFTIN(0x41, CAR_PLLREFE_BASE_DIVN) |
+	    __SHIFTIN(0x0, CAR_PLLREFE_BASE_DIVP) |
+	    __SHIFTIN(0x0, CAR_PLLREFE_BASE_KCP),
+	    CAR_PLLREFE_BASE_DIVM |
+	    CAR_PLLREFE_BASE_DIVN |
+	    CAR_PLLREFE_BASE_DIVP |
+	    CAR_PLLREFE_BASE_KCP);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_BASE_REG,
+	    CAR_PLLREFE_BASE_ENABLE, 0);
+	do {
+		delay(2);
+		val = bus_space_read_4(bst, bsh, CAR_PLLREFE_MISC_REG);
+	} while ((val & CAR_PLLREFE_MISC_LOCK) == 0);
+
+	/*
 	 * Set up the PLLE.
 	 */
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_AUX_REG, 0, CAR_PLLE_AUX_REF_SEL_PLLREFE);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_AUX_REG, 0, CAR_PLLE_AUX_REF_SRC);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG, 0, CAR_PLLE_MISC_IDDQ_OVERRIDE);
 	delay(5);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG, CAR_PLLE_MISC_PTS, 0);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLE_BASE_REG,
+	    __SHIFTIN(0xe, CAR_PLLE_BASE_DIVP_CML) |
+	    __SHIFTIN(0x7d, CAR_PLLE_BASE_DIVN) |
+	    __SHIFTIN(0x2, CAR_PLLE_BASE_DIVM),
+	    CAR_PLLE_BASE_DIVP_CML |
+	    CAR_PLLE_BASE_DIVN |
+	    CAR_PLLE_BASE_DIVM);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG,
+	    CAR_PLLE_MISC_PTS,
+	    CAR_PLLE_MISC_KCP | CAR_PLLE_MISC_VREG_CTRL | CAR_PLLE_MISC_KVCO);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_BASE_REG, CAR_PLLE_BASE_ENABLE, 0);
 	do {
 		delay(2);
 		val = bus_space_read_4(bst, bsh, CAR_PLLE_MISC_REG);
 	} while ((val & CAR_PLLE_MISC_LOCK) == 0);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_SS_CNTL_REG, 0, CAR_PLLE_SS_CNTL_BYPASS_SS);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_SS_CNTL_REG, 0, CAR_PLLE_SS_CNTL_SSCBYP);
+	tegra_reg_set_clear(bst, bsh, CAR_PLLE_SS_CNTL_REG,
+	    __SHIFTIN(1, CAR_PLLE_SS_CNTL_SSCINC) |
+	    __SHIFTIN(0x23, CAR_PLLE_SS_CNTL_SSCINCINTRV) |
+	    __SHIFTIN(0x21, CAR_PLLE_SS_CNTL_SSCMAX),
+	    CAR_PLLE_SS_CNTL_SSCINC |
+	    CAR_PLLE_SS_CNTL_SSCINCINTRV |
+	    CAR_PLLE_SS_CNTL_SSCMAX |
+	    CAR_PLLE_SS_CNTL_SSCINVERT |
+	    CAR_PLLE_SS_CNTL_SSCCENTER |
+	    CAR_PLLE_SS_CNTL_BYPASS_SS |
+	    CAR_PLLE_SS_CNTL_SSCBYP);
 	delay(1);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_SS_CNTL_REG, 0, CAR_PLLE_SS_CNTL_INTERP_RESET);
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG, 0, CAR_PLLE_MISC_IDDQ_SWCTL);
@@ -819,39 +1024,7 @@ tegra210_car_xusb_init(struct tegra210_car_softc *sc)
 	tegra_reg_set_clear(bst, bsh, CAR_PLLE_AUX_REG, CAR_PLLE_AUX_SEQ_ENABLE, 0);
 
 	bus_space_write_4(bst, bsh, CAR_CLK_ENB_W_SET_REG, CAR_DEV_W_XUSB);
-
-	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_MISC_REG,
-	    0, CAR_PLLREFE_MISC_IDDQ);
-	val = __SHIFTIN(25, CAR_PLLREFE_BASE_DIVN) |
-	    __SHIFTIN(1, CAR_PLLREFE_BASE_DIVM);
-	bus_space_write_4(bst, bsh, CAR_PLLREFE_BASE_REG, val);
-
-	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_MISC_REG,
-	    0, CAR_PLLREFE_MISC_LOCK_OVERRIDE);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_BASE_REG,
-	    CAR_PLLREFE_BASE_ENABLE, 0);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLREFE_MISC_REG,
-	    CAR_PLLREFE_MISC_LOCK_ENABLE, 0);
-
-	do {
-		delay(2);
-		val = bus_space_read_4(bst, bsh, CAR_PLLREFE_MISC_REG);
-	} while ((val & CAR_PLLREFE_MISC_LOCK) == 0);
-
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG,
-	    CAR_PLLE_MISC_IDDQ_SWCTL, CAR_PLLE_MISC_IDDQ_OVERRIDE);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_BASE_REG,
-	    CAR_PLLE_BASE_ENABLE, 0);
-	tegra_reg_set_clear(bst, bsh, CAR_PLLE_MISC_REG,
-	    CAR_PLLE_MISC_LOCK_ENABLE, 0);
-
-	do {
-		delay(2);
-		val = bus_space_read_4(bst, bsh, CAR_PLLE_MISC_REG);
-	} while ((val & CAR_PLLE_MISC_LOCK) == 0);
-
-	tegra_reg_set_clear(bst, bsh, CAR_CLKSRC_XUSB_SS_REG,
-	    CAR_CLKSRC_XUSB_SS_HS_CLK_BYPASS, 0);
+	bus_space_write_4(bst, bsh, CAR_CLK_ENB_W_SET_REG, CAR_DEV_W_XUSB_PADCTL);
 }
 
 static void
@@ -964,6 +1137,9 @@ tegra210_car_clock_get_rate_pll(struct tegra210_car_softc *sc,
 	} else if (tpll->base_reg == CAR_PLLP_BASE_REG) {
 		/* XXX divp is not applied to PLLP's primary output */
 		divp = 0;
+	} else if (tpll->base_reg == CAR_PLLE_BASE_REG) {
+		divp = 0;
+		divm *= __SHIFTOUT(base, tpll->divp_mask);
 	} else {
 		divp = __SHIFTOUT(base, tpll->divp_mask);
 	}
@@ -1465,4 +1641,36 @@ tegra210_car_reset_deassert(device_t dev, void *priv)
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh, rst->clr_reg, rst->mask);
 
 	return 0;
+}
+
+void
+tegra210_car_xusbio_enable_hw_control(void)
+{
+	device_t dev = device_find_by_driver_unit("tegra210car", 0);
+	KASSERT(dev != NULL);
+	struct tegra210_car_softc * const sc = device_private(dev);
+	bus_space_tag_t bst = sc->sc_bst;
+	bus_space_handle_t bsh = sc->sc_bsh;
+
+	tegra_reg_set_clear(bst, bsh, CAR_XUSBIO_PLL_CFG0_REG,
+	    0,
+	    CAR_XUSBIO_PLL_CFG0_CLK_ENABLE_SWCTL |
+	    CAR_XUSBIO_PLL_CFG0_PADPLL_RESET_SWCTL);
+	tegra_reg_set_clear(bst, bsh, CAR_XUSBIO_PLL_CFG0_REG,
+	    CAR_XUSBIO_PLL_CFG0_PADPLL_SLEEP_IDDQ |
+	    CAR_XUSBIO_PLL_CFG0_PADPLL_USE_LOCKDET,
+	    0);
+}
+
+void
+tegra210_car_xusbio_enable_hw_seq(void)
+{
+	device_t dev = device_find_by_driver_unit("tegra210car", 0);
+	KASSERT(dev != NULL);
+	struct tegra210_car_softc * const sc = device_private(dev);
+	bus_space_tag_t bst = sc->sc_bst;
+	bus_space_handle_t bsh = sc->sc_bsh;
+
+	tegra_reg_set_clear(bst, bsh, CAR_XUSBIO_PLL_CFG0_REG,
+	    CAR_XUSBIO_PLL_CFG0_SEQ_ENABLE, 0);
 }
