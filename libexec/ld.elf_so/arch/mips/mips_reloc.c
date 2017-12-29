@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_reloc.c,v 1.69 2017/08/10 19:03:26 joerg Exp $	*/
+/*	$NetBSD: mips_reloc.c,v 1.71 2017/12/25 05:29:27 maya Exp $	*/
 
 /*
  * Copyright 1997 Michael L. Hitch <mhitch@montana.edu>
@@ -30,7 +30,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: mips_reloc.c,v 1.69 2017/08/10 19:03:26 joerg Exp $");
+__RCSID("$NetBSD: mips_reloc.c,v 1.71 2017/12/25 05:29:27 maya Exp $");
 #endif /* not lint */
 
 #include <sys/types.h>
@@ -61,7 +61,7 @@ caddr_t _rtld_bind(Elf_Word, Elf_Addr, Elf_Addr, Elf_Addr);
  * ELF64 MIPS encodes the relocs uniquely.  The first 32-bits of info contain
  * the symbol index.  The top 32-bits contain three relocation types encoded
  * in big-endian integer with first relocation in LSB.  This means for little
- * endian we have to byte swap that interger (r_type).
+ * endian we have to byte swap that integer (r_type).
  */
 #define	Elf_Sxword			Elf64_Sxword
 #define	ELF_R_NXTTYPE_64_P(r_type)	((((r_type) >> 8) & 0xff) == R_TYPE(64))
@@ -413,7 +413,7 @@ _rtld_relocate_nonplt_objects(Obj_Entry *obj)
 
 			store_ptr(where, val, ELFSIZE / 8);
 			rdbg(("DTPMOD %s in %s --> %p in %s",
-			    obj->strtab + obj->symtab[r_symndx].st_name,
+			    obj->strtab + obj->symtab[ELF_R_SYM(rel->r_info)].st_name,
 			    obj->path, (void *)old, defobj->path));
 			break;
 		}
@@ -434,7 +434,7 @@ _rtld_relocate_nonplt_objects(Obj_Entry *obj)
 			store_ptr(where, val, ELFSIZE / 8);
 
 			rdbg(("DTPREL %s in %s --> %p in %s",
-			    obj->strtab + obj->symtab[r_symndx].st_name,
+			    obj->strtab + obj->symtab[ELF_R_SYM(rel->r_info)].st_name,
 			    obj->path, (void *)old, defobj->path));
 			break;
 		}
@@ -456,7 +456,7 @@ _rtld_relocate_nonplt_objects(Obj_Entry *obj)
 			store_ptr(where, val, ELFSIZE / 8);
 
 			rdbg(("TPREL %s in %s --> %p in %s",
-			    obj->strtab + obj->symtab[r_symndx].st_name,
+			    obj->strtab + obj->symtab[ELF_R_SYM(rel->r_info)].st_name,
 			    obj->path, where, defobj->path));
 			break;
 		}
@@ -468,7 +468,7 @@ _rtld_relocate_nonplt_objects(Obj_Entry *obj)
 			    (u_long)ELF_R_TYPE(rel->r_info),
 			    (void *)rel->r_offset,
 			    (void *)load_ptr(where, sizeof(Elf_Sword)),
-			    obj->strtab + obj->symtab[r_symndx].st_name));
+			    obj->strtab + obj->symtab[ELF_R_SYM(rel->r_info)].st_name));
 			_rtld_error("%s: Unsupported relocation type %ld "
 			    "in non-PLT relocations",
 			    obj->path, (u_long) ELF_R_TYPE(rel->r_info));

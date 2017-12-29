@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock_50.c,v 1.4 2015/08/24 22:50:33 pooka Exp $	*/
+/*	$NetBSD: rtsock_50.c,v 1.6 2017/12/16 09:10:30 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,17 +61,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock_50.c,v 1.4 2015/08/24 22:50:33 pooka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock_50.c,v 1.6 2017/12/16 09:10:30 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
 #endif
 
-#if defined(COMPAT_14) && !defined(COMPAT_50)
-#define	COMPAT_50	1	/* 1.4 needs 5.0 */
+/*
+ * COMPAT_50 and COMPAT_RTSOCK must be defined for rtsock.c regardless of
+ * the currently enabled options.
+ */
+#ifndef COMPAT_50
+#define COMPAT_50
 #endif
 
-#if defined(COMPAT_50)
 #define	COMPAT_RTSOCK
 
 #include <net/rtsock.c>
@@ -151,5 +154,3 @@ compat_50_iflist(struct ifnet *ifp, struct rt_walkarg *w,
 	w->w_where = (char *)w->w_where + len;
 	return 0;
 }
-
-#endif /* COMPAT_50 */

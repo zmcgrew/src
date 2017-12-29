@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.442 2017/11/30 20:25:54 christos Exp $	*/
+/*	$NetBSD: audio.c,v 1.445 2017/12/16 16:04:20 nat Exp $	*/
 
 /*-
  * Copyright (c) 2016 Nathanial Sloss <nathanialsloss@yahoo.com.au>
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.442 2017/11/30 20:25:54 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.445 2017/12/16 16:04:20 nat Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -2223,10 +2223,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			}
 		}
 		audio_initbufs(sc, NULL);
-		if (audio_can_playback(sc))
+		if (sc->sc_usemixer && audio_can_playback(sc))
 			audio_init_ringbuffer(sc, &sc->sc_mixring.sc_mpr,
 			    AUMODE_PLAY);
-		if (audio_can_capture(sc))
+		if (sc->sc_usemixer && audio_can_capture(sc))
 			audio_init_ringbuffer(sc, &sc->sc_mixring.sc_mrr,
 			    AUMODE_RECORD);
 		sc->schedule_wih = false;
@@ -2725,12 +2725,13 @@ audio_setblksize(struct audio_softc *sc, struct virtual_channel *vc,
 		stream = vc->sc_pustream;
 	}
 
-	if (vc == sc->sc_hwvc) {
+	if (sc->sc_usemixer && vc == sc->sc_hwvc) {
 		mixcb->blksize = audio_calc_blksize(sc, parm);
 		cb->blksize = audio_calc_blksize(sc, &cb->s.param);
 	} else {
 		cb->blksize = audio_calc_blksize(sc, &stream->param);
-		if (SPECIFIED(blksize) && blksize > cb->blksize)
+		if ((!sc->sc_usemixer && SPECIFIED(blksize)) ||
+		    (SPECIFIED(blksize) && blksize > cb->blksize))
 			cb->blksize = blksize;
 	}
 }
@@ -2993,7 +2994,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			filter = vc->sc_pfilters[0];
 			filter->set_fetcher(filter, &ufetcher.base);
 			fetcher = &vc->sc_pfilters[vc->sc_npfilters - 1]->base;
-			cc = sc->sc_mixring.sc_mpr.blksize * 2;
+			if (sc->sc_usemixer)
+				cc = sc->sc_mixring.sc_mpr.blksize * 2;
+			else
+				cc = vc->sc_mpr.blksize * 2;
 			error = fetcher->fetch_to(sc, fetcher, &stream, cc);
 			if (error != 0) {
 				fetcher = &ufetcher.base;
@@ -5534,12 +5538,14 @@ mix_write(void *arg)
 			sc->sc_mixring.sc_mpr.blksize);
 	}
 
-	if (vc->sc_npfilters > 0) {
+	if (vc->sc_npfilters > 0 &&
+	    (sc->sc_usemixer || sc->sc_trigger_started)) {
 		null_fetcher.fetch_to = null_fetcher_fetch_to;
 		filter = vc->sc_pfilters[0];
 		filter->set_fetcher(filter, &null_fetcher);
 		fetcher = &vc->sc_pfilters[vc->sc_npfilters - 1]->base;
-		fetcher->fetch_to(sc, fetcher, &vc->sc_mpr.s, vc->sc_mpr.blksize);
+		fetcher->fetch_to(sc, fetcher, &vc->sc_mpr.s,
+		    vc->sc_mpr.blksize * 2);
  	}
 
 	if (sc->hw_if->trigger_output && sc->sc_trigger_started == false) {

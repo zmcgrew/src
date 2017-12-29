@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.4 2017/10/23 15:21:10 jmcneill Exp $ */
+/* $NetBSD: bwfm.c,v 1.7 2017/12/18 13:56:14 jmcneill Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -60,7 +60,6 @@ void	 bwfm_stop(struct ifnet *, int);
 void	 bwfm_watchdog(struct ifnet *);
 int	 bwfm_ioctl(struct ifnet *, u_long, void *);
 int	 bwfm_media_change(struct ifnet *);
-void	 bwfm_media_status(struct ifnet *, struct ifmediareq *);
 
 int	 bwfm_send_mgmt(struct ieee80211com *, struct ieee80211_node *,
 	     int, int);
@@ -148,6 +147,9 @@ bwfm_attach(struct bwfm_softc *sc)
 		t->t_sc = sc;
 		pcq_put(sc->sc_freetask, t);
 	}
+
+	/* Stop the device in case it was previously initialized */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_DOWN, 1);
 
 	if (bwfm_fwvar_cmd_get_int(sc, BWFM_C_GET_VERSION, &tmp)) {
 		printf("%s: could not read io type\n", DEVNAME(sc));
@@ -254,7 +256,7 @@ bwfm_attach(struct bwfm_softc *sc)
 	ic->ic_recv_mgmt = bwfm_recv_mgmt;
 	ic->ic_crypto.cs_key_set = bwfm_key_set;
 	ic->ic_crypto.cs_key_delete = bwfm_key_delete;
-	ieee80211_media_init(ic, bwfm_media_change, bwfm_media_status);
+	ieee80211_media_init(ic, bwfm_media_change, ieee80211_media_status);
 
 	ieee80211_announce(ic);
 
@@ -420,6 +422,13 @@ bwfm_init(struct ifnet *ifp)
 	bwfm_fwvar_var_set_int(sc, "arpoe", 0);
 	bwfm_fwvar_var_set_int(sc, "ndoe", 0);
 	bwfm_fwvar_var_set_int(sc, "toe", 0);
+
+	/* Accept all multicast frames. */
+	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
+
+	/* Setup promiscuous mode */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC,
+	    (ifp->if_flags & IFF_PROMISC) ? 1 : 0);
 
 	/*
 	 * Tell the firmware supplicant that we are going to handle the
@@ -760,11 +769,6 @@ int
 bwfm_media_change(struct ifnet *ifp)
 {
 	return 0;
-}
-
-void
-bwfm_media_status(struct ifnet *ifp, struct ifmediareq *imr)
-{
 }
 
 /* Chip initialization (SDIO, PCIe) */
@@ -1497,12 +1501,6 @@ bwfm_connect(struct bwfm_softc *sc)
 		}
 		kmem_free(params, sizeof(*params));
 	}
-
-	/* XXX: added for testing only, remove */
-	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
-#if 0
-	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC, 1);
-#endif
 }
 
 void

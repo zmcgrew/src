@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.492 2017/10/27 12:25:15 joerg Exp $	*/
+/*	$NetBSD: init_main.c,v 1.494 2017/12/26 03:58:03 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.492 2017/10/27 12:25:15 joerg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.494 2017/12/26 03:58:03 msaitoh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -233,7 +233,7 @@ struct	proc *initproc;
 
 struct	vnode *rootvp, *swapdev_vp;
 int	boothowto;
-int	cold = 1;			/* still working on startup */
+int	cold __read_mostly = 1;		/* still working on startup */
 struct timespec boottime;	        /* time at system startup - will only follow settime deltas */
 
 int	start_init_exec;		/* semaphore for start_init() */
@@ -265,6 +265,19 @@ main(void)
 #endif
 	CPU_INFO_ITERATOR cii;
 	struct cpu_info *ci;
+
+#ifdef DIAGNOSTIC
+	/*
+	 * Verify that CPU_INFO_FOREACH() knows about the boot CPU
+	 * and only the boot CPU at this point.
+	 */
+	int cpucount = 0;
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		KASSERT(ci == curcpu());
+		cpucount++;
+	}
+	KASSERT(cpucount == 1);
+#endif
 
 	l = &lwp0;
 #ifndef LWP0_CPU_INFO

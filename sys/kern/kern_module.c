@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_module.c,v 1.126 2017/12/10 03:08:32 pgoyette Exp $	*/
+/*	$NetBSD: kern_module.c,v 1.130 2017/12/14 22:28:59 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.126 2017/12/10 03:08:32 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_module.c,v 1.130 2017/12/14 22:28:59 pgoyette Exp $");
 
 #define _MODULE_INTERNAL
 
@@ -1047,7 +1047,7 @@ module_do_load(const char *name, bool isdep, int flags,
 	 */
 	if (mod->mod_source == MODULE_SOURCE_FILESYS) {
 		mod2 = module_lookup(mod->mod_info->mi_name);
-		if (mod2 && mod2 != mod) {
+		if ( mod2 && mod2 != mod) {
 			module_error("module with name `%s' already loaded",
 			    mod2->mod_info->mi_name);
 			error = EEXIST;
@@ -1150,6 +1150,18 @@ module_do_load(const char *name, bool isdep, int flags,
 	}
 
 	/*
+	 * If a recursive load already added a module with the same
+	 * name, abort.
+	 */
+	mod2 = module_lookup(mi->mi_name);
+	if (mod2 && mod2 != mod) {
+		module_error("recursive load causes duplicate module `%s'",
+		    mi->mi_name);
+		error = EEXIST;
+		goto fail1;
+	}
+
+	/*
 	 * Good, the module loaded successfully.  Put it onto the
 	 * list and add references to its requisite modules.
 	 */
@@ -1171,6 +1183,8 @@ module_do_load(const char *name, bool isdep, int flags,
 	module_print("module `%s' loaded successfully", mi->mi_name);
 	return 0;
 
+ fail1:
+	(*mi->mi_modcmd)(MODULE_CMD_FINI, NULL);
  fail:
 	kobj_unload(mod->mod_kobj);
  fail2:

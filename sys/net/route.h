@@ -1,4 +1,4 @@
-/*	$NetBSD: route.h,v 1.114 2017/09/21 07:15:34 ozaki-r Exp $	*/
+/*	$NetBSD: route.h,v 1.116 2017/12/18 04:11:13 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -173,6 +173,16 @@ struct ortentry {
 #define RTF_UPDATING	0x100000	/* route is updating */
 
 /*
+ * 0x400 is exposed to userland just for backward compatibility. For that
+ * purpose, it should be shown as LLINFO.
+ */
+#define RTFBITS "\020\1UP\2GATEWAY\3HOST\4REJECT\5DYNAMIC\6MODIFIED\7DONE" \
+    "\010MASK_PRESENT\011CONNECTED\012XRESOLVE\013LLINFO\014STATIC" \
+    "\015BLACKHOLE\016CLONED\017PROTO2\020PROTO1\021SRC\022ANNOUNCE" \
+    "\023LOCAL\024BROADCAST\025UPDATING"
+
+
+/*
  * Routing statistics.
  */
 struct	rtstat {
@@ -263,6 +273,9 @@ struct rt_msghdr {
 #define RTV_RTT		0x40	/* init or lock _rtt */
 #define RTV_RTTVAR	0x80	/* init or lock _rttvar */
 
+#define RTVBITS "\020\1MTU\2HOPCOUNT\3EXPIRE\4RECVPIPE\5SENDPIPE" \
+    "\6SSTHRESH\7RTT\010RTTVAR"
+
 /*
  * Bitmask values for rtm_addr.
  */
@@ -275,6 +288,9 @@ struct rt_msghdr {
 #define RTA_AUTHOR	0x40	/* sockaddr for author of redirect */
 #define RTA_BRD		0x80	/* for NEWADDR, broadcast or p-p dest addr */
 #define RTA_TAG		0x100	/* route tag */
+
+#define RTABITS "\020\1DST\2GATEWAY\3NETMASK\4GENMASK\5IFP\6IFA\7AUTHOR" \
+    "\010BRD\011TAG"
 
 /*
  * Index offsets for sockaddr array for alternate internal encoding.

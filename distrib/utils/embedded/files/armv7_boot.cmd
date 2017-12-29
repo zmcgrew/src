@@ -1,6 +1,6 @@
 if test "${soc}" = "sunxi" ; then
 	setenv kernel netbsd-SUNXI.ub
-	setenv bootargs root=ld0a
+	setenv bootargs 'root=ld0a'
 	setenv mmcpart 0:1
 	setenv use_fdt 1
 fi

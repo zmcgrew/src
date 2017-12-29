@@ -1,4 +1,4 @@
-$NetBSD: UPDATING,v 1.287 2017/10/13 07:04:58 kre Exp $
+$NetBSD: UPDATING,v 1.290 2017/12/27 08:29:02 martin Exp $
 
 This file (UPDATING) is intended to be a brief reference to recent
 changes that might cause problems in the build process, and a guide for
@@ -18,6 +18,15 @@ See also: BUILDING, build.sh, Makefile.
 
 Recent changes:
 ^^^^^^^^^^^^^^^
+
+20171225:
+	removal of the vadvise syscall requires manual removal of all
+	associated files from the libc build object directory (including
+	the .depend files) - a command like:
+		cd $OBJ && find . -type d -name libc | xargs rm -rf
+	For architectures that support multiple "compat" binary targets,
+	you'll need to cleanup both the regular libc directory and the
+	compat ones (the above command will do that).
 
 20171010:
 	a change to the build structure of external/bsd/acpica/bin/iasl

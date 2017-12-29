@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1489 2017/12/06 10:37:08 roy Exp $
+#	$NetBSD: 3RDPARTY,v 1.1491 2017/12/14 16:49:11 jmcneill Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -1681,7 +1681,7 @@ Location:       usr.bin/nc
 
 Package:	gnu-efi
 Version:	3.0u
-Current Vers:	3.0.5
+Current Vers:	3.0.6
 Maintainer:	https://sourceforge.net/projects/gnu-efi/
 Archive Site:	https://sourceforge.net/projects/gnu-efi/
 Home Page:	https://sourceforge.net/projects/gnu-efi/
@@ -1705,7 +1705,7 @@ Notes:
 
 Package:	dtc,libfdt
 Version:	1.4.4
-Current Vers:	1.4.4
+Current Vers:	1.4.5
 Maintainer:	David Gibson <david@gibson.dropbear.id.au>, Jon Loeliger <jdl@jdl.com>
 Archive Site:	https://git.kernel.org/pub/scm/utils/dtc/dtc.git
 Home Page:	https://git.kernel.org/pub/scm/utils/dtc/dtc.git
