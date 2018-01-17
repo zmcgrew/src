@@ -41,7 +41,7 @@ file	dev/md_root.c				memory_disk_hooks
 file	kern/subr_disk_mbr.c			disk
 
 file	uvm/pmap/pmap.c
-file	uvm/pmap/pmap_pv.c
+file	uvm/pmap/pmap_pvt.c
 file	uvm/pmap/pmap_segtab.c
 file	uvm/pmap/pmap_tlb.c
 
