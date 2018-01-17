@@ -39,7 +39,9 @@ GENASSYM_CONF=	${RISCV}/riscv/genassym.cf
 ##
 CPPFLAGS+=	-D${MACHINE}
 CFLAGS+=	-mcmodel=medany
-CFLAGS+=	-msoft-float
+# 01/09/2018 -- -msoft-float seems to be no more
+#https://github.com/riscv/riscv-gnu-toolchain/issues/187
+#CFLAGS+=	-msoft-float
 .if !defined(LP64) || ${LP64} == "no"
 CFLAGS+=	-m32
 AFLAGS+=	-m32
