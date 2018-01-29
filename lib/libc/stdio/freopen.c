@@ -1,4 +1,4 @@
-/*	$NetBSD: freopen.c,v 1.20 2017/11/09 20:30:02 christos Exp $	*/
+/*	$NetBSD: freopen.c,v 1.22 2018/01/17 01:24:30 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1990, 1993
@@ -37,7 +37,7 @@
 #if 0
 static char sccsid[] = "@(#)freopen.c	8.1 (Berkeley) 6/4/93";
 #else
-__RCSID("$NetBSD: freopen.c,v 1.20 2017/11/09 20:30:02 christos Exp $");
+__RCSID("$NetBSD: freopen.c,v 1.22 2018/01/17 01:24:30 kamil Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 

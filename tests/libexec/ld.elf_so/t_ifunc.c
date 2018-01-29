@@ -1,4 +1,4 @@
-/*	$NetBSD: t_ifunc.c,v 1.5 2017/11/06 21:16:03 joerg Exp $	*/
+/*	$NetBSD: t_ifunc.c,v 1.7 2018/01/01 06:34:13 maya Exp $	*/
 
 /*
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,6 +35,12 @@
 
 #include "h_macros.h"
 
+#if defined( __arm__) || defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) || defined(__sparc__)
+#define	LINKER_SUPPORT 1
+#else
+#define	LINKER_SUPPORT 0
+#endif
+
 ATF_TC(rtld_ifunc);
 
 ATF_TC_HEAD(rtld_ifunc, tc)
@@ -56,9 +62,8 @@ ATF_TC_BODY(rtld_ifunc, tc)
 	const char *error;
 	size_t i;
 
-#if !defined( __arm__) && !defined(__i386__) && !defined(__x86_64__) && !defined(__powerpc__) && !defined(__sparc__)
-	atf_tc_expect_fail("Missing linker support for hidden ifunc relocations");
-#endif
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
 
 	for (i = 0; i < __arraycount(envstr); ++i) {
 		setenv("USE_IFUNC2", envstr[i], 1);
@@ -111,6 +116,9 @@ ATF_TC_BODY(rtld_hidden_ifunc, tc)
 	const char *error;
 	size_t i;
 
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
+
 	for (i = 0; i < __arraycount(envstr); ++i) {
 		setenv("USE_IFUNC2", envstr[i], 1);
 
@@ -156,6 +164,7 @@ ATF_TC_HEAD(rtld_main_ifunc, tc)
 	    "ifunc functions are resolved in the executable");
 }
 
+#if LINKER_SUPPORT
 static unsigned int
 ifunc_helper(void)
 {
@@ -168,10 +177,13 @@ unsigned int (*resolve_ifunc(void))(void)
 	return ifunc_helper;
 }
 __hidden_ifunc(ifunc, resolve_ifunc);
+#endif
 unsigned int ifunc(void);
 
 ATF_TC_BODY(rtld_main_ifunc, tc)
 {
+	if (!LINKER_SUPPORT)
+		atf_tc_skip("Missing linker support for ifunc relocations");
 	ATF_CHECK(ifunc() == 0xdeadbeef);
 }
 

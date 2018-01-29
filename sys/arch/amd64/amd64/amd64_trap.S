@@ -1,4 +1,4 @@
-/*	$NetBSD: amd64_trap.S,v 1.13 2017/11/26 14:54:43 maxv Exp $	*/
+/*	$NetBSD: amd64_trap.S,v 1.23 2018/01/21 11:21:40 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008, 2017 The NetBSD Foundation, Inc.
@@ -64,10 +64,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if 0
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: amd64_trap.S,v 1.13 2017/11/26 14:54:43 maxv Exp $");
-#endif
+
+#include "opt_xen.h"
+#include "opt_dtrace.h"
+
+#define ALIGN_TEXT	.align 16,0x90
+
+#include <machine/frameasm.h>
+#include <machine/segments.h>
+#include <machine/trap.h>
+#include <machine/specialreg.h>
+
+#include "assym.h"
 
 /*
  * Trap and fault vector routines
@@ -80,20 +89,24 @@ __KERNEL_RCSID(0, "$NetBSD: amd64_trap.S,v 1.13 2017/11/26 14:54:43 maxv Exp $")
  * handler.
  */
 
-/*****************************************************************************/
-
 #ifdef	XEN
 #define	PRE_TRAP	movq (%rsp),%rcx ; movq 8(%rsp),%r11 ; addq $0x10,%rsp
 #else
 #define	PRE_TRAP
 #endif
 
+#define TRAPENTRY			\
+	INTRENTRY			; \
+	jmp	.Lalltraps_noentry
+
 #define	TRAP_NJ(a)	PRE_TRAP ; pushq $(a)
 #define	ZTRAP_NJ(a)	PRE_TRAP ; pushq $0 ; pushq $(a)
-#define	TRAP(a)		TRAP_NJ(a) ; jmp _C_LABEL(alltraps)
-#define	ZTRAP(a)	ZTRAP_NJ(a) ; jmp _C_LABEL(alltraps)
+#define	TRAP(a)		TRAP_NJ(a) ; TRAPENTRY
+#define	ZTRAP(a)	ZTRAP_NJ(a) ; TRAPENTRY
 
 	.text
+
+	TEXT_USER_BEGIN
 
 IDTVEC(trap00)
 	ZTRAP(T_DIVIDE)
@@ -118,12 +131,12 @@ IDTVEC(trap02)
 #if defined(XEN)
 	ZTRAP(T_NMI)
 #else
-	pushq	$0
-	pushq	$T_NMI
+	ZTRAP_NJ(T_NMI)
 	subq	$TF_REGSIZE,%rsp
 	INTR_SAVE_GPRS
+	SVS_ENTER_ALTSTACK
 	cld
-	callq	smap_enable
+	SMAP_ENABLE
 	movw	%gs,TF_GS(%rsp)
 	movw	%fs,TF_FS(%rsp)
 	movw	%es,TF_ES(%rsp)
@@ -138,13 +151,15 @@ IDTVEC(trap02)
 	movq	%rsp,%rdi
 	incq	CPUVAR(NTRAP)
 	call	_C_LABEL(nmitrap)
+	SVS_LEAVE_ALTSTACK
 	swapgs
 	jmp	.Lnmileave
 
 .Lnoswapgs:
 	movq	%rsp,%rdi
 	incq	CPUVAR(NTRAP)
-	call	_C_LABEL(trap)
+	call	_C_LABEL(nmitrap)
+	SVS_LEAVE_ALTSTACK
 
 .Lnmileave:
 	movw	TF_ES(%rsp),%es
@@ -181,21 +196,6 @@ IDTVEC(trap03)
 	/* Jump to the code hooked in by DTrace. */
 	movq	dtrace_invop_jump_addr, %rax
 	jmpq	*dtrace_invop_jump_addr
-
-	.bss
-	.globl	dtrace_invop_jump_addr
-	.align	8
-	.type	dtrace_invop_jump_addr, @object
-	.size	dtrace_invop_jump_addr, 8
-dtrace_invop_jump_addr:
-	.zero	8
-	.globl	dtrace_invop_calltrap_addr
-	.align	8
-	.type	dtrace_invop_calltrap_addr, @object
-	.size	dtrace_invop_calltrap_addr, 8
-dtrace_invop_calltrap_addr:
-	.zero	8
-	.text
 #endif
 IDTVEC_END(trap03)
 
@@ -222,17 +222,52 @@ IDTVEC(trap07)
 	jmp	.Lalltraps_checkusr
 IDTVEC_END(trap07)
 
+/*
+ * Double faults execute on a particular stack, and we must not jump out
+ * of it. So don't enable interrupts.
+ */
 IDTVEC(trap08)
+#if defined(XEN)
 	TRAP(T_DOUBLEFLT)
+#else
+	TRAP_NJ(T_DOUBLEFLT)
+	subq	$TF_REGSIZE,%rsp
+	INTR_SAVE_GPRS
+	SVS_ENTER_ALTSTACK
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1f
+	swapgs
+1:
+	cld
+	SMAP_ENABLE
+	movw	%gs,TF_GS(%rsp)
+	movw	%fs,TF_FS(%rsp)
+	movw	%es,TF_ES(%rsp)
+	movw	%ds,TF_DS(%rsp)
+
+	movq	%rsp,%rdi
+	incq	CPUVAR(NTRAP)
+	call	_C_LABEL(doubletrap)
+
+	SVS_LEAVE_ALTSTACK
+	INTR_RESTORE_GPRS
+
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1f
+	swapgs
+1:
+	addq	$TF_REGSIZE+16,%rsp
+	iretq
+#endif
 IDTVEC_END(trap08)
 
 IDTVEC(trap09)
 	ZTRAP(T_FPOPFLT)
 IDTVEC_END(trap09)
 
-IDTVEC(trap0a)
+IDTVEC(trap10)
 	TRAP(T_TSSFLT)
-IDTVEC_END(trap0a)
+IDTVEC_END(trap10)
 
 #ifdef XEN
 /*
@@ -243,37 +278,35 @@ IDTVEC_END(trap0a)
 #define check_swapgs alltraps
 #endif
 
-IDTVEC(trap0b)		/* #NP() Segment not present */
+IDTVEC(trap11)		/* #NP() Segment not present */
 	TRAP_NJ(T_SEGNPFLT)
 	jmp	check_swapgs
-IDTVEC_END(trap0b)
+IDTVEC_END(trap11)
 
-IDTVEC(trap0c)		/* #SS() Stack exception */
+IDTVEC(trap12)		/* #SS() Stack exception */
 	TRAP_NJ(T_STKFLT)
 	jmp	check_swapgs
-IDTVEC_END(trap0c)
+IDTVEC_END(trap12)
 
-IDTVEC(trap0d)		/* #GP() General protection */
+IDTVEC(trap13)		/* #GP() General protection */
 	TRAP_NJ(T_PROTFLT)
 	jmp	check_swapgs
-IDTVEC_END(trap0d)
+IDTVEC_END(trap13)
 
-IDTVEC(trap0e)
+IDTVEC(trap14)
 	TRAP(T_PAGEFLT)
-IDTVEC_END(trap0e)
+IDTVEC_END(trap14)
 
-IDTVEC(intrspurious)
-IDTVEC(trap0f)
+IDTVEC(trap15)
 	ZTRAP_NJ(T_ASTFLT)
 	INTRENTRY
 #ifdef DIAGNOSTIC
 	movl	CPUVAR(ILEVEL),%ebx
 #endif
 	jmp	.Lalltraps_checkusr
-IDTVEC_END(trap0f)
-IDTVEC_END(intrspurious)
+IDTVEC_END(trap15)
 
-IDTVEC(trap10)
+IDTVEC(trap16)
 	ZTRAP_NJ(T_ARITHTRAP)
 .Ldo_fputrap:
 	INTRENTRY
@@ -283,84 +316,56 @@ IDTVEC(trap10)
 	movq	%rsp,%rdi
 	call	_C_LABEL(fputrap)
 	jmp	.Lalltraps_checkusr
-IDTVEC_END(trap10)
+IDTVEC_END(trap16)
 
-IDTVEC(trap11)
+IDTVEC(trap17)
 	TRAP(T_ALIGNFLT)
-IDTVEC_END(trap11)
+IDTVEC_END(trap17)
 
-IDTVEC(trap12)
+IDTVEC(trap18)
 	ZTRAP(T_MCA)
-IDTVEC_END(trap12)
+IDTVEC_END(trap18)
 
-IDTVEC(trap13)
+IDTVEC(trap19)
 	ZTRAP_NJ(T_XMM)
 	jmp	.Ldo_fputrap
-IDTVEC_END(trap13)
+IDTVEC_END(trap19)
 
-IDTVEC(trap14)
-IDTVEC(trap15)
-IDTVEC(trap16)
-IDTVEC(trap17)
-IDTVEC(trap18)
-IDTVEC(trap19)
-IDTVEC(trap1a)
-IDTVEC(trap1b)
-IDTVEC(trap1c)
-IDTVEC(trap1d)
-IDTVEC(trap1e)
-IDTVEC(trap1f)
+IDTVEC(trap20)
+IDTVEC(trap21)
+IDTVEC(trap22)
+IDTVEC(trap23)
+IDTVEC(trap24)
+IDTVEC(trap25)
+IDTVEC(trap26)
+IDTVEC(trap27)
+IDTVEC(trap28)
+IDTVEC(trap29)
+IDTVEC(trap30)
+IDTVEC(trap31)
 	/* 20 - 31 reserved for future exp */
 	ZTRAP(T_RESERVED)
-IDTVEC_END(trap1f)
-IDTVEC_END(trap1e)
-IDTVEC_END(trap1d)
-IDTVEC_END(trap1c)
-IDTVEC_END(trap1b)
-IDTVEC_END(trap1a)
-IDTVEC_END(trap19)
-IDTVEC_END(trap18)
-IDTVEC_END(trap17)
-IDTVEC_END(trap16)
-IDTVEC_END(trap15)
-IDTVEC_END(trap14)
+IDTVEC_END(trap20)
+IDTVEC_END(trap21)
+IDTVEC_END(trap22)
+IDTVEC_END(trap23)
+IDTVEC_END(trap24)
+IDTVEC_END(trap25)
+IDTVEC_END(trap26)
+IDTVEC_END(trap27)
+IDTVEC_END(trap28)
+IDTVEC_END(trap29)
+IDTVEC_END(trap30)
+IDTVEC_END(trap31)
 
-IDTVEC(exceptions)
-	.quad	_C_LABEL(Xtrap00), _C_LABEL(Xtrap01)
-	.quad	_C_LABEL(Xtrap02), _C_LABEL(Xtrap03)
-	.quad	_C_LABEL(Xtrap04), _C_LABEL(Xtrap05)
-	.quad	_C_LABEL(Xtrap06), _C_LABEL(Xtrap07)
-	.quad	_C_LABEL(Xtrap08), _C_LABEL(Xtrap09)
-	.quad	_C_LABEL(Xtrap0a), _C_LABEL(Xtrap0b)
-	.quad	_C_LABEL(Xtrap0c), _C_LABEL(Xtrap0d)
-	.quad	_C_LABEL(Xtrap0e), _C_LABEL(Xtrap0f)
-	.quad	_C_LABEL(Xtrap10), _C_LABEL(Xtrap11)
-	.quad	_C_LABEL(Xtrap12), _C_LABEL(Xtrap13)
-	.quad	_C_LABEL(Xtrap14), _C_LABEL(Xtrap15)
-	.quad	_C_LABEL(Xtrap16), _C_LABEL(Xtrap17)
-	.quad	_C_LABEL(Xtrap18), _C_LABEL(Xtrap19)
-	.quad	_C_LABEL(Xtrap1a), _C_LABEL(Xtrap1b)
-	.quad	_C_LABEL(Xtrap1c), _C_LABEL(Xtrap1d)
-	.quad	_C_LABEL(Xtrap1e), _C_LABEL(Xtrap1f)
-IDTVEC_END(exceptions)
-
-/*
- * trap() calls here when it detects a fault in INTRFASTEXIT (loading the
- * segment registers or during the iret itself). The address of the (possibly
- * reconstructed) user trap frame is passed as an argument.
- *
- * Typically the code will have raised a SIGSEGV which will be actioned
- * by the code below.
- */
-	.type	_C_LABEL(trap_return_fault_return), @function
-LABEL(trap_return_fault_return)
-	mov	%rdi,%rsp		/* frame for user return */
+IDTVEC(intrspurious)
+	ZTRAP_NJ(T_ASTFLT)
+	INTRENTRY
 #ifdef DIAGNOSTIC
-	/* We can't recover the saved %rbx, so suppress warning */
 	movl	CPUVAR(ILEVEL),%ebx
 #endif
 	jmp	.Lalltraps_checkusr
-END(trap_return_fault_return)
+IDTVEC_END(intrspurious)
 
 #ifndef check_swapgs
 /*
@@ -406,12 +411,33 @@ NENTRY(check_swapgs)
 END(check_swapgs)
 #endif
 
+	TEXT_USER_END
+
+/*
+ * trap() calls here when it detects a fault in INTRFASTEXIT (loading the
+ * segment registers or during the iret itself). The address of the (possibly
+ * reconstructed) user trap frame is passed as an argument.
+ *
+ * Typically the code will have raised a SIGSEGV which will be actioned
+ * by the code below.
+ */
+	.type	_C_LABEL(trap_return_fault_return), @function
+LABEL(trap_return_fault_return)
+	mov	%rdi,%rsp		/* frame for user return */
+#ifdef DIAGNOSTIC
+	/* We can't recover the saved %rbx, so suppress warning */
+	movl	CPUVAR(ILEVEL),%ebx
+#endif
+	jmp	.Lalltraps_checkusr
+END(trap_return_fault_return)
+
 /*
  * All traps go through here. Call the generic trap handler, and
  * check for ASTs afterwards.
  */
 NENTRY(alltraps)
 	INTRENTRY
+.Lalltraps_noentry:
 	STI(si)
 
 calltrap:
@@ -467,4 +493,41 @@ calltrap:
 4:	.asciz	"WARNING: SPL NOT LOWERED ON TRAP EXIT %x %x\n"
 #endif
 END(alltraps)
+
+#ifdef KDTRACE_HOOKS
+	.bss
+	.globl	dtrace_invop_jump_addr
+	.align	8
+	.type	dtrace_invop_jump_addr, @object
+	.size	dtrace_invop_jump_addr, 8
+dtrace_invop_jump_addr:
+	.zero	8
+	.globl	dtrace_invop_calltrap_addr
+	.align	8
+	.type	dtrace_invop_calltrap_addr, @object
+	.size	dtrace_invop_calltrap_addr, 8
+dtrace_invop_calltrap_addr:
+	.zero	8
+#endif
+
+	.section .rodata
+
+LABEL(x86_exceptions)
+	.quad	_C_LABEL(Xtrap00), _C_LABEL(Xtrap01)
+	.quad	_C_LABEL(Xtrap02), _C_LABEL(Xtrap03)
+	.quad	_C_LABEL(Xtrap04), _C_LABEL(Xtrap05)
+	.quad	_C_LABEL(Xtrap06), _C_LABEL(Xtrap07)
+	.quad	_C_LABEL(Xtrap08), _C_LABEL(Xtrap09)
+	.quad	_C_LABEL(Xtrap10), _C_LABEL(Xtrap11)
+	.quad	_C_LABEL(Xtrap12), _C_LABEL(Xtrap13)
+	.quad	_C_LABEL(Xtrap14), _C_LABEL(Xtrap15)
+	.quad	_C_LABEL(Xtrap16), _C_LABEL(Xtrap17)
+	.quad	_C_LABEL(Xtrap18), _C_LABEL(Xtrap19)
+	.quad	_C_LABEL(Xtrap20), _C_LABEL(Xtrap21)
+	.quad	_C_LABEL(Xtrap22), _C_LABEL(Xtrap23)
+	.quad	_C_LABEL(Xtrap24), _C_LABEL(Xtrap25)
+	.quad	_C_LABEL(Xtrap26), _C_LABEL(Xtrap27)
+	.quad	_C_LABEL(Xtrap28), _C_LABEL(Xtrap29)
+	.quad	_C_LABEL(Xtrap30), _C_LABEL(Xtrap31)
+END(x86_exceptions)
 

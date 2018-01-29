@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_flow.c,v 1.36 2017/12/10 09:06:46 maxv Exp $	*/
+/*	$NetBSD: ip6_flow.c,v 1.38 2018/01/08 23:33:40 knakahara Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_flow.c,v 1.36 2017/12/10 09:06:46 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_flow.c,v 1.38 2018/01/08 23:33:40 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"

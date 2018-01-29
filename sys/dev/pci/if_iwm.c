@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwm.c,v 1.76 2017/10/23 09:28:38 msaitoh Exp $	*/
+/*	$NetBSD: if_iwm.c,v 1.78 2018/01/21 18:12:37 christos Exp $	*/
 /*	OpenBSD: if_iwm.c,v 1.148 2016/11/19 21:07:08 stsp Exp	*/
 #define IEEE80211_NO_HT
 /*
@@ -106,7 +106,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwm.c,v 1.76 2017/10/23 09:28:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwm.c,v 1.78 2018/01/21 18:12:37 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -5248,6 +5248,7 @@ iwm_fill_probe_req(struct iwm_softc *sc, struct iwm_scan_probe_req *preq)
 
 	memset(preq, 0, sizeof(*preq));
 
+	KASSERT(ic->ic_des_esslen < sizeof(ic->ic_des_essid));
 	if (remain < sizeof(*wh) + 2 + ic->ic_des_esslen)
 		return ENOBUFS;
 
@@ -7701,6 +7702,7 @@ static const pci_product_id_t iwm_devices[] = {
 	PCI_PRODUCT_INTEL_WIFI_LINK_7265_2,
 	PCI_PRODUCT_INTEL_WIFI_LINK_3165_1,
 	PCI_PRODUCT_INTEL_WIFI_LINK_3165_2,
+	PCI_PRODUCT_INTEL_WIFI_LINK_3168,
 	PCI_PRODUCT_INTEL_WIFI_LINK_8260_1,
 	PCI_PRODUCT_INTEL_WIFI_LINK_8260_2,
 	PCI_PRODUCT_INTEL_WIFI_LINK_4165_1,

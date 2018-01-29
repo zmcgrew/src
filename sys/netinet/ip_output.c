@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_output.c,v 1.288 2017/12/22 11:22:37 ozaki-r Exp $	*/
+/*	$NetBSD: ip_output.c,v 1.292 2018/01/10 18:51:31 christos Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.288 2017/12/22 11:22:37 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.292 2018/01/10 18:51:31 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1081,6 +1081,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 	struct ip *ip = &inp->inp_ip;
 	int inpflags = inp->inp_flags;
 	int optval = 0, error = 0;
+	struct in_pktinfo pktinfo;
 
 	KASSERT(solocked(so));
 
@@ -1103,7 +1104,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 		case IP_TOS:
 		case IP_TTL:
 		case IP_MINTTL:
-		case IP_PKTINFO:
 		case IP_RECVOPTS:
 		case IP_RECVRETOPTS:
 		case IP_RECVDSTADDR:
@@ -1135,10 +1135,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 	else \
 		inpflags &= ~bit;
 
-			case IP_PKTINFO:
-				OPTSET(INP_PKTINFO);
-				break;
-
 			case IP_RECVOPTS:
 				OPTSET(INP_RECVOPTS);
 				break;
@@ -1163,6 +1159,45 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 				OPTSET(INP_RECVTTL);
 				break;
 			}
+			break;
+		case IP_PKTINFO:
+			error = sockopt_getint(sopt, &optval);
+			if (!error) {
+				/* Linux compatibility */
+				OPTSET(INP_RECVPKTINFO);
+				break;
+			}
+			error = sockopt_get(sopt, &pktinfo, sizeof(pktinfo));
+			if (error)
+				break;
+
+			if (pktinfo.ipi_ifindex == 0) {
+				inp->inp_prefsrcip = pktinfo.ipi_addr;
+				break;
+			}
+
+			/* Solaris compatibility */
+			struct ifnet *ifp;
+			struct in_ifaddr *ia;
+			int s;
+
+			/* pick up primary address */
+			s = pserialize_read_enter();
+			ifp = if_byindex(pktinfo.ipi_ifindex);
+			if (ifp == NULL) {
+				pserialize_read_exit(s);
+				error = EADDRNOTAVAIL;
+				break;
+			}
+			ia = in_get_ia_from_ifp(ifp);
+			if (ia == NULL) {
+				pserialize_read_exit(s);
+				error = EADDRNOTAVAIL;
+				break;
+			}
+			inp->inp_prefsrcip = IA_SIN(ia)->sin_addr;
+			pserialize_read_exit(s);
+			break;
 		break;
 #undef OPTSET
 
@@ -1239,7 +1274,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 			}
 			break;
 		}
-		case IP_PKTINFO:
 		case IP_TOS:
 		case IP_TTL:
 		case IP_MINTTL:
@@ -1269,10 +1303,6 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 
 #define	OPTBIT(bit)	(inpflags & bit ? 1 : 0)
 
-			case IP_PKTINFO:
-				optval = OPTBIT(INP_PKTINFO);
-				break;
-
 			case IP_RECVOPTS:
 				optval = OPTBIT(INP_RECVOPTS);
 				break;
@@ -1298,6 +1328,33 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 				break;
 			}
 			error = sockopt_setint(sopt, optval);
+			break;
+
+		case IP_PKTINFO:
+			switch (sopt->sopt_size) {
+			case sizeof(int):
+				/* Linux compatibility */
+				optval = OPTBIT(INP_RECVPKTINFO);
+				error = sockopt_setint(sopt, optval);
+				break;
+			case sizeof(struct in_pktinfo):
+				/* Solaris compatibility */
+				pktinfo.ipi_ifindex = 0;
+				pktinfo.ipi_addr = inp->inp_prefsrcip;
+				error = sockopt_set(sopt, &pktinfo,
+				    sizeof(pktinfo));
+				break;
+			default:
+				/*
+				 * While size is stuck at 0, and, later, if
+				 * the caller doesn't use an exactly sized
+				 * recipient for the data, default to Linux
+				 * compatibility
+				 */
+				optval = OPTBIT(INP_RECVPKTINFO);
+				error = sockopt_setint(sopt, optval);
+				break;
+			}
 			break;
 
 #if 0	/* defined(IPSEC) */
@@ -1416,11 +1473,14 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
     struct inpcb *inp, kauth_cred_t cred)
 {
 	struct cmsghdr *cm;
-	struct in_pktinfo *pktinfo;
+	struct in_pktinfo pktinfo;
 	int error;
 
 	pktopts->ippo_imo = inp->inp_moptions;
-	sockaddr_in_init(&pktopts->ippo_laddr, &inp->inp_laddr, 0);
+
+	struct in_addr *ia = in_nullhost(inp->inp_prefsrcip) ? &inp->inp_laddr :
+	    &inp->inp_prefsrcip;
+	sockaddr_in_init(&pktopts->ippo_laddr, ia, 0);
 
 	if (control == NULL)
 		return 0;
@@ -1446,13 +1506,23 @@ ip_setpktopts(struct mbuf *control, struct ip_pktopts *pktopts, int *flags,
 
 		switch (cm->cmsg_type) {
 		case IP_PKTINFO:
-			if (cm->cmsg_len != CMSG_LEN(sizeof(struct in_pktinfo)))
+			if (cm->cmsg_len != CMSG_LEN(sizeof(pktinfo)))
 				return EINVAL;
-
-			pktinfo = (struct in_pktinfo *)CMSG_DATA(cm);
-			error = ip_pktinfo_prepare(pktinfo, pktopts, flags,
+			memcpy(&pktinfo, CMSG_DATA(cm), sizeof(pktinfo));
+			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
 			    cred);
-			if (error != 0)
+			if (error)
+				return error;
+			break;
+		case IP_SENDSRCADDR: /* FreeBSD compatibility */
+			if (cm->cmsg_len != CMSG_LEN(sizeof(struct in_addr)))
+				return EINVAL;
+			pktinfo.ipi_ifindex = 0;
+			pktinfo.ipi_addr =
+			    ((struct in_pktinfo *)CMSG_DATA(cm))->ipi_addr;
+			error = ip_pktinfo_prepare(&pktinfo, pktopts, flags,
+			    cred);
+			if (error)
 				return error;
 			break;
 		default:
@@ -1806,13 +1876,14 @@ ip_drop_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	bound = curlwp_bind();
 	if (sopt->sopt_size == sizeof(struct ip_mreq))
 		error = ip_get_membership(sopt, &ifp, &psref, &ia, false);
-	else
+	else {
 #ifdef INET6
 		error = ip6_get_membership(sopt, &ifp, &psref, &ia, sizeof(ia));
 #else
 		error = EINVAL;
 		goto out;
 #endif
+	}
 
 	if (error)
 		goto out;
@@ -1835,9 +1906,9 @@ ip_drop_membership(struct ip_moptions *imo, const struct sockopt *sopt)
 	 * Give up the multicast address record to which the
 	 * membership points.
 	 */
-	IFNET_LOCK(ifp);
+	IFNET_LOCK(imo->imo_membership[i]->inm_ifp);
 	in_delmulti(imo->imo_membership[i]);
-	IFNET_UNLOCK(ifp);
+	IFNET_UNLOCK(imo->imo_membership[i]->inm_ifp);
 
 	/*
 	 * Remove the gap in the membership array.

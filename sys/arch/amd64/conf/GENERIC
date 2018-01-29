@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.475 2017/12/10 17:19:48 bouyer Exp $
+# $NetBSD: GENERIC,v 1.484 2018/01/27 21:46:54 pgoyette Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.475 $"
+#ident		"GENERIC-$Revision: 1.484 $"
 
 maxusers	64		# estimated number of users
 
@@ -75,6 +75,7 @@ options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # CPU-related options
 #options 	USER_LDT	# user-settable LDT; used by WINE
+#options 	SVS		# Separate Virtual Space
 
 # CPU features
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
@@ -115,11 +116,14 @@ makeoptions	DEBUG="-g"	# compile full symbol table for CTF
 options 	KDTRACE_HOOKS	# kernel DTrace hooks
 
 # Compatibility options
+# x86_64 never shipped with a.out binaries; the two options below are
+# only relevant to 32-bit i386 binaries
 #options 	EXEC_AOUT	# required by binaries from before 1.5
+#options	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 
 # NetBSD backward compatibility. Support goes from COMPAT_15 up until
 # the latest release. Note that really old compat (< COMPAT_16) is only
-# useful for 32-bit binaries.
+# useful for 32-bit i386 binaries.
 include 	"conf/compat_netbsd15.config"
 
 #options 	COMPAT_386BSD_MBRPART # recognize old partition ID
@@ -162,6 +166,7 @@ file-system	PTYFS		# /dev/ptm support
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
 #file-system	HFS		# experimental - Apple HFS+ (read-only)
 #file-system	NILFS		# experimental - NTT's NiLFS(2)
+#file-system	AUTOFS		# experimental - Automounter Filesystem
 
 # File system options
 # ffs
@@ -469,6 +474,9 @@ lpt1	at isa? port 0x278
 
 amdnb_misc* at pci?			# AMD NB Misc Configuration
 amdtemp* at amdnb_misc?  		# AMD CPU Temperature sensors
+
+amdsmn* at pci?				# AMD SMN Configuration
+amdzentemp* at amdsmnbus?		# AMD Ryzen Family 17h CPU temp sensors
 
 # Winbond LPC Super I/O
 #wbsio*	at isa? port 0x2e
@@ -1283,6 +1291,7 @@ pseudo-device	tun			# network tunneling over tty
 pseudo-device	tap			# virtual Ethernet
 pseudo-device	gre			# generic L3 over IP tunnel
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
+pseudo-device	ipsecif			# tunnel interface for routing based ipsec
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
@@ -1290,6 +1299,7 @@ pseudo-device	bridge			# simple inter-network bridging
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	l2tp			# L2TPv3 interface
+#pseudo-device	etherip			# Tunnel Ethernet over IP
 #pseudo-device	pf			# PF packet filter
 #pseudo-device	pflog			# PF log if
 #pseudo-device	pfsync			# PF sync if
@@ -1318,6 +1328,9 @@ pseudo-device	vcoda			# coda minicache <-> venus comm.
 
 # a pseudo device needed for SMBFS
 pseudo-device	nsmb			# experimental - SMB requester
+
+# a pseudo device needed for AUTOFS
+#pseudo-device	autofs			# experimental - AUTOFS
 
 # wscons pseudo-devices
 pseudo-device	wsmux			# mouse & keyboard multiplexor

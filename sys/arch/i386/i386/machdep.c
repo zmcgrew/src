@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.803 2018/01/13 14:12:57 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.799 2017/11/11 12:51:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.803 2018/01/13 14:12:57 bouyer Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -453,8 +453,8 @@ cpu_startup(void)
 	gdt_init();
 	i386_proc0_pcb_ldt_init();
 
-#ifndef XEN
 	cpu_init_tss(&cpu_info_primary);
+#ifndef XEN
 	ltr(cpu_info_primary.ci_tss_sel);
 #endif
 
@@ -472,7 +472,7 @@ i386_proc0_pcb_ldt_init(void)
 
 	pcb->pcb_cr0 = rcr0() & ~CR0_TS;
 	pcb->pcb_esp0 = uvm_lwp_getuarea(l) + USPACE - 16;
-	pcb->pcb_iopl = SEL_KPL;
+	pcb->pcb_iopl = IOPL_KPL;
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_esp0 - 1;
 	memcpy(&pcb->pcb_fsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_fsd));
 	memcpy(&pcb->pcb_gsd, &gdtstore[GUDATA_SEL], sizeof(pcb->pcb_gsd));
@@ -581,9 +581,9 @@ cpu_set_tss_gates(struct cpu_info *ci)
 
 	doubleflt_stack = (void *)uvm_km_alloc(kernel_map, USPACE, 0,
 	    UVM_KMF_WIRED);
-	tss_init(&ci->ci_doubleflt_tss, doubleflt_stack, IDTVEC(tss_trap08));
+	tss_init(&ci->ci_tss->dblflt_tss, doubleflt_stack, IDTVEC(tss_trap08));
 
-	setsegment(&sd, &ci->ci_doubleflt_tss, sizeof(struct i386tss) - 1,
+	setsegment(&sd, &ci->ci_tss->dblflt_tss, sizeof(struct i386tss) - 1,
 	    SDT_SYS386TSS, SEL_KPL, 0, 0);
 	ci->ci_gdt[GTRAPTSS_SEL].sd = sd;
 
@@ -602,10 +602,10 @@ cpu_set_tss_gates(struct cpu_info *ci)
 
 	ddbipi_stack = (void *)uvm_km_alloc(kernel_map, USPACE, 0,
 	    UVM_KMF_WIRED);
-	tss_init(&ci->ci_ddbipi_tss, ddbipi_stack,
+	tss_init(&ci->ci_tss->ddbipi_tss, ddbipi_stack,
 	    x2apic_mode ? Xx2apic_intrddbipi : Xintrddbipi);
 
-	setsegment(&sd, &ci->ci_ddbipi_tss, sizeof(struct i386tss) - 1,
+	setsegment(&sd, &ci->ci_tss->ddbipi_tss, sizeof(struct i386tss) - 1,
 	    SDT_SYS386TSS, SEL_KPL, 0, 0);
 	ci->ci_gdt[GIPITSS_SEL].sd = sd;
 
@@ -613,6 +613,7 @@ cpu_set_tss_gates(struct cpu_info *ci)
 	    GSEL(GIPITSS_SEL, SEL_KPL));
 #endif
 }
+#endif /* XEN */
 
 /*
  * Set up TSS and I/O bitmap.
@@ -620,15 +621,23 @@ cpu_set_tss_gates(struct cpu_info *ci)
 void
 cpu_init_tss(struct cpu_info *ci)
 {
-	struct i386tss *tss = &ci->ci_tss;
+	struct cpu_tss *cputss;
 
-	tss->tss_iobase = IOMAP_INVALOFF << 16;
-	tss->tss_ss0 = GSEL(GDATA_SEL, SEL_KPL);
-	tss->tss_ldt = GSEL(GLDT_SEL, SEL_KPL);
-	tss->tss_cr3 = rcr3();
-	ci->ci_tss_sel = tss_alloc(tss);
+	cputss = (struct cpu_tss *)uvm_km_alloc(kernel_map,
+	    sizeof(struct cpu_tss), 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+
+	cputss->tss.tss_iobase = IOMAP_INVALOFF << 16;
+#ifndef XEN
+	cputss->tss.tss_ss0 = GSEL(GDATA_SEL, SEL_KPL);
+	cputss->tss.tss_ldt = GSEL(GLDT_SEL, SEL_KPL);
+	cputss->tss.tss_cr3 = rcr3();
+#endif
+
+	ci->ci_tss = cputss;
+#ifndef XEN
+	ci->ci_tss_sel = tss_alloc(&cputss->tss);
+#endif
 }
-#endif /* XEN */
 
 void *
 getframe(struct lwp *l, int sig, int *onstack)

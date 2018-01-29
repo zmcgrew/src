@@ -1,4 +1,4 @@
-/*	$NetBSD: lock_stubs.S,v 1.26 2016/04/11 14:14:27 bouyer Exp $	*/
+/*	$NetBSD: lock_stubs.S,v 1.28 2018/01/07 13:43:23 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -47,8 +47,13 @@
 #include "assym.h"
 
 #define	ENDLABEL(name,a) .align	a; LABEL(name)
-#define	LOCK(num)	.Lpatch ## num: lock
-#define	RET(num)	.Lret ## num: ret; nop; nop; ret
+#define	LOCK(num)	\
+	HOTPATCH(HP_NAME_NOLOCK, 1)	; \
+	lock
+#define	RET(num)	\
+	HOTPATCH(HP_NAME_RETFENCE, 3)	; \
+	ret; nop; nop			; \
+	ret
 
 #ifndef LOCKDEBUG
 
@@ -333,24 +338,3 @@ ENTRY(__cpu_simple_lock_try)
 	RET(8)
 END(__cpu_simple_lock_try)
 
-/*
- * Patchpoints to replace with NOP when ncpu == 1.
- */
-#ifndef LOCKDEBUG
-	.type	_C_LABEL(x86_lockpatch), @object
-LABEL(x86_lockpatch)
-	.quad	.Lpatch1, .Lpatch2, .Lpatch3, .Lpatch4
-	.quad	.Lpatch5, .Lpatch6, .Lpatch7, .Lpatch8
-	.quad	.Lpatch9
-	.quad	0
-END(x86_lockpatch)
-#endif
-
-	.type	_C_LABEL(x86_retpatch), @object
-LABEL(x86_retpatch)
-#ifndef LOCKDEBUG
-	.quad	.Lret1, .Lret2, .Lret3, .Lret4, .Lret5, .Lret6
-#endif
-	.quad	.Lret7, .Lret8
-	.quad	0
-END(x86_retpatch)

@@ -1,10 +1,11 @@
-/*	$NetBSD: frameasm.h,v 1.23 2017/10/17 07:33:44 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.34 2018/01/27 18:27:08 maxv Exp $	*/
 
 #ifndef _AMD64_MACHINE_FRAMEASM_H
 #define _AMD64_MACHINE_FRAMEASM_H
 
 #ifdef _KERNEL_OPT
 #include "opt_xen.h"
+#include "opt_svs.h"
 #endif
 
 /*
@@ -34,6 +35,27 @@
 #define CLI(temp_reg) cli
 #define STI(temp_reg) sti
 #endif	/* XEN */
+
+#define HP_NAME_CLAC		1
+#define HP_NAME_STAC		2
+#define HP_NAME_NOLOCK		3
+#define HP_NAME_RETFENCE	4
+
+#define HOTPATCH(name, size) \
+123:						; \
+	.pushsection	.rodata.hotpatch, "a"	; \
+	.byte		name			; \
+	.byte		size			; \
+	.quad		123b			; \
+	.popsection
+
+#define SMAP_ENABLE \
+	HOTPATCH(HP_NAME_CLAC, 3)		; \
+	.byte 0x0F, 0x1F, 0x00			; \
+
+#define SMAP_DISABLE \
+	HOTPATCH(HP_NAME_STAC, 3)		; \
+	.byte 0x0F, 0x1F, 0x00			; \
 
 #define	SWAPGS	NOT_XEN(swapgs)
 
@@ -74,15 +96,60 @@
 	movq	TF_RBX(%rsp),%rbx	; \
 	movq	TF_RAX(%rsp),%rax
 
+#define TEXT_USER_BEGIN	.pushsection	.text.user, "ax"
+#define TEXT_USER_END	.popsection
+
+#ifdef SVS
+
+/* XXX: put this somewhere else */
+#define SVS_UTLS		0xffffc00000000000 /* PMAP_PCPU_BASE */
+#define UTLS_KPDIRPA		0
+#define UTLS_SCRATCH		8
+#define UTLS_RSP0		16
+
+#define SVS_ENTER \
+	movq	SVS_UTLS+UTLS_KPDIRPA,%rax	; \
+	movq	%rax,%cr3			; \
+	movq	CPUVAR(KRSP0),%rsp
+
+#define SVS_LEAVE \
+	testb	$SEL_UPL,TF_CS(%rsp)		; \
+	jz	1234f				; \
+	movq	CPUVAR(URSP0),%rsp		; \
+	movq	CPUVAR(UPDIRPA),%rax		; \
+	movq	%rax,%cr3			; \
+1234:
+
+#define SVS_ENTER_ALTSTACK \
+	testb	$SEL_UPL,TF_CS(%rsp)		; \
+	jz	1234f				; \
+	movq	SVS_UTLS+UTLS_KPDIRPA,%rax	; \
+	movq	%rax,%cr3			; \
+1234:
+
+#define SVS_LEAVE_ALTSTACK \
+	testb	$SEL_UPL,TF_CS(%rsp)		; \
+	jz	1234f				; \
+	movq	CPUVAR(UPDIRPA),%rax		; \
+	movq	%rax,%cr3			; \
+1234:
+#else
+#define SVS_ENTER	/* nothing */
+#define SVS_LEAVE	/* nothing */
+#define SVS_ENTER_ALTSTACK	/* nothing */
+#define SVS_LEAVE_ALTSTACK	/* nothing */
+#endif
+
 #define	INTRENTRY_L(kernel_trap, usertrap) \
 	subq	$TF_REGSIZE,%rsp	; \
 	INTR_SAVE_GPRS			; \
 	cld				; \
-	callq	smap_enable		; \
+	SMAP_ENABLE			; \
 	testb	$SEL_UPL,TF_CS(%rsp)	; \
 	je	kernel_trap		; \
 usertrap				; \
 	SWAPGS				; \
+	SVS_ENTER			; \
 	movw	%gs,TF_GS(%rsp)		; \
 	movw	%fs,TF_FS(%rsp)		; \
 	movw	%es,TF_ES(%rsp)		; \
@@ -101,17 +168,15 @@ usertrap				; \
 	pushq	%r11			; \
 	pushq	%r10			; \
 	pushfq				; \
-	movl	%cs,%r11d		; \
-	pushq	%r11			; \
+	pushq	$GSEL(GCODE_SEL,SEL_KPL); \
 /* XEN: We must fixup CS, as even kernel mode runs at CPL 3 */ \
  	XEN_ONLY2(andb	$0xfc,(%rsp);)	  \
 	pushq	%r13			;
 
-#define	DO_DEFERRED_SWITCH \
-	cmpl	$0, CPUVAR(WANT_PMAPLOAD)		; \
-	jz	1f					; \
-	call	_C_LABEL(do_pmap_load)			; \
-1:
+#define INTR_RECURSE_ENTRY \
+	subq	$TF_REGSIZE,%rsp	; \
+	INTR_SAVE_GPRS			; \
+	cld
 
 #define	CHECK_DEFERRED_SWITCH \
 	cmpl	$0, CPUVAR(WANT_PMAPLOAD)

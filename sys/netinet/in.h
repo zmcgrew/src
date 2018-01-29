@@ -1,4 +1,4 @@
-/*	$NetBSD: in.h,v 1.101 2017/08/10 04:31:58 ryo Exp $	*/
+/*	$NetBSD: in.h,v 1.103 2018/01/10 10:56:30 knakahara Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1990, 1993
@@ -289,8 +289,10 @@ struct ip_opts {
 #define	IP_IPSEC_POLICY		22   /* struct; get/set security policy */
 #define	IP_RECVTTL		23   /* bool; receive IP TTL w/dgram */
 #define	IP_MINTTL		24   /* minimum TTL for packet or drop */
-#define	IP_PKTINFO		25   /* int; send interface and src addr */
-#define	IP_RECVPKTINFO		26   /* int; send interface and dst addr */
+#define	IP_PKTINFO		25   /* struct; set default src if/addr */
+#define	IP_RECVPKTINFO		26   /* int; receive dst if/addr w/dgram */
+
+#define IP_SENDSRCADDR IP_RECVDSTADDR /* FreeBSD compatibility */
 
 /*
  * Information sent in the control message of a datagram socket for
@@ -300,6 +302,8 @@ struct in_pktinfo {
 	struct in_addr	ipi_addr;	/* src/dst address */
 	unsigned int ipi_ifindex;	/* interface index */
 };
+
+#define ipi_spec_dst ipi_addr	/* Solaris/Linux compatibility */
 
 /*
  * Defaults and limits for options
@@ -582,6 +586,9 @@ struct ip_moptions;
 
 struct in_ifaddr *in_selectsrc(struct sockaddr_in *,
 	struct route *, int, struct ip_moptions *, int *, struct psref *);
+
+struct ip;
+int in_tunnel_validate(const struct ip *, struct in_addr, struct in_addr);
 
 #define	in_hosteq(s,t)	((s).s_addr == (t).s_addr)
 #define	in_nullhost(x)	((x).s_addr == INADDR_ANY)

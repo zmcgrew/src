@@ -1,4 +1,6 @@
-/*-
+/*	$NetBSD: ieee80211_crypto_tkip.c,v 1.14 2018/01/19 07:57:50 maxv Exp $	*/
+
+/*
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
  * All rights reserved.
  *
@@ -34,7 +36,7 @@
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_crypto_tkip.c,v 1.10 2005/08/08 18:46:35 sam Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto_tkip.c,v 1.12 2014/10/18 08:33:29 snj Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto_tkip.c,v 1.14 2018/01/19 07:57:50 maxv Exp $");
 #endif
 
 /*
@@ -45,8 +47,8 @@ __KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto_tkip.c,v 1.12 2014/10/18 08:33:29 s
  * its license is included below.
  */
 #include <sys/param.h>
-#include <sys/systm.h> 
-#include <sys/mbuf.h>   
+#include <sys/systm.h>
+#include <sys/mbuf.h>
 #include <sys/malloc.h>
 #include <sys/kernel.h>
 #include <sys/endian.h>
@@ -175,17 +177,9 @@ tkip_encap(struct ieee80211_key *k, struct mbuf *m, u_int8_t keyid)
 		ic->ic_stats.is_crypto_tkipcm++;
 		return 0;
 	}
-	hdrlen = ieee80211_hdrspace(ic, mtod(m, void *));
 
-	/*
-	 * Copy down 802.11 header and add the IV, KeyID, and ExtIV.
-	 */
-	M_PREPEND(m, tkip.ic_header, M_NOWAIT);
-	if (m == NULL)
-		return 0;
-	ivp = mtod(m, u_int8_t *);
-	memmove(ivp, ivp + tkip.ic_header, hdrlen);
-	ivp += hdrlen;
+	hdrlen = ieee80211_hdrspace(ic, mtod(m, void *));
+	ivp = mtod(m, u_int8_t *) + hdrlen;
 
 	ivp[0] = k->wk_keytsc >> 8;		/* TSC1 */
 	ivp[1] = (ivp[0] | 0x20) & 0x7f;	/* WEP seed */
@@ -336,7 +330,7 @@ tkip_demic(struct ieee80211_key *k, struct mbuf *m, int force)
 
 		ic->ic_stats.is_crypto_tkipdemic++;
 
-		michael_mic(ctx, k->wk_rxmic, 
+		michael_mic(ctx, k->wk_rxmic,
 			m, hdrlen, m->m_pkthdr.len - (hdrlen + tkip.ic_miclen),
 			mic);
 		m_copydata(m, m->m_pkthdr.len - tkip.ic_miclen,
@@ -893,17 +887,21 @@ tkip_encrypt(struct tkip_ctx *ctx, struct ieee80211_key *key,
 		ctx->tx_phase1_done = 1;
 	}
 	tkip_mixing_phase2(ctx->tx_rc4key, key->wk_key, ctx->tx_ttak,
-		(u16) key->wk_keytsc);
+		(u16)key->wk_keytsc);
 
 	wep_encrypt(ctx->tx_rc4key,
 		m, hdrlen + tkip.ic_header,
 		m->m_pkthdr.len - (hdrlen + tkip.ic_header),
 		icv);
-	(void) m_append(m, IEEE80211_WEP_CRCLEN, icv);	/* XXX check return */
+
+	if (!m_append(m, IEEE80211_WEP_CRCLEN, icv)) {
+		return 0;
+	}
 
 	key->wk_keytsc++;
 	if ((u16)(key->wk_keytsc) == 0)
 		ctx->tx_phase1_done = 0;
+
 	return 1;
 }
 
@@ -930,9 +928,8 @@ tkip_decrypt(struct tkip_ctx *ctx, struct ieee80211_key *key,
 	tkip_mixing_phase2(ctx->rx_rc4key, key->wk_key, ctx->rx_ttak, iv16);
 
 	/* NB: m is unstripped; deduct headers + ICV to get payload */
-	if (wep_decrypt(ctx->rx_rc4key,
-		m, hdrlen + tkip.ic_header,
-	        m->m_pkthdr.len - (hdrlen + tkip.ic_header + tkip.ic_trailer))) {
+	if (wep_decrypt(ctx->rx_rc4key, m, hdrlen + tkip.ic_header,
+	    m->m_pkthdr.len - (hdrlen + tkip.ic_header + tkip.ic_trailer))) {
 		if (iv32 != (u32)(key->wk_keyrsc >> 16)) {
 			/* Previously cached Phase1 result was already lost, so
 			 * it needs to be recalculated for the next packet. */
@@ -944,6 +941,7 @@ tkip_decrypt(struct tkip_ctx *ctx, struct ieee80211_key *key,
 		ctx->tc_ic->ic_stats.is_rx_tkipicv++;
 		return 0;
 	}
+
 	return 1;
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.18 2017/09/17 09:59:23 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.25 2018/01/27 18:48:59 maxv Exp $	*/
 
 #ifndef _I386_FRAMEASM_H_
 #define _I386_FRAMEASM_H_
@@ -27,46 +27,59 @@
 			testb	$0xff,EVTCHN_UPCALL_PENDING(reg)
 #endif
 
+#define HP_NAME_CLAC		1
+#define HP_NAME_STAC		2
+#define HP_NAME_NOLOCK		3
+#define HP_NAME_RETFENCE	4
+
+#define HOTPATCH(name, size) \
+123:						; \
+	.pushsection	.rodata.hotpatch, "a"	; \
+	.byte		name			; \
+	.byte		size			; \
+	.long		123b			; \
+	.popsection
+
+#define SMAP_ENABLE \
+	HOTPATCH(HP_NAME_CLAC, 3)		; \
+	.byte 0x0F, 0x1F, 0x00
+
+#define SMAP_DISABLE \
+	HOTPATCH(HP_NAME_STAC, 3)		; \
+	.byte 0x0F, 0x1F, 0x00
+
 /*
  * These are used on interrupt or trap entry or exit.
  */
 #define	INTRENTRY \
+	SMAP_ENABLE			; \
 	subl	$TF_PUSHSIZE,%esp	; \
-	movw	%gs,TF_GS(%esp)	; \
-	movw	%fs,TF_FS(%esp) ; \
+	movw	%gs,TF_GS(%esp)		; \
+	movw	%fs,TF_FS(%esp) 	; \
 	movl	%eax,TF_EAX(%esp)	; \
-	movw	%es,TF_ES(%esp) ; \
-	movw	%ds,TF_DS(%esp) ; \
+	movw	%es,TF_ES(%esp) 	; \
+	movw	%ds,TF_DS(%esp) 	; \
 	movl	$GSEL(GDATA_SEL, SEL_KPL),%eax	; \
 	movl	%edi,TF_EDI(%esp)	; \
 	movl	%esi,TF_ESI(%esp)	; \
-	movw	%ax,%ds	; \
+	movw	%ax,%ds			; \
 	movl	%ebp,TF_EBP(%esp)	; \
-	movw	%ax,%es	; \
+	movw	%ax,%es			; \
 	movl	%ebx,TF_EBX(%esp)	; \
-	movw	%ax,%gs	; \
+	movw	%ax,%gs			; \
 	movl	%edx,TF_EDX(%esp)	; \
 	movl	$GSEL(GCPU_SEL, SEL_KPL),%eax	; \
 	movl	%ecx,TF_ECX(%esp)	; \
-	movl	%eax,%fs	; \
+	movl	%eax,%fs		; \
 	cld
 
 #define	INTRFASTEXIT \
 	jmp	intrfastexit
 
-#define	DO_DEFERRED_SWITCH \
-	cmpl	$0, CPUVAR(WANT_PMAPLOAD)		; \
-	jz	1f					; \
-	call	_C_LABEL(pmap_load)			; \
-	1:
-
-#define	DO_DEFERRED_SWITCH_RETRY \
-	1:						; \
-	cmpl	$0, CPUVAR(WANT_PMAPLOAD)		; \
-	jz	1f					; \
-	call	_C_LABEL(pmap_load)			; \
-	jmp	1b					; \
-	1:
+#define INTR_RECURSE_HWFRAME \
+	pushfl				; \
+	pushl	%cs			; \
+	pushl	%esi			;
 
 #define	CHECK_DEFERRED_SWITCH \
 	cmpl	$0, CPUVAR(WANT_PMAPLOAD)

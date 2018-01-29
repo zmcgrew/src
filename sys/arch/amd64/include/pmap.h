@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.40 2017/06/17 08:40:46 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.42 2018/01/21 10:59:21 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -176,7 +176,7 @@
 
 #define NKL4_KIMG_ENTRIES	1
 #define NKL3_KIMG_ENTRIES	1
-#define NKL2_KIMG_ENTRIES	32
+#define NKL2_KIMG_ENTRIES	48
 
 /*
  * Since kva space is below the kernel in its entirety, we start off
@@ -217,6 +217,10 @@
  * Used to avoid false sharing of cache lines.
  */
 #define NPTECL		8
+
+void svs_pmap_sync(struct pmap *, int);
+void svs_lwp_switch(struct lwp *, struct lwp *);
+void svs_pdir_switch(struct pmap *);
 
 #include <x86/pmap.h>
 

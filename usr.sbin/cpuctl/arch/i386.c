@@ -1,4 +1,4 @@
-/*	$NetBSD: i386.c,v 1.78 2017/10/19 03:09:55 msaitoh Exp $	*/
+/*	$NetBSD: i386.c,v 1.80 2018/01/16 08:23:18 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: i386.c,v 1.78 2017/10/19 03:09:55 msaitoh Exp $");
+__RCSID("$NetBSD: i386.c,v 1.80 2018/01/16 08:23:18 mrg Exp $");
 #endif /* not lint */
 
 #include <sys/types.h>
@@ -1900,6 +1900,12 @@ identifycpu(int fd, const char *cpuname)
 	if (cpu_vendor == CPUVENDOR_INTEL)
 		print_bits(cpuname, "features6", CPUID_SEF_FLAGS1,
 		    ci->ci_feat_val[6]);
+
+	if ((cpu_vendor == CPUVENDOR_INTEL) && (ci->ci_cpuid_level >= 7)) {
+		x86_cpuid(7, descs);
+		print_bits(cpuname, "SEF edx", CPUID_SEF_FLAGS2, descs[3]);
+	}
+
 	print_bits(cpuname, "xsave features", XCR0_FLAGS1, ci->ci_feat_val[7]);
 	print_bits(cpuname, "xsave instructions", CPUID_PES1_FLAGS,
 	    ci->ci_feat_val[8]);
@@ -2227,6 +2233,13 @@ powernow_probe(struct cpu_info *ci)
 	snprintb(buf, sizeof(buf), CPUID_APM_FLAGS, regs[3]);
 	aprint_normal_dev(ci->ci_dev, "AMD Power Management features: %s\n",
 	    buf);
+}
+
+bool
+identifycpu_bind(void)
+{
+
+	return true;
 }
 
 int

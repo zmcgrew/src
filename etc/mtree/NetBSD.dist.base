@@ -1,4 +1,4 @@
-#	$NetBSD: NetBSD.dist.base,v 1.164 2017/12/10 20:38:14 bouyer Exp $
+#	$NetBSD: NetBSD.dist.base,v 1.167 2018/01/24 09:04:41 skrll Exp $
 #	@(#)4.4BSD.dist	8.1 (Berkeley) 6/13/93
 
 # Do not customize this file as it may be overwritten on upgrades.
@@ -29,6 +29,7 @@
 ./etc/X11/xserver
 ./etc/X11/xsm
 ./etc/atf
+./etc/autofs
 ./etc/bluetooth
 ./etc/cgd			mode=0700
 ./etc/defaults
@@ -78,6 +79,9 @@
 ./libdata/firmware/if_rtwn
 ./libdata/firmware/if_urtwn
 ./libdata/firmware/if_wpi
+./libdata/firmware/nvidia
+./libdata/firmware/nvidia/tegra124
+./libdata/firmware/nvidia/tegra210
 ./libdata/firmware/radeon
 ./libdata/firmware/ral
 ./libdata/firmware/rum
@@ -139,6 +143,7 @@
 ./usr/include/event2
 ./usr/include/filecorefs
 ./usr/include/fs
+./usr/include/fs/autofs
 ./usr/include/fs/efs
 ./usr/include/fs/hfs
 ./usr/include/fs/nilfs
@@ -867,7 +872,6 @@
 ./usr/share/man/cat3
 ./usr/share/man/cat3lua
 ./usr/share/man/cat4
-./usr/share/man/cat4/acorn26
 ./usr/share/man/cat4/acorn32
 ./usr/share/man/cat4/alpha
 ./usr/share/man/cat4/amiga
@@ -903,7 +907,6 @@
 ./usr/share/man/cat6
 ./usr/share/man/cat7
 ./usr/share/man/cat8
-./usr/share/man/cat8/acorn26
 ./usr/share/man/cat8/acorn32
 ./usr/share/man/cat8/algor
 ./usr/share/man/cat8/alpha
@@ -956,7 +959,6 @@
 ./usr/share/man/cat8/x86
 ./usr/share/man/cat9
 ./usr/share/man/cat9lua
-./usr/share/man/cat9/acorn26
 ./usr/share/man/cat9/alpha
 ./usr/share/man/cat9/amiga
 ./usr/share/man/cat9/atari
@@ -979,7 +981,6 @@
 ./usr/share/man/html3f
 ./usr/share/man/html3lua
 ./usr/share/man/html4
-./usr/share/man/html4/acorn26
 ./usr/share/man/html4/acorn32
 ./usr/share/man/html4/alpha
 ./usr/share/man/html4/amiga
@@ -1015,7 +1016,6 @@
 ./usr/share/man/html6
 ./usr/share/man/html7
 ./usr/share/man/html8
-./usr/share/man/html8/acorn26
 ./usr/share/man/html8/acorn32
 ./usr/share/man/html8/algor
 ./usr/share/man/html8/alpha
@@ -1068,7 +1068,6 @@
 ./usr/share/man/html8/x86
 ./usr/share/man/html9
 ./usr/share/man/html9lua
-./usr/share/man/html9/acorn26
 ./usr/share/man/html9/alpha
 ./usr/share/man/html9/amiga
 ./usr/share/man/html9/atari
@@ -1091,7 +1090,6 @@
 ./usr/share/man/man3f
 ./usr/share/man/man3lua
 ./usr/share/man/man4
-./usr/share/man/man4/acorn26
 ./usr/share/man/man4/acorn32
 ./usr/share/man/man4/alpha
 ./usr/share/man/man4/amiga
@@ -1127,7 +1125,6 @@
 ./usr/share/man/man6
 ./usr/share/man/man7
 ./usr/share/man/man8
-./usr/share/man/man8/acorn26
 ./usr/share/man/man8/acorn32
 ./usr/share/man/man8/algor
 ./usr/share/man/man8/alpha
@@ -1180,7 +1177,6 @@
 ./usr/share/man/man8/x86
 ./usr/share/man/man9
 ./usr/share/man/man9lua
-./usr/share/man/man9/acorn26
 ./usr/share/man/man9/alpha
 ./usr/share/man/man9/amiga
 ./usr/share/man/man9/atari

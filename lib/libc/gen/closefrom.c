@@ -1,4 +1,4 @@
-/*	$NetBSD: closefrom.c,v 1.2 2004/06/22 13:49:43 atatat Exp $	*/
+/*	$NetBSD: closefrom.c,v 1.4 2018/01/17 01:24:29 kamil Exp $	*/
 
 /*
  * Copyright (C) 2004 WIDE Project.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
-__RCSID("$NetBSD: closefrom.c,v 1.2 2004/06/22 13:49:43 atatat Exp $");
+__RCSID("$NetBSD: closefrom.c,v 1.4 2018/01/17 01:24:29 kamil Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #include <fcntl.h>

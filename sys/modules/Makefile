@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.197 2017/12/29 02:14:25 christos Exp $
+#	$NetBSD: Makefile,v 1.199 2018/01/25 23:40:06 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -9,6 +9,7 @@ SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
 SUBDIR+=	aio
 SUBDIR+=	audio
+SUBDIR+=	autofs
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
@@ -180,7 +181,9 @@ SUBDIR+=	exec_elf64
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
+SUBDIR+=	amdsmn
 SUBDIR+=	amdtemp
+SUBDIR+=	amdzentemp
 SUBDIR+=	coretemp
 SUBDIR+=	est
 SUBDIR+=	hdafg

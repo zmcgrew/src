@@ -1,5 +1,6 @@
-/*	$NetBSD: ieee80211_crypto.c,v 1.18 2017/12/10 08:56:23 maxv Exp $	*/
-/*-
+/*	$NetBSD: ieee80211_crypto.c,v 1.21 2018/01/19 07:52:37 maxv Exp $	*/
+
+/*
  * Copyright (c) 2001 Atsushi Onoe
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
  * All rights reserved.
@@ -36,7 +37,7 @@
 __FBSDID("$FreeBSD: src/sys/net80211/ieee80211_crypto.c,v 1.12 2005/08/08 18:46:35 sam Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto.c,v 1.18 2017/12/10 08:56:23 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto.c,v 1.21 2018/01/19 07:52:37 maxv Exp $");
 #endif
 
 #ifdef _KERNEL_OPT
@@ -47,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto.c,v 1.18 2017/12/10 08:56:23 maxv E
  * IEEE 802.11 generic crypto support.
  */
 #include <sys/param.h>
-#include <sys/mbuf.h>   
+#include <sys/mbuf.h>
 
 #include <sys/socket.h>
 #include <sys/sockio.h>
@@ -68,22 +69,22 @@ __KERNEL_RCSID(0, "$NetBSD: ieee80211_crypto.c,v 1.18 2017/12/10 08:56:23 maxv E
 /*
  * Table of registered cipher modules.
  */
-static	const struct ieee80211_cipher *ciphers[IEEE80211_CIPHER_MAX];
+static const struct ieee80211_cipher *ciphers[IEEE80211_CIPHER_MAX];
 
 #ifdef INET
-#include <netinet/in.h> 
+#include <netinet/in.h>
 #include <net/if_ether.h>
 #endif
 
-static	int _ieee80211_crypto_delkey(struct ieee80211com *,
-		struct ieee80211_key *);
+static int _ieee80211_crypto_delkey(struct ieee80211com *,
+    struct ieee80211_key *);
 
 /*
  * Default "null" key management routines.
  */
 static int
 null_key_alloc(struct ieee80211com *ic, const struct ieee80211_key *k,
-	ieee80211_keyix *keyix, ieee80211_keyix *rxkeyix)
+    ieee80211_keyix *keyix, ieee80211_keyix *rxkeyix)
 {
 	if (!(&ic->ic_nw_keys[0] <= k &&
 	     k < &ic->ic_nw_keys[IEEE80211_WEP_NKID])) {
@@ -106,20 +107,25 @@ null_key_alloc(struct ieee80211com *ic, const struct ieee80211_key *k,
 	*rxkeyix = IEEE80211_KEYIX_NONE;	/* XXX maybe *keyix? */
 	return 1;
 }
+
 static int
-null_key_delete(struct ieee80211com *ic,
-    const struct ieee80211_key *k)
+null_key_delete(struct ieee80211com *ic, const struct ieee80211_key *k)
 {
 	return 1;
 }
-static 	int
-null_key_set(struct ieee80211com *ic,
-    const struct ieee80211_key *k,
+
+static int
+null_key_set(struct ieee80211com *ic, const struct ieee80211_key *k,
     const u_int8_t mac[IEEE80211_ADDR_LEN])
 {
 	return 1;
 }
-static void null_key_update(struct ieee80211com *ic) {}
+
+static void
+null_key_update(struct ieee80211com *ic)
+{
+	;
+}
 
 /*
  * Write-arounds for common operations.
@@ -130,27 +136,25 @@ cipher_detach(struct ieee80211_key *key)
 	key->wk_cipher->ic_detach(key);
 }
 
-/* 
+/*
  * Wrappers for driver key management methods.
  */
 static __inline int
-dev_key_alloc(struct ieee80211com *ic,
-	const struct ieee80211_key *key,
-	ieee80211_keyix *keyix, ieee80211_keyix *rxkeyix)
+dev_key_alloc(struct ieee80211com *ic, const struct ieee80211_key *key,
+    ieee80211_keyix *keyix, ieee80211_keyix *rxkeyix)
 {
 	return ic->ic_crypto.cs_key_alloc(ic, key, keyix, rxkeyix);
 }
 
 static __inline int
-dev_key_delete(struct ieee80211com *ic,
-	const struct ieee80211_key *key)
+dev_key_delete(struct ieee80211com *ic, const struct ieee80211_key *key)
 {
 	return ic->ic_crypto.cs_key_delete(ic, key);
 }
 
 static __inline int
 dev_key_set(struct ieee80211com *ic, const struct ieee80211_key *key,
-	const u_int8_t mac[IEEE80211_ADDR_LEN])
+    const u_int8_t mac[IEEE80211_ADDR_LEN])
 {
 	return ic->ic_crypto.cs_key_set(ic, key, mac);
 }
@@ -260,8 +264,8 @@ static const char *cipher_modnames[] = {
  *	ieee80211_key_update_end(ic);
  */
 int
-ieee80211_crypto_newkey(struct ieee80211com *ic,
-	int cipher, int flags, struct ieee80211_key *key)
+ieee80211_crypto_newkey(struct ieee80211com *ic, int cipher, int flags,
+    struct ieee80211_key *key)
 {
 #define	N(a)	(sizeof(a) / sizeof(a[0]))
 	const struct ieee80211_cipher *cip;
@@ -279,6 +283,7 @@ ieee80211_crypto_newkey(struct ieee80211com *ic,
 		return 0;
 	}
 	cip = ciphers[cipher];
+
 	if (cip == NULL) {
 		/*
 		 * Auto-load cipher module if we have a well-known name
@@ -311,9 +316,10 @@ ieee80211_crypto_newkey(struct ieee80211com *ic,
 
 	oflags = key->wk_flags;
 	flags &= IEEE80211_KEY_COMMON;
+
 	/*
 	 * If the hardware does not support the cipher then
-	 * fallback to a host-based implementation.
+	 * fall back to a host-based implementation.
 	 */
 	if ((ic->ic_caps & (1<<cipher)) == 0) {
 		IEEE80211_DPRINTF(ic, IEEE80211_MSG_CRYPTO,
@@ -321,6 +327,7 @@ ieee80211_crypto_newkey(struct ieee80211com *ic,
 		    __func__, cip->ic_name);
 		flags |= IEEE80211_KEY_SWCRYPT;
 	}
+
 	/*
 	 * Hardware TKIP with software MIC is an important
 	 * combination; we handle it by flagging each key,
@@ -473,7 +480,7 @@ ieee80211_crypto_delglobalkeys(struct ieee80211com *ic)
 
 	ieee80211_key_update_begin(ic);
 	for (i = 0; i < IEEE80211_WEP_NKID; i++)
-		(void) _ieee80211_crypto_delkey(ic, &ic->ic_nw_keys[i]);
+		(void)_ieee80211_crypto_delkey(ic, &ic->ic_nw_keys[i]);
 	ieee80211_key_update_end(ic);
 }
 
@@ -486,7 +493,7 @@ ieee80211_crypto_delglobalkeys(struct ieee80211com *ic)
  */
 int
 ieee80211_crypto_setkey(struct ieee80211com *ic, struct ieee80211_key *key,
-		const u_int8_t macaddr[IEEE80211_ADDR_LEN])
+    const u_int8_t macaddr[IEEE80211_ADDR_LEN])
 {
 	const struct ieee80211_cipher *cip = key->wk_cipher;
 
@@ -524,13 +531,14 @@ ieee80211_crypto_setkey(struct ieee80211com *ic, struct ieee80211_key *key,
  * Add privacy headers appropriate for the specified key.
  */
 struct ieee80211_key *
-ieee80211_crypto_encap(struct ieee80211com *ic,
-	struct ieee80211_node *ni, struct mbuf *m)
+ieee80211_crypto_encap(struct ieee80211com *ic, struct ieee80211_node *ni,
+    struct mbuf *m)
 {
 	struct ieee80211_key *k;
 	struct ieee80211_frame *wh;
 	const struct ieee80211_cipher *cip;
-	u_int8_t keyid;
+	u_int8_t keyid, *hdr;
+	int hdrlen;
 
 	/*
 	 * Multicast traffic always uses the multicast key.
@@ -556,8 +564,32 @@ ieee80211_crypto_encap(struct ieee80211com *ic,
 		k = &ni->ni_ucastkey;
 	}
 	cip = k->wk_cipher;
+
+	/*
+	 * The crypto header is added after the IEEE802.11 header. Prepend
+	 * the size of the crypto header, and move the IEEE802.11 header back
+	 * to the beginning of the mbuf. Ensure everything is contiguous.
+	 */
+	hdrlen = ieee80211_hdrspace(ic, mtod(m, void *));
+	M_PREPEND(m, cip->ic_header, M_NOWAIT);
+	if (m && m->m_len < hdrlen + cip->ic_header) {
+		m = m_pullup(m, hdrlen + cip->ic_header);
+	}
+	if (m == NULL) {
+		return NULL;
+	}
+	hdr = mtod(m, u_int8_t *);
+	memmove(hdr, hdr + cip->ic_header, hdrlen);
+
+	/* XXX pass the updated pointer back to the caller */
+
 	return (cip->ic_encap(k, m, keyid<<6) ? k : NULL);
 }
+
+#define	IEEE80211_WEP_HDRLEN	(IEEE80211_WEP_IVLEN + IEEE80211_WEP_KIDLEN)
+#define	IEEE80211_WEP_MINLEN \
+	(sizeof(struct ieee80211_frame) + \
+	IEEE80211_WEP_HDRLEN + IEEE80211_WEP_CRCLEN)
 
 /*
  * Validate and strip privacy headers (and trailer) for a
@@ -565,24 +597,25 @@ ieee80211_crypto_encap(struct ieee80211com *ic,
  */
 struct ieee80211_key *
 ieee80211_crypto_decap(struct ieee80211com *ic,
-	struct ieee80211_node *ni, struct mbuf **mp, int hdrlen)
+    struct ieee80211_node *ni, struct mbuf **mp, int hdrlen)
 {
-#define	IEEE80211_WEP_HDRLEN	(IEEE80211_WEP_IVLEN + IEEE80211_WEP_KIDLEN)
-#define	IEEE80211_WEP_MINLEN \
-	(sizeof(struct ieee80211_frame) + \
-	IEEE80211_WEP_HDRLEN + IEEE80211_WEP_CRCLEN)
+	const struct ieee80211_cipher *cip;
 	struct ieee80211_key *k;
 	struct ieee80211_frame *wh;
-	const struct ieee80211_cipher *cip;
 	struct mbuf *m = *mp;
 	u_int8_t keyid;
 
-	/* NB: this minimum size data frame could be bigger */
+	KASSERT((m->m_flags & M_PKTHDR) != 0);
+
+	/*
+	 * This minimum size data frame could be bigger. It is re-checked
+	 * below.
+	 */
 	if (m->m_pkthdr.len < IEEE80211_WEP_MINLEN) {
 		IEEE80211_DPRINTF(ic, IEEE80211_MSG_ANY,
 			"%s: WEP data frame too short, len %u\n",
 			__func__, m->m_pkthdr.len);
-		ic->ic_stats.is_rx_tooshort++;	/* XXX need unique stat? */
+		ic->ic_stats.is_rx_tooshort++;
 		return NULL;
 	}
 
@@ -595,18 +628,22 @@ ieee80211_crypto_decap(struct ieee80211com *ic,
 	wh = mtod(m, struct ieee80211_frame *);
 	m_copydata(m, hdrlen + IEEE80211_WEP_IVLEN, sizeof(keyid), &keyid);
 	if (IEEE80211_IS_MULTICAST(wh->i_addr1) ||
-	    ni->ni_ucastkey.wk_cipher == &ieee80211_cipher_none)
+	    ni->ni_ucastkey.wk_cipher == &ieee80211_cipher_none) {
 		k = &ic->ic_nw_keys[keyid >> 6];
-	else
+	} else {
 		k = &ni->ni_ucastkey;
+	}
 
 	/*
 	 * Insure crypto header is contiguous for all decap work.
 	 */
 	cip = k->wk_cipher;
-	if (m->m_len < hdrlen + cip->ic_header &&
-	    (m = m_pullup(m, hdrlen + cip->ic_header)) == NULL) {
-		*mp = NULL;
+	if (m->m_len < hdrlen + cip->ic_header) {
+		m = m_pullup(m, hdrlen + cip->ic_header);
+		*mp = m;
+	}
+
+	if (m == NULL) {
 		IEEE80211_DPRINTF(ic, IEEE80211_MSG_CRYPTO,
 		    "[%s] unable to pullup %s header\n",
 		    ether_sprintf(wh->i_addr2), cip->ic_name);
@@ -614,7 +651,16 @@ ieee80211_crypto_decap(struct ieee80211com *ic,
 		return NULL;
 	}
 
+	/*
+	 * Ensure there is a header+trailer included.
+	 */
+	if (m->m_pkthdr.len < hdrlen + cip->ic_header + cip->ic_trailer) {
+		IEEE80211_DPRINTF(ic, IEEE80211_MSG_ANY,
+			"%s: WEP data frame too short, len %u\n",
+			__func__, m->m_pkthdr.len);
+		ic->ic_stats.is_rx_tooshort++;
+		return NULL;
+	}
+
 	return (cip->ic_decap(k, m, hdrlen) ? k : NULL);
-#undef IEEE80211_WEP_MINLEN
-#undef IEEE80211_WEP_HDRLEN
 }

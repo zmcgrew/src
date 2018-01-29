@@ -1,4 +1,4 @@
-# $NetBSD: XEN3_DOMU,v 1.80 2017/11/06 02:57:18 rin Exp $
+# $NetBSD: XEN3_DOMU,v 1.83 2018/01/23 14:47:53 sevan Exp $
 
 include 	"arch/amd64/conf/std.xen"
 
@@ -10,7 +10,7 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #options 	UVMHIST_PRINT
 #options 	SYSCALL_DEBUG
 
-#ident		"XEN3_DOMU-$Revision: 1.80 $"
+#ident		"XEN3_DOMU-$Revision: 1.83 $"
 
 maxusers	32		# estimated number of users
 
@@ -40,6 +40,8 @@ options 	MODULAR		# new style module(7) framework
 options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 options 	BUFQ_PRIOCSCAN
 
@@ -94,6 +96,7 @@ file-system	CODA		# Coda File System; also needs vcoda (below)
 file-system	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/pts/N support
 file-system	TMPFS		# Efficient memory file-system
+#file-system	AUTOFS		# Automounter Filesystem
 
 # File system options
 options 	QUOTA		# legacy UFS quotas
@@ -237,6 +240,9 @@ pseudo-device	vcoda			# coda minicache <-> venus comm.
 
 # a pseudo device needed for SMBFS
 pseudo-device	nsmb			# experimental - SMB requester
+
+# a pseudo device needed for AUTOFS
+#pseudo-device	autofs			# experimental - AUTOFS
 
 # iSCSI initiator and dependencies
 #scsibus* at scsi?

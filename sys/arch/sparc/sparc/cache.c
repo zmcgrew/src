@@ -1,4 +1,4 @@
-/*	$NetBSD: cache.c,v 1.98 2017/12/01 22:57:07 mrg Exp $ */
+/*	$NetBSD: cache.c,v 1.100 2018/01/16 08:23:17 mrg Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cache.c,v 1.98 2017/12/01 22:57:07 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cache.c,v 1.100 2018/01/16 08:23:17 mrg Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_sparc_arch.h"
@@ -78,19 +78,19 @@ __KERNEL_RCSID(0, "$NetBSD: cache.c,v 1.98 2017/12/01 22:57:07 mrg Exp $");
 #include <sparc/sparc/cpuvar.h>
 
 struct evcnt vcache_flush_pg =
-	EVCNT_INITIALIZER(EVCNT_TYPE_INTR,0,"vcfl","pg");
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC,0,"vcfl","pg");
 EVCNT_ATTACH_STATIC(vcache_flush_pg);
 struct evcnt vcache_flush_seg =
-	EVCNT_INITIALIZER(EVCNT_TYPE_INTR,0,"vcfl","seg");
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC,0,"vcfl","seg");
 EVCNT_ATTACH_STATIC(vcache_flush_seg);
 struct evcnt vcache_flush_reg =
-	EVCNT_INITIALIZER(EVCNT_TYPE_INTR,0,"vcfl","reg");
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC,0,"vcfl","reg");
 EVCNT_ATTACH_STATIC(vcache_flush_reg);
 struct evcnt vcache_flush_ctx =
-	EVCNT_INITIALIZER(EVCNT_TYPE_INTR,0,"vcfl","ctx");
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC,0,"vcfl","ctx");
 EVCNT_ATTACH_STATIC(vcache_flush_ctx);
 struct evcnt vcache_flush_range =
-	EVCNT_INITIALIZER(EVCNT_TYPE_INTR,0,"vcfl","rng");
+	EVCNT_INITIALIZER(EVCNT_TYPE_MISC,0,"vcfl","rng");
 EVCNT_ATTACH_STATIC(vcache_flush_range);
 
 int cache_alias_dist;		/* Cache anti-aliasing constants */
@@ -166,7 +166,7 @@ ms1_cache_enable(void)
 	 * MS1 cache is write-through and not write-allocate, so we can
 	 * use cacheable access while not displacing cache lines.
 	 */
-	cpuinfo.flags |= CPUFLG_CACHE_MANDATORY;
+	CACHEINFO.c_flags |= CACHE_MANDATORY;
 }
 
 void
@@ -197,7 +197,7 @@ viking_cache_enable(void)
 		/* Set external cache enable bit in MXCC control register */
 		stda(MXCC_CTRLREG, ASI_CONTROL,
 		     ldda(MXCC_CTRLREG, ASI_CONTROL) | MXCC_CTRLREG_CE);
-		cpuinfo.flags |= CPUFLG_CACHEPAGETABLES; /* Ok to cache PTEs */
+		CACHEINFO.c_flags |= CACHE_PAGETABLES; /* Ok to cache PTEs */
 		CACHEINFO.ec_enabled = 1;
 	}
 }

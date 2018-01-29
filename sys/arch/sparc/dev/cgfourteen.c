@@ -1,4 +1,4 @@
-/*	$NetBSD: cgfourteen.c,v 1.82 2016/09/16 22:39:35 macallan Exp $ */
+/*	$NetBSD: cgfourteen.c,v 1.85 2018/01/25 14:45:58 macallan Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -163,6 +163,7 @@ static int  cg14_do_cursor(struct cgfourteen_softc *,
 static void cg14_wait_idle(struct cgfourteen_softc *);
 static void cg14_rectfill(struct cgfourteen_softc *, int, int, int, int,
     uint32_t);
+static void cg14_rectfill_a(void *, int, int, int, int, long);
 static void cg14_invert(struct cgfourteen_softc *, int, int, int, int);
 static void cg14_bitblt(void *, int, int, int, int, int, int, int);
 static void cg14_bitblt_gc(void *, int, int, int, int, int, int, int);
@@ -723,7 +724,8 @@ cg14_setup_wsdisplay(struct cgfourteen_softc *sc, int is_cons)
 		0, 0,
 		NULL,
 		8, 16,
-		WSSCREEN_WSCOLORS | WSSCREEN_HILIT,
+		WSSCREEN_WSCOLORS | WSSCREEN_HILIT | WSSCREEN_UNDERLINE |
+		WSSCREEN_RESIZE,
 		NULL
 	};
 	cg14_set_depth(sc, 8);
@@ -733,11 +735,14 @@ cg14_setup_wsdisplay(struct cgfourteen_softc *sc, int is_cons)
 	vcons_init(&sc->sc_vd, sc, &sc->sc_defaultscreen_descr,
 	    &cg14_accessops);
 	sc->sc_vd.init_screen = cg14_init_screen;
+	sc->sc_vd.show_screen_cookie = &sc->sc_gc;
+	sc->sc_vd.show_screen_cb = glyphcache_adapt;
 
 	ri = &sc->sc_console_screen.scr_ri;
 
 	sc->sc_gc.gc_bitblt = cg14_bitblt_gc;
 	sc->sc_gc.gc_blitcookie = sc;
+	sc->sc_gc.gc_rectfill = cg14_rectfill_a;
 	sc->sc_gc.gc_rop = 0xc;
 	if (is_cons) {
 		vcons_init_screen(&sc->sc_vd, &sc->sc_console_screen, 1,
@@ -1007,8 +1012,10 @@ cg14_init_screen(void *cookie, struct vcons_screen *scr,
 	ri->ri_flg = RI_CENTER | RI_FULLCLEAR;
 
 	ri->ri_bits = (char *)sc->sc_fb.fb_pixels;
+
+	scr->scr_flags |= VCONS_LOADFONT;
 #if NSX > 0
-	ri->ri_flg |= RI_8BIT_IS_RGB | RI_ENABLE_ALPHA;
+	ri->ri_flg |= RI_8BIT_IS_RGB | RI_ENABLE_ALPHA | RI_PREFER_ALPHA;
 
 	/*
 	 * unaligned copies with horizontal overlap are slow, so don't bother
@@ -1018,14 +1025,15 @@ cg14_init_screen(void *cookie, struct vcons_screen *scr,
 		scr->scr_flags |= VCONS_NO_COPYCOLS;
 	} else
 #endif
-	scr->scr_flags |= VCONS_DONT_READ;
+		scr->scr_flags |= VCONS_DONT_READ;
 
 	if (existing) {
 		ri->ri_flg |= RI_CLEAR;
 	}
 
 	rasops_init(ri, 0, 0);
-	ri->ri_caps = WSSCREEN_WSCOLORS;
+	ri->ri_caps = WSSCREEN_WSCOLORS | WSSCREEN_HILIT | WSSCREEN_UNDERLINE |
+		      WSSCREEN_RESIZE;
 
 	rasops_reconfig(ri,
 	    sc->sc_fb.fb_type.fb_height / ri->ri_font->fontheight,
@@ -1112,7 +1120,11 @@ cg14_do_cursor(struct cgfourteen_softc *sc, struct wsdisplay_cursor *cur)
 	if (cur->which & WSDISPLAY_CURSOR_DOCMAP) {
 		int i;
 		uint32_t val;
-	
+
+		if ((cur->cmap.index > 2) || (cur->cmap.count > 3) ||
+		    (cur->cmap.index + cur->cmap.count > 3))
+			return EINVAL;
+
 		for (i = 0; i < min(cur->cmap.count, 3); i++) {
 			val = (cur->cmap.red[i] ) |
 			      (cur->cmap.green[i] << 8) |
@@ -1209,7 +1221,7 @@ cg14_rectfill(struct cgfourteen_softc *sc, int x, int y, int wi, int he,
 			cnt -= pre;
 		}
 		/* now do the aligned pixels in 32bit chunks */
-		while(cnt > 31) {
+		while(cnt > 3) {
 			words = min(32, cnt >> 2);
 			sta(pptr & ~7, ASI_SX, SX_STS(8, words - 1, pptr & 7));
 			pptr += words << 2;
@@ -1220,6 +1232,16 @@ cg14_rectfill(struct cgfourteen_softc *sc, int x, int y, int wi, int he,
 			sta(pptr & ~7, ASI_SX, SX_STBS(8, cnt - 1, pptr & 7));
 		addr += stride;
 	}
+}
+
+static void
+cg14_rectfill_a(void *cookie, int dstx, int dsty,
+    int width, int height, long attr)
+{
+	struct cgfourteen_softc *sc = cookie;
+
+	cg14_rectfill(sc, dstx, dsty, width, height,
+	    sc->sc_vd.active->scr_ri.ri_devcmap[(attr >> 24 & 0xf)]);
 }
 
 static void
@@ -1459,16 +1481,19 @@ cg14_putchar(void *cookie, int row, int col, u_int c, long attr)
 
 	bg = ri->ri_devcmap[(attr >> 16) & 0xf];
 	fg = ri->ri_devcmap[(attr >> 24) & 0xf];
-	sx_write(sc->sc_sx, SX_QUEUED(8), bg);
-	sx_write(sc->sc_sx, SX_QUEUED(9), fg);
 
 	x = ri->ri_xorigin + col * wi;
 	y = ri->ri_yorigin + row * he;
 
 	if (c == 0x20) {
 		cg14_rectfill(sc, x, y, wi, he, bg);
+		if (attr & 1)
+			cg14_rectfill(sc, x, y + he - 2, wi, 1, fg);
 		return;
 	}
+
+	sx_write(sc->sc_sx, SX_QUEUED(8), bg);
+	sx_write(sc->sc_sx, SX_QUEUED(9), fg);
 
 	data = WSFONT_GLYPH(c, font);
 	addr = sc->sc_fb_paddr + x + stride * y;
@@ -1501,6 +1526,8 @@ cg14_putchar(void *cookie, int row, int col, u_int c, long attr)
 			break;
 		}
 	}
+	if (attr & 1)
+		cg14_rectfill(sc, x, y + he - 2, wi, 1, fg);
 }
 
 static void
@@ -1545,7 +1572,7 @@ cg14_putchar_aa(void *cookie, int row, int col, u_int c, long attr)
 	struct vcons_screen *scr = ri->ri_hw;
 	struct cgfourteen_softc *sc = scr->scr_cookie;
 	int stride = sc->sc_fb.fb_type.fb_width;
-	uint32_t bg, addr, bg8, fg8, pixel, in, q, next;
+	uint32_t bg, fg, addr, bg8, fg8, pixel, in, q, next;
 	int i, j, x, y, wi, he, r, g, b, aval, cnt, reg;
 	int r1, g1, b1, r0, g0, b0, fgo, bgo, rv;
 	uint8_t *data8;
@@ -1560,10 +1587,13 @@ cg14_putchar_aa(void *cookie, int row, int col, u_int c, long attr)
 	he = font->fontheight;
 
 	bg = ri->ri_devcmap[(attr >> 16) & 0xf];
+	fg = ri->ri_devcmap[(attr >> 24) & 0xf];
 	x = ri->ri_xorigin + col * wi;
 	y = ri->ri_yorigin + row * he;
 	if (c == 0x20) {
 		cg14_rectfill(sc, x, y, wi, he, bg);
+		if (attr & 1)
+			cg14_rectfill(sc, x, y + he - 2, wi, 1, fg);
 		return;
 	}
 
@@ -1641,7 +1671,9 @@ cg14_putchar_aa(void *cookie, int row, int col, u_int c, long attr)
 
 	if (rv == GC_ADD) {
 		glyphcache_add(&sc->sc_gc, c, x, y);
-	}
+	} else if (attr & 1)
+		cg14_rectfill(sc, x, y + he - 2, wi, 1, fg);
+
 }
 
 static void

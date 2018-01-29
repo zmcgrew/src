@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.256 2017/12/25 04:41:49 ozaki-r Exp $	*/
+/*	$NetBSD: in6.c,v 1.259 2018/01/19 08:01:05 ozaki-r Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.256 2017/12/25 04:41:49 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.259 2018/01/19 08:01:05 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1423,6 +1423,7 @@ in6_unlink_ifa(struct in6_ifaddr *ia, struct ifnet *ifp)
 	mutex_enter(&in6_ifaddr_lock);
 	IN6_ADDRLIST_WRITER_REMOVE(ia);
 	ifa_remove(ifp, &ia->ia_ifa);
+	/* Assume ifa_remove called pserialize_perform and psref_destroy */
 	mutex_exit(&in6_ifaddr_lock);
 
 	/*
@@ -2324,6 +2325,24 @@ in6_setmaxmtu(void)
 		in6_maxmtu = maxmtu;
 }
 
+int
+in6_tunnel_validate(const struct ip6_hdr *ip6, const struct in6_addr *src,
+    const struct in6_addr *dst)
+{
+
+	/* check for address match */
+	if (!IN6_ARE_ADDR_EQUAL(src, &ip6->ip6_dst) ||
+	    !IN6_ARE_ADDR_EQUAL(dst, &ip6->ip6_src))
+		return 0;
+
+	/* martian filters on outer source - done in ip6_input */
+
+	/* NOTE: the pakcet may be dropped by uRPF. */
+
+	/* return valid bytes length */
+	return sizeof(*src) + sizeof(*dst);
+}
+
 /*
  * Provide the length of interface identifiers to be used for the link attached
  * to the given interface.  The length should be defined in "IPv6 over
@@ -2553,7 +2572,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 	lle = in6_lltable_find_dst(llt, &sin6->sin6_addr);
 
 	if (lle == NULL) {
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
 		log(LOG_INFO, "%s: cache for %s is not found\n",
@@ -2564,7 +2583,7 @@ in6_lltable_delete(struct lltable *llt, u_int flags,
 
 	LLE_WLOCK(lle);
 	lle->la_flags |= LLE_DELETED;
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 	{
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));

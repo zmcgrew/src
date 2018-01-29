@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $	*/
+/*	$NetBSD: route.c,v 1.205 2018/01/23 07:20:10 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.205 2018/01/23 07:20:10 ozaki-r Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -143,7 +143,7 @@ __KERNEL_RCSID(0, "$NetBSD: route.c,v 1.201 2017/09/25 04:15:33 ozaki-r Exp $");
 #define RT_REFCNT_TRACE(rt)	do {} while (0)
 #endif
 
-#ifdef DEBUG
+#ifdef RT_DEBUG
 #define dlog(level, fmt, args...)	log(level, fmt, ##args)
 #else
 #define dlog(level, fmt, args...)	do {} while (0)
@@ -255,7 +255,7 @@ static struct {
 	struct workqueue	*wq;
 	struct work		wk;
 	kmutex_t		lock;
-	struct rtentry		*queue[10];
+	SLIST_HEAD(, rtentry)	queue;
 } rt_free_global __cacheline_aligned;
 
 /* psref for rtentry */
@@ -458,6 +458,8 @@ rt_init(void)
 #endif
 
 	mutex_init(&rt_free_global.lock, MUTEX_DEFAULT, IPL_SOFTNET);
+	SLIST_INIT(&rt_free_global.queue);
+
 	rt_psref_class = psref_class_create("rtentry", IPL_SOFTNET);
 
 	error = workqueue_create(&rt_free_global.wq, "rt_free",
@@ -686,23 +688,20 @@ _rt_free(struct rtentry *rt)
 static void
 rt_free_work(struct work *wk, void *arg)
 {
-	int i;
-	struct rtentry *rt;
 
-restart:
-	mutex_enter(&rt_free_global.lock);
-	for (i = 0; i < sizeof(rt_free_global.queue); i++) {
-		if (rt_free_global.queue[i] == NULL)
-			continue;
-		rt = rt_free_global.queue[i];
-		rt_free_global.queue[i] = NULL;
+	for (;;) {
+		struct rtentry *rt;
+
+		mutex_enter(&rt_free_global.lock);
+		if ((rt = SLIST_FIRST(&rt_free_global.queue)) == NULL) {
+			mutex_exit(&rt_free_global.lock);
+			return;
+		}
+		SLIST_REMOVE_HEAD(&rt_free_global.queue, rt_free);
 		mutex_exit(&rt_free_global.lock);
-
 		atomic_dec_uint(&rt->rt_refcnt);
 		_rt_free(rt);
-		goto restart;
 	}
-	mutex_exit(&rt_free_global.lock);
 }
 
 void
@@ -710,23 +709,17 @@ rt_free(struct rtentry *rt)
 {
 
 	KASSERT(rt->rt_refcnt > 0);
-	if (!rt_wait_ok()) {
-		int i;
-		mutex_enter(&rt_free_global.lock);
-		for (i = 0; i < sizeof(rt_free_global.queue); i++) {
-			if (rt_free_global.queue[i] == NULL) {
-				rt_free_global.queue[i] = rt;
-				break;
-			}
-		}
-		KASSERT(i < sizeof(rt_free_global.queue));
-		rt_ref(rt);
-		mutex_exit(&rt_free_global.lock);
-		workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
-	} else {
+	if (rt_wait_ok()) {
 		atomic_dec_uint(&rt->rt_refcnt);
 		_rt_free(rt);
+		return;
 	}
+
+	mutex_enter(&rt_free_global.lock);
+	rt_ref(rt);
+	SLIST_INSERT_HEAD(&rt_free_global.queue, rt, rt_free);
+	mutex_exit(&rt_free_global.lock);
+	workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
 }
 
 #ifdef NET_MPSAFE
@@ -754,7 +747,7 @@ rt_update_prepare(struct rtentry *rt)
 	/* If the entry is being destroyed, don't proceed the update. */
 	if (!ISSET(rt->rt_flags, RTF_UP)) {
 		RT_UNLOCK();
-		return -1;
+		return ESRCH;
 	}
 	rt->rt_flags |= RTF_UPDATING;
 	RT_UNLOCK();
