@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.32 2017/12/28 18:29:45 christos Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.34 2018/01/08 06:10:30 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.32 2017/12/28 18:29:45 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.34 2018/01/08 06:10:30 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -772,7 +772,7 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
     void *addr, size_t data)
 {
 	int error;
-	struct proc *t = l->l_proc;
+	struct proc *t = (*lt)->l_proc;
 	struct vmspace *vm;
 
 	if ((error = ptrace_update_lwp(t, lt, data)) != 0)
@@ -814,7 +814,7 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
 		return EINVAL;
 	}
 
-	error = proc_vmspace_getref(t, &vm);
+	error = proc_vmspace_getref(l->l_proc, &vm);
 	if (error)
 		return error;
 
@@ -1055,7 +1055,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 			break;
 		if ((error = ptrace_doio(l, t, lt, &piod, addr, false)) != 0)
 			break;
-		(void) ptm->ptm_copyout_piod(&piod, addr, data);
+		error = ptm->ptm_copyout_piod(&piod, addr, data);
 		break;
 
 	case PT_DUMPCORE:

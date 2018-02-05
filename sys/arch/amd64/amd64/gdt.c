@@ -1,4 +1,4 @@
-/*	$NetBSD: gdt.c,v 1.43 2017/09/10 10:51:13 maxv Exp $	*/
+/*	$NetBSD: gdt.c,v 1.45 2018/01/05 08:04:20 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 2009 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gdt.c,v 1.43 2017/09/10 10:51:13 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gdt.c,v 1.45 2018/01/05 08:04:20 maxv Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
@@ -66,8 +66,15 @@ typedef struct {
 	size_t nslots;
 } gdt_bitmap_t;
 
-size_t gdt_size;			/* size of GDT in bytes */
-static gdt_bitmap_t gdt_bitmap;		/* bitmap of busy slots */
+/* size of GDT in bytes */
+#ifdef XEN
+const size_t gdt_size = FIRST_RESERVED_GDT_BYTE;
+#else
+const size_t gdt_size = MAXGDTSIZ;
+#endif
+
+/* bitmap of busy slots */
+static gdt_bitmap_t gdt_bitmap;
 
 #if defined(USER_LDT) || !defined(XEN)
 static void set_sys_gdt(int, void *, size_t, int, int, int);
@@ -125,20 +132,20 @@ void
 gdt_init(void)
 {
 	char *old_gdt;
-	struct vm_page *pg;
-	vaddr_t va;
 	struct cpu_info *ci = &cpu_info_primary;
 
 	/* Initialize the global values */
-#ifdef XEN
-	gdt_size = FIRST_RESERVED_GDT_BYTE;
-#else
-	gdt_size = MAXGDTSIZ;
-#endif
 	memset(&gdt_bitmap.busy, 0, sizeof(gdt_bitmap.busy));
 	gdt_bitmap.nslots = NSLOTS(gdt_size);
 
 	old_gdt = gdtstore;
+
+#ifdef __HAVE_PCPU_AREA
+	/* The GDT is part of the pcpuarea */
+	gdtstore = (char *)&pcpuarea->ent[cpu_index(ci)].gdt;
+#else
+	struct vm_page *pg;
+	vaddr_t va;
 
 	/* Allocate gdt_size bytes of memory. */
 	gdtstore = (char *)uvm_km_alloc(kernel_map, gdt_size, 0,
@@ -153,6 +160,7 @@ gdt_init(void)
 		    VM_PROT_READ | VM_PROT_WRITE, 0);
 	}
 	pmap_update(pmap_kernel());
+#endif
 
 	/* Copy the initial bootstrap GDT into the new area. */
 	memcpy(gdtstore, old_gdt, DYNSEL_START);
@@ -172,6 +180,9 @@ gdt_init(void)
 void
 gdt_alloc_cpu(struct cpu_info *ci)
 {
+#ifdef __HAVE_PCPU_AREA
+	ci->ci_gdt = (union descriptor *)&pcpuarea->ent[cpu_index(ci)].gdt;
+#else
 	struct vm_page *pg;
 	vaddr_t va;
 
@@ -187,6 +198,7 @@ gdt_alloc_cpu(struct cpu_info *ci)
 		    VM_PROT_READ | VM_PROT_WRITE, 0);
 	}
 	pmap_update(pmap_kernel());
+#endif
 
 	memcpy(ci->ci_gdt, gdtstore, gdt_size);
 }

@@ -1,4 +1,4 @@
-#	$NetBSD: files.amd64,v 1.96 2017/12/07 23:11:50 christos Exp $
+#	$NetBSD: files.amd64,v 1.101 2018/01/20 14:27:14 maxv Exp $
 #
 # new style config file for amd64 architecture
 #
@@ -36,6 +36,7 @@ file	arch/amd64/amd64/copy.S			machdep
 file	arch/amd64/amd64/spl.S			machdep
 
 file	arch/amd64/amd64/amd64func.S		machdep
+file	arch/amd64/amd64/amd64_trap.S		machdep
 file	arch/amd64/amd64/autoconf.c		machdep
 file	arch/amd64/amd64/busfunc.S		machdep
 file	arch/amd64/amd64/cpu_in_cksum.S		(inet | inet6) & cpu_in_cksum
@@ -47,7 +48,7 @@ file	arch/amd64/amd64/kobj_machdep.c		modular
 file	kern/subr_disk_mbr.c			disk
 file	arch/amd64/amd64/gdt.c			machdep
 file	arch/amd64/amd64/machdep.c		machdep
-file	arch/amd64/amd64/prekern.c		machdep
+file	arch/amd64/amd64/prekern.c		kaslr
 file	arch/amd64/amd64/process_machdep.c	machdep
 file	arch/amd64/amd64/trap.c			machdep
 file	arch/x86/x86/fpu.c			machdep

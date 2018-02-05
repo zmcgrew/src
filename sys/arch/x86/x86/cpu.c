@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.147 2018/01/27 09:33:25 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,12 +62,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.147 2018/01/27 09:33:25 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
 #include "opt_mtrr.h"
 #include "opt_multiprocessor.h"
+#include "opt_svs.h"
 
 #include "lapic.h"
 #include "ioapic.h"
@@ -76,7 +77,6 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.141 2017/11/11 11:00:46 maxv Exp $");
 #include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/device.h>
-#include <sys/kmem.h>
 #include <sys/cpu.h>
 #include <sys/cpufreq.h>
 #include <sys/idle.h>
@@ -221,6 +221,36 @@ cpu_match(device_t parent, cfdata_t match, void *aux)
 	return 1;
 }
 
+#ifdef __HAVE_PCPU_AREA
+void
+cpu_pcpuarea_init(struct cpu_info *ci)
+{
+	struct vm_page *pg;
+	size_t i, npages;
+	vaddr_t base, va;
+	paddr_t pa;
+
+	CTASSERT(sizeof(struct pcpu_entry) % PAGE_SIZE == 0);
+
+	npages = sizeof(struct pcpu_entry) / PAGE_SIZE;
+	base = (vaddr_t)&pcpuarea->ent[cpu_index(ci)];
+
+	for (i = 0; i < npages; i++) {
+		pg = uvm_pagealloc(NULL, 0, NULL, UVM_PGA_ZERO);
+		if (pg == NULL) {
+			panic("failed to allocate pcpu PA");
+		}
+
+		va = base + i * PAGE_SIZE;
+		pa = VM_PAGE_TO_PHYS(pg);
+
+		pmap_kenter_pa(va, pa, VM_PROT_READ|VM_PROT_WRITE, 0);
+	}
+
+	pmap_update(pmap_kernel());
+}
+#endif
+
 static void
 cpu_vm_init(struct cpu_info *ci)
 {
@@ -312,8 +342,9 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			return;
 		}
 		aprint_naive(": Application Processor\n");
-		ptr = (uintptr_t)kmem_zalloc(sizeof(*ci) + CACHE_LINE_SIZE - 1,
-		    KM_SLEEP);
+		ptr = (uintptr_t)uvm_km_alloc(kernel_map,
+		    sizeof(*ci) + CACHE_LINE_SIZE - 1, 0,
+		    UVM_KMF_WIRED|UVM_KMF_ZERO);
 		ci = (struct cpu_info *)roundup2(ptr, CACHE_LINE_SIZE);
 		ci->ci_curldt = -1;
 	} else {
@@ -358,10 +389,17 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			    "mi_cpu_attach failed with %d\n", error);
 			return;
 		}
+#ifdef __HAVE_PCPU_AREA
+		cpu_pcpuarea_init(ci);
+#endif
 		cpu_init_tss(ci);
 	} else {
 		KASSERT(ci->ci_data.cpu_idlelwp != NULL);
 	}
+
+#ifdef SVS
+	cpu_svs_init(ci);
+#endif
 
 	pmap_reference(pmap_kernel());
 	ci->ci_pmap = pmap_kernel();
@@ -574,15 +612,26 @@ cpu_init(struct cpu_info *ci)
 	if (cpu_feature[5] & CPUID_SEF_SMEP)
 		cr4 |= CR4_SMEP;
 
-#ifdef amd64
 	/* If SMAP is supported, enable it */
 	if (cpu_feature[5] & CPUID_SEF_SMAP)
 		cr4 |= CR4_SMAP;
-#endif
 
 	if (cr4) {
 		cr4 |= rcr4();
 		lcr4(cr4);
+	}
+
+	/*
+	 * Changing CR4 register may change cpuid values. For example, setting
+	 * CR4_OSXSAVE sets CPUID2_OSXSAVE. The CPUID2_OSXSAVE is in
+	 * ci_feat_val[1], so update it.
+	 * XXX Other than ci_feat_val[1] might be changed.
+	 */
+	if (cpuid_level >= 1) {
+		u_int descs[4];
+
+		x86_cpuid(1, descs);
+		ci->ci_feat_val[1] = descs[2];
 	}
 
 	if (x86_fpu_save >= FPU_SAVE_FXSAVE) {
@@ -1215,6 +1264,10 @@ x86_cpu_idle_halt(void)
 void
 cpu_load_pmap(struct pmap *pmap, struct pmap *oldpmap)
 {
+#ifdef SVS
+	svs_pdir_switch(pmap);
+#endif
+
 #ifdef PAE
 	struct cpu_info *ci = curcpu();
 	bool interrupts_enabled;

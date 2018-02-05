@@ -1,6 +1,6 @@
-/*	$NetBSD: intr.c,v 1.113 2017/12/13 16:30:18 bouyer Exp $	*/
+/*	$NetBSD: intr.c,v 1.122 2018/01/23 13:57:57 roy Exp $	*/
 
-/*-
+/*
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -133,7 +133,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.113 2017/12/13 16:30:18 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.122 2018/01/23 13:57:57 roy Exp $");
 
 #include "opt_intrdebug.h"
 #include "opt_multiprocessor.h"
@@ -168,7 +168,7 @@ __KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.113 2017/12/13 16:30:18 bouyer Exp $");
 #include "acpica.h"
 
 #if NIOAPIC > 0 || NACPICA > 0
-#include <machine/i82093var.h> 
+#include <machine/i82093var.h>
 #include <machine/mpbiosvar.h>
 #include <machine/mpacpi.h>
 #endif
@@ -245,17 +245,16 @@ static const char *xen_intr_string(int, char *, size_t, struct pic *);
 #endif /* XXX: XEN */
 #endif
 
+#if defined(INTRSTACKSIZE)
 static inline bool redzone_const_or_false(bool);
 static inline int redzone_const_or_zero(int);
+#endif
 
 static void intr_redistribute_xc_t(void *, void *);
 static void intr_redistribute_xc_s1(void *, void *);
 static void intr_redistribute_xc_s2(void *, void *);
 static bool intr_redistribute(struct cpu_info *);
 
-#if !defined(XEN)
-static const char *create_intrid(int, struct pic *, int, char *, size_t);
-#endif /* XEN */
 static struct intrsource *intr_get_io_intrsource(const char *);
 static void intr_free_io_intrsource_direct(struct intrsource *);
 #if !defined(XEN)
@@ -375,7 +374,7 @@ intr_calculatemasks(struct cpu_info *ci)
 
 /*
  * List to keep track of PCI buses that are probed but not known
- * to the firmware. Used to 
+ * to the firmware. Used to
  *
  * XXX should maintain one list, not an array and a linked list.
  */
@@ -495,8 +494,8 @@ intr_scan_bus(int bus, int pin, intr_handle_t *handle)
  * Create an interrupt id such as "ioapic0 pin 9". This interrupt id is used
  * by MI code and intrctl(8).
  */
-static const char *
-create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size_t len)
+const char *
+intr_create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf, size_t len)
 {
 	int ih = 0;
 
@@ -794,7 +793,7 @@ intr_allocate_slot(struct pic *pic, int pin, int level,
 	}
 	KASSERT(ci != NULL);
 
-	/* 
+	/*
 	 * Now allocate an IDT vector.
 	 * For the 8259 these are reserved up front.
 	 */
@@ -958,7 +957,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 	    "non-legacy IRQ on i8259");
 
 	ih = kmem_alloc(sizeof(*ih), KM_SLEEP);
-	intrstr = create_intrid(legacy_irq, pic, pin, intrstr_buf,
+	intrstr = intr_create_intrid(legacy_irq, pic, pin, intrstr_buf,
 	    sizeof(intrstr_buf));
 	KASSERT(intrstr != NULL);
 
@@ -1037,7 +1036,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 		/* NOTREACHED */
 	}
 
-        /*
+	/*
 	 * If the establishing interrupt uses shared IRQ, the interrupt uses
 	 * "ci->ci_isources[slot]" instead of allocated by the establishing
 	 * device's pci_intr_alloc() or this function.
@@ -1152,7 +1151,7 @@ intr_disestablish_xcall(void *arg1, void *arg2)
 	source = ci->ci_isources[ih->ih_slot];
 	idtvec = source->is_idtvec;
 
-	(*pic->pic_hwmask)(pic, ih->ih_pin);	
+	(*pic->pic_hwmask)(pic, ih->ih_pin);
 	atomic_and_32(&ci->ci_ipending, ~(1 << ih->ih_slot));
 
 	/*
@@ -1251,8 +1250,8 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin,
 		 * et. al. and unify with x86/intr.c
 		 */
 		rih->ih_pin = pin; /* port */
-		rih->ih_fun = handler;
-		rih->ih_arg = arg;
+		rih->ih_fun = rih->ih_realfun = handler;
+		rih->ih_arg = rih->ih_realarg = arg;
 		rih->pic_type = pic->pic_type;
 		return rih;
 	} 	/* Else we assume pintr */
@@ -1431,6 +1430,7 @@ struct intrhand fake_preempt_intrhand;
 static const char *x86_ipi_names[X86_NIPI] = X86_IPI_NAMES;
 #endif
 
+#if defined(INTRSTACKSIZE)
 static inline bool
 redzone_const_or_false(bool x)
 {
@@ -1446,6 +1446,7 @@ redzone_const_or_zero(int x)
 {
 	return redzone_const_or_false(true) ? x : 0;
 }
+#endif
 
 /*
  * Initialize all handlers that aren't dynamically allocated, and exist
@@ -1459,9 +1460,6 @@ cpu_intr_init(struct cpu_info *ci)
 #if NLAPIC > 0 && defined(MULTIPROCESSOR)
 	int i;
 	static int first = 1;
-#endif
-#ifdef INTRSTACKSIZE
-	vaddr_t istack;
 #endif
 
 #if NLAPIC > 0
@@ -1506,35 +1504,36 @@ cpu_intr_init(struct cpu_info *ci)
 
 #else /* XEN */
 	int i; /* XXX: duplicate */
-	vaddr_t istack; /* XXX: duplicate */
-		ci->ci_iunmask[0] = 0xfffffffe;
+	ci->ci_iunmask[0] = 0xfffffffe;
 	for (i = 1; i < NIPL; i++)
 		ci->ci_iunmask[i] = ci->ci_iunmask[i - 1] & ~(1 << i);
 #endif /* XEN */
 
 #if defined(INTRSTACKSIZE)
+	vaddr_t istack;
+
 	/*
 	 * If the red zone is activated, protect both the top and
 	 * the bottom of the stack with an unmapped page.
 	 */
 	istack = uvm_km_alloc(kernel_map,
 	    INTRSTACKSIZE + redzone_const_or_zero(2 * PAGE_SIZE), 0,
-	    UVM_KMF_WIRED);
+	    UVM_KMF_WIRED|UVM_KMF_ZERO);
 	if (redzone_const_or_false(true)) {
 		pmap_kremove(istack, PAGE_SIZE);
 		pmap_kremove(istack + INTRSTACKSIZE + PAGE_SIZE, PAGE_SIZE);
 		pmap_update(pmap_kernel());
 	}
-	/* 33 used to be 1.  Arbitrarily reserve 32 more register_t's
+
+	/*
+	 * 33 used to be 1.  Arbitrarily reserve 32 more register_t's
 	 * of space for ddb(4) to examine some subroutine arguments
 	 * and to hunt for the next stack frame.
 	 */
 	ci->ci_intrstack = (char *)istack + redzone_const_or_zero(PAGE_SIZE) +
 	    INTRSTACKSIZE - 33 * sizeof(register_t);
-#if defined(__x86_64__)
-	ci->ci_tss.tss_ist[0] = (uintptr_t)ci->ci_intrstack & ~0xf;
-#endif /* defined(__x86_64__) */
-#endif /* defined(INTRSTACKSIZE) */
+#endif
+
 	ci->ci_idepth = -1;
 }
 
@@ -1829,7 +1828,7 @@ intr_redistribute(struct cpu_info *oci)
 	where = xc_unicast(0, intr_redistribute_xc_t, isp,
 	    (void *)(intptr_t)nslot, nci);
 	xc_wait(where);
-	
+
 	/*
 	 * We're ready to go on the target CPU.  Run a cross call to
 	 * reroute the interrupt away from the source CPU.

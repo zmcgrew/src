@@ -1,4 +1,4 @@
-.\"	$NetBSD: mbuf.9,v 1.51 2013/06/17 09:58:21 ryo Exp $
+.\"	$NetBSD: mbuf.9,v 1.56 2018/01/25 09:33:21 maxv Exp $
 .\"
 .\" Copyright (c) 1997 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd June 17, 2013
+.Dd January 25, 2018
 .Dt MBUF 9
 .Os
 .Sh NAME
@@ -66,8 +66,7 @@
 .Nm M_LEADINGSPACE ,
 .Nm M_TRAILINGSPACE ,
 .Nm M_PREPEND ,
-.Nm MCHTYPE ,
-.Nm MFREE
+.Nm MCHTYPE
 .Nd "functions and macros for managing memory used by networking code"
 .Sh SYNOPSIS
 .In sys/mbuf.h
@@ -141,8 +140,6 @@
 .Fn M_PREPEND "struct mbuf *m" "int plen" "int how"
 .Ft void
 .Fn MCHTYPE "struct mbuf *m" "int type"
-.Ft void
-.Fn MFREE "struct mbuf *m" "struct mbuf *n"
 .Sh DESCRIPTION
 The
 .Nm
@@ -306,7 +303,7 @@ from caller.
 .It Fn m_copypacket "struct mbuf *m" "int how"
 Copies an entire packet, including header (which must be present).
 This function is an optimization of the common case
-.Li m_copym(m, 0, Dv M_COPYALL, Fa how ) .
+.Li m_copym ( m , 0 , Dv M_COPYALL , Fa how ) .
 .It Fn m_copydata "struct mbuf *m" "int off" "int len" "void *cp"
 Copies
 .Fa len
@@ -434,6 +431,10 @@ The
 parameter is a choice of
 .Dv M_WAIT / M_DONTWAIT
 from caller.
+It is illegal for the
+.Fa len
+parameter to be greater than
+.Dv MHLEN .
 .It Fn m_pulldown "struct mbuf *m" "int off" "int len" "int *offp"
 Rearranges an mbuf chain so that
 .Fa len
@@ -465,7 +466,7 @@ Returns
 .Dv NULL
 and frees the mbuf chain on failure.
 .Fa len
-must be smaller or equal than
+must be smaller than or equal to
 .Dv MCLBYTES .
 .It Fn m_pullup "struct mbuf *m" "int len"
 Rearranges an mbuf chain so that
@@ -515,8 +516,7 @@ which is all but the first
 bytes.
 In case of failure, it returns
 .Dv NULL
-and attempts to
-restore the chain to its original state.
+and restores the chain to its original state.
 .It Fn m_adj "struct mbuf *mp" "int req_len"
 Shaves off
 .Fa req_len
@@ -729,12 +729,6 @@ Change mbuf
 .Fa m
 to new type
 .Fa type .
-Implemented as a macro.
-.It Fn MFREE "struct mbuf *m" "struct mbuf *n"
-Frees a single mbuf
-.Fa m
-and places the successor, if any, in mbuf
-.Fa n .
 Implemented as a macro.
 .El
 .Sh CODE REFERENCES

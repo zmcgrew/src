@@ -25,6 +25,10 @@
 #include "alpha-bsd-tdep.h"
 #include "inf-ptrace.h"
 
+#ifdef __NetBSD__
+#include "nbsd-nat.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/ptrace.h>
 #include <machine/reg.h>
@@ -92,7 +96,7 @@ alphabsd_fetch_inferior_registers (struct target_ops *ops,
       struct reg gregs;
 
       if (ptrace (PT_GETREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-		  (PTRACE_TYPE_ARG3) &gregs, 0) == -1)
+		  (PTRACE_TYPE_ARG3) &gregs, ptid_get_lwp (inferior_ptid)) == -1)
 	perror_with_name (_("Couldn't get registers"));
 
       alphabsd_supply_reg (regcache, (char *) &gregs, regno);
@@ -106,7 +110,7 @@ alphabsd_fetch_inferior_registers (struct target_ops *ops,
       struct fpreg fpregs;
 
       if (ptrace (PT_GETFPREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-		  (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
+		  (PTRACE_TYPE_ARG3) &fpregs, ptid_get_lwp (inferior_ptid)) == -1)
 	perror_with_name (_("Couldn't get floating point status"));
 
       alphabsd_supply_fpreg (regcache, (char *) &fpregs, regno);
@@ -124,13 +128,13 @@ alphabsd_store_inferior_registers (struct target_ops *ops,
     {
       struct reg gregs;
       if (ptrace (PT_GETREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-                  (PTRACE_TYPE_ARG3) &gregs, 0) == -1)
+                  (PTRACE_TYPE_ARG3) &gregs, ptid_get_lwp (inferior_ptid)) == -1)
         perror_with_name (_("Couldn't get registers"));
 
       alphabsd_fill_reg (regcache, (char *) &gregs, regno);
 
       if (ptrace (PT_SETREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-                  (PTRACE_TYPE_ARG3) &gregs, 0) == -1)
+                  (PTRACE_TYPE_ARG3) &gregs, ptid_get_lwp (inferior_ptid)) == -1)
         perror_with_name (_("Couldn't write registers"));
 
       if (regno != -1)
@@ -143,13 +147,13 @@ alphabsd_store_inferior_registers (struct target_ops *ops,
       struct fpreg fpregs;
 
       if (ptrace (PT_GETFPREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-		  (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
+		  (PTRACE_TYPE_ARG3) &fpregs, ptid_get_lwp (inferior_ptid)) == -1)
 	perror_with_name (_("Couldn't get floating point status"));
 
       alphabsd_fill_fpreg (regcache, (char *) &fpregs, regno);
 
       if (ptrace (PT_SETFPREGS, ptid_get_pid (regcache_get_ptid (regcache)),
-		  (PTRACE_TYPE_ARG3) &fpregs, 0) == -1)
+		  (PTRACE_TYPE_ARG3) &fpregs, ptid_get_lwp (inferior_ptid)) == -1)
 	perror_with_name (_("Couldn't write floating point status"));
     }
 }
@@ -186,6 +190,19 @@ alphabsd_supply_pcb (struct regcache *regcache, struct pcb *pcb)
   return 1;
 }
 
+struct target_ops *
+alphabsd_target (void)
+{
+  struct target_ops *t;
+
+  t = inf_ptrace_target ();
+  t->to_fetch_registers = alphabsd_fetch_inferior_registers;
+  t->to_store_registers = alphabsd_store_inferior_registers;
+
+  return t;
+}
+
+
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */
 void _initialize_alphabsd_nat (void);
@@ -195,10 +212,12 @@ _initialize_alphabsd_nat (void)
 {
   struct target_ops *t;
 
-  t = inf_ptrace_target ();
-  t->to_fetch_registers = alphabsd_fetch_inferior_registers;
-  t->to_store_registers = alphabsd_store_inferior_registers;
+  t = alphabsd_target ();
+#ifndef __NetBSD__
   add_target (t);
+#else
+   nbsd_nat_add_target (t);
+#endif
 
   /* Support debugging kernel virtual memory images.  */
   bsd_kvm_add_target (alphabsd_supply_pcb);

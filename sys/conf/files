@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1189 2017/12/18 15:53:39 skrll Exp $
+#	$NetBSD: files,v 1.1192 2018/01/18 00:32:48 mrg Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -132,7 +132,8 @@ defflag opt_todr.h		TODR_DEBUG
 # compatibility options
 #
 defflag opt_compat_netbsd.h	COMPAT_NETBSD
-defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_80: COMPAT_NETBSD
+defflag	opt_compat_netbsd.h	COMPAT_70: COMPAT_80, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_60: COMPAT_70, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_50: COMPAT_60, COMPAT_NETBSD
 defflag	opt_compat_netbsd.h	COMPAT_40: COMPAT_50, COMPAT_NETBSD
@@ -1463,6 +1464,7 @@ defpseudo carp:		ifnet, ether, arp
 defpseudodev etherip:	ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
+defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
 
 defpseudo sequencer
 defpseudo clockctl
@@ -1538,6 +1540,7 @@ include "fs/sysvbfs/files.sysvbfs"
 include "fs/tmpfs/files.tmpfs"
 include "fs/union/files.union"
 include "fs/v7fs/files.v7fs"
+include "fs/autofs/files.autofs"
 include "miscfs/fdesc/files.fdesc"
 include "miscfs/kernfs/files.kernfs"
 include "miscfs/nullfs/files.nullfs"

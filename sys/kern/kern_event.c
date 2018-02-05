@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $	*/
+/*	$NetBSD: kern_event.c,v 1.103 2018/01/12 17:58:51 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.103 2018/01/12 17:58:51 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -106,6 +106,9 @@ static void	filt_timerexpire(void *x);
 static int	filt_timerattach(struct knote *);
 static void	filt_timerdetach(struct knote *);
 static int	filt_timer(struct knote *, long hint);
+static int	filt_fsattach(struct knote *kn);
+static void	filt_fsdetach(struct knote *kn);
+static int	filt_fs(struct knote *kn, long hint);
 
 static const struct fileops kqueueops = {
 	.fo_name = "kqueue",
@@ -148,6 +151,13 @@ static const struct filterops timer_filtops = {
 	.f_event = filt_timer,
 };
 
+static const struct filterops fs_filtops = {
+	.f_isfd = 0,
+	.f_attach = filt_fsattach,
+	.f_detach = filt_fsdetach,
+	.f_event = filt_fs,
+};
+
 static u_int	kq_ncallouts = 0;
 static int	kq_calloutmax = (4 * 1024);
 
@@ -181,6 +191,7 @@ static struct kfilter sys_kfilters[] = {
 	{ "EVFILT_PROC",	EVFILT_PROC,	0, &proc_filtops, 0 },
 	{ "EVFILT_SIGNAL",	EVFILT_SIGNAL,	0, &sig_filtops, 0 },
 	{ "EVFILT_TIMER",	EVFILT_TIMER,	0, &timer_filtops, 0 },
+	{ "EVFILT_FS",		EVFILT_FS,	0, &fs_filtops, 0 },
 	{ NULL,			0,		0, NULL, 0 },
 };
 
@@ -699,6 +710,12 @@ static void
 filt_timerdetach(struct knote *kn)
 {
 	callout_t *calloutp;
+	struct kqueue *kq = kn->kn_kq;
+
+	mutex_spin_enter(&kq->kq_lock);
+	/* prevent rescheduling when we expire */
+	kn->kn_flags |= EV_ONESHOT;
+	mutex_spin_exit(&kq->kq_lock);
 
 	calloutp = (callout_t *)kn->kn_hook;
 	callout_halt(calloutp, NULL);
@@ -714,6 +731,45 @@ filt_timer(struct knote *kn, long hint)
 
 	mutex_enter(&kqueue_misc_lock);
 	rv = (kn->kn_data != 0);
+	mutex_exit(&kqueue_misc_lock);
+
+	return rv;
+}
+
+/*
+ * Filter event method for EVFILT_FS.
+ */
+struct klist fs_klist = SLIST_HEAD_INITIALIZER(&fs_klist);
+
+static int
+filt_fsattach(struct knote *kn)
+{
+
+	mutex_enter(&kqueue_misc_lock);
+	kn->kn_flags |= EV_CLEAR;
+	SLIST_INSERT_HEAD(&fs_klist, kn, kn_selnext);
+	mutex_exit(&kqueue_misc_lock);
+
+	return 0;
+}
+
+static void
+filt_fsdetach(struct knote *kn)
+{
+
+	mutex_enter(&kqueue_misc_lock);
+	SLIST_REMOVE(&fs_klist, kn, knote, kn_selnext);
+	mutex_exit(&kqueue_misc_lock);
+}
+
+static int
+filt_fs(struct knote *kn, long hint)
+{
+	int rv;
+
+	mutex_enter(&kqueue_misc_lock);
+	kn->kn_fflags |= hint;
+	rv = (kn->kn_fflags != 0);
 	mutex_exit(&kqueue_misc_lock);
 
 	return rv;

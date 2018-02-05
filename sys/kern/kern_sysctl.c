@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sysctl.c,v 1.259 2017/04/25 22:07:10 pgoyette Exp $	*/
+/*	$NetBSD: kern_sysctl.c,v 1.261 2018/01/27 00:00:26 christos Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007, 2008 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sysctl.c,v 1.259 2017/04/25 22:07:10 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sysctl.c,v 1.261 2018/01/27 00:00:26 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_defcorename.h"
@@ -2476,7 +2476,7 @@ sysctl_log_add(struct sysctllog **logp, const struct sysctlnode *node)
 	 * stuff name in, then namelen, then node type, and finally,
 	 * the version for non-node nodes.
 	 */
-	for (i = 0; i < namelen; i++)
+	for (i = 0; i < namelen && i < CTL_MAXNAME; i++)
 		log->log_num[--log->log_left] = name[i];
 	log->log_num[--log->log_left] = namelen;
 	log->log_num[--log->log_left] = SYSCTL_TYPE(node->sysctl_flags);

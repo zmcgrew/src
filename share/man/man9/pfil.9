@@ -1,4 +1,4 @@
-.\"	$NetBSD: pfil.9,v 1.35 2016/06/01 08:17:47 wiz Exp $
+.\"	$NetBSD: pfil.9,v 1.38 2018/01/17 08:34:15 uwe Exp $
 .\"
 .\" Copyright (c) 1996 Matthew R. Green
 .\" All rights reserved.
@@ -24,7 +24,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd June 1, 2016
+.Dd January 17, 2018
 .Dt PFIL 9
 .Os
 .Sh NAME
@@ -35,7 +35,11 @@
 .Nm pfil_hook_get ,
 .Nm pfil_add_hook ,
 .Nm pfil_remove_hook ,
-.Nm pfil_run_hooks
+.Nm pfil_run_hooks ,
+.Nm pfil_add_ihook ,
+.Nm pfil_remove_ihook ,
+.Nm pfil_run_addrhooks ,
+.Nm pfil_run_ifhooks
 .Nd packet filter interface
 .Sh SYNOPSIS
 .In sys/param.h
@@ -58,6 +62,16 @@
 .Fn (*func) "void *arg" "struct mbuf **mp" "struct ifnet *" "int dir"
 .Ft int
 .Fn pfil_run_hooks "struct pfil_head *ph" "struct mbuf **mp" "struct ifnet *ifp" "int dir"
+.Ft int
+.Fn pfil_add_ihook "void (*ifunc)()" "void *arg" "int flags" "struct pfil_head *ph"
+.Ft int
+.Fn pfil_remove_ihook "void (*ifunc)()" "void *arg" "int flags" "struct pfil_head *ph"
+.Ft void
+.Fn (*ifunc) "void *arg" "unsigned long cmd" "void *ptr"
+.Ft void
+.Fn pfil_run_addrhooks "struct pfil_head *ph" "unsigned long" "struct ifaddr *ifa"
+.Ft void
+.Fn pfil_run_ifhooks "struct pfil_head *ph" "unsigned long" "struct ifnet *ifp"
 .Sh DESCRIPTION
 The
 .Nm
@@ -68,16 +82,20 @@ transformations.
 .Pp
 Packet filtering points are registered with
 .Fn pfil_head_register .
-Filtering points are identified by a key (void *) and a data link type
-(int) in the
-.Em pfil_head
+Filtering points are identified by a key
+.Vt ( void * )
+and a data link type
+.Vt ( int )
+in the
+.Vt pfil_head
 structure.
 Packet filters use the key and data link type to look up the filtering
 point with which they register themselves.
 The key is unique to the filtering point.
 The data link type is a
 .Xr bpf 4
-DLT constant indicating what kind of header is present on the packet
+.Dv DLT_ Ns Ar type
+constant indicating what kind of header is present on the packet
 at the filtering point.
 Filtering points may be unregistered with the
 .Fn pfil_head_unregister
@@ -101,41 +119,72 @@ When a filter is invoked, the packet appears just as if it
 That is, all protocol fields are in network byte order.
 The filter is called with its specified argument, the pointer to the
 pointer to the mbuf containing the packet, the pointer to the network
-interface that the packet is traversing, and the direction
-.Dv ( PFIL_IN
+interface that the packet is traversing, and the direction (either
+.Dv PFIL_IN
 or
 .Dv PFIL_OUT ,
 see also below) that the packet is traveling.
-The filter may change which mbuf the mbuf ** argument references.
+The filter may change which mbuf the
+.Vt "mbuf **"
+argument references.
 The filter returns an errno if the packet processing is to stop, or 0
 if the processing is to continue.
 If the packet processing is to stop, it is the responsibility of the
 filter to free the packet.
 .Pp
 The
-.Em flags
+.Fa flags
 parameter, used in the
 .Fn pfil_add_hook
 and
 .Fn pfil_remove_hook
 functions, indicates when the filter should be called.
 The flags are:
-.Bl -tag -offset indent -width PFIL_WAITOK -compact
-.It PFIL_IN
+.Pp
+.Bl -tag -offset indent -width ".Dv PFIL_ALL" -compact
+.It Dv PFIL_IN
 call me on incoming packets
-.It PFIL_OUT
+.It Dv PFIL_OUT
 call me on outgoing packets
-.It PFIL_ALL
+.It Dv PFIL_ALL
 call me on all of the above
-.It PFIL_IFADDR
-call me on interface reconfig (mbuf ** is ioctl #)
-.It PFIL_IFNET
-call me on interface attach/detach (mbuf ** is either
+.El
+.Pp
+By the same token, event handlers register/unregister themselves
+with the
+.Fn pfil_add_ihook
+and
+.Fn pfil_remove_ihook
+functions, respectively.
+The event handler is called with its specified argument, the event id
+(either
+.Dv PFIL_IFNET_ATTACH
+or
+.Dv PFIL_IFNET_DETACH ,
+see also below) or ioctl number, and the pointer
+to the network interface or the pointer to the ifaddr.
+.Pp
+The
+.Fa flags
+parameter, used in the
+.Fn pfil_add_ihook
+and
+.Fn pfil_remove_ihook
+functions, indicates when the filter should be called.
+The flags are:
+.Pp
+.Bl -tag -offset indent -width ".Dv PFIL_IFADDR" -compact
+.It Dv PFIL_IFADDR
+call me on interface reconfig
+.Fa ( cmd
+is ioctl #)
+.It Dv PFIL_IFNET
+call me on interface attach/detach
+.Fa ( cmd
+is either
 .Dv PFIL_IFNET_ATTACH
 or
 .Dv PFIL_IFNET_DETACH )
-.It PFIL_WAITOK
-OK to call malloc with M_WAITOK.
 .El
 .Sh SEE ALSO
 .Xr bpf 4
@@ -171,6 +220,12 @@ In 1.5K, the
 .Nm
 framework was changed to work with an arbitrary number of filtering points,
 as well as be less IP-centric.
+.Pp
+.Fn pfil_add_ihook
+and
+.Fn pfil_remove_ihook
+were added in
+.Nx 8.0 .
 .Sh AUTHORS
 .An -nosplit
 The

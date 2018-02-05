@@ -1,4 +1,4 @@
-.\" $NetBSD: wscons.4,v 1.32 2016/08/27 23:59:56 dholland Exp $
+.\" $NetBSD: wscons.4,v 1.37 2018/01/13 23:43:46 wiz Exp $
 .\"
 .\" Copyright (c) 1999, 2004 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -31,31 +31,34 @@
 .Nm wscons
 .Nd workstation console access
 .Sh SYNOPSIS
-.Cd options WSEMUL_SUN
-.Cd options WSEMUL_VT100
-.Cd options WSEMUL_NO_DUMB
-.Cd options WSEMUL_DEFAULT=\&"xxx\&"
-.Cd options WS_DEFAULT_FG=WSCOL_XXX
-.Cd options WS_DEFAULT_BG=WSCOL_XXX
-.Cd options WS_DEFAULT_COLATTR=\&"(WSATTR_XXX | WSATTR_YYY)"
-.Cd options WS_DEFAULT_MONOATTR=\&"(WSATTR_XXX | WSATTR_YYY)"
-.Cd options WS_KERNEL_FG=WSCOL_XXX
-.Cd options WS_KERNEL_BG=WSCOL_XXX
-.Cd options WS_KERNEL_COLATTR=\&"(WSATTR_XXX | WSATTR_YYY)"
-.Cd options WS_KERNEL_MONOATTR=\&"(WSATTR_XXX | WSATTR_YYY)"
-.Cd options WSCOMPAT_USL_SYNCTIMEOUT=nnn
-.Cd options WSDISPLAY_COMPAT_PCVT
-.Cd options WSDISPLAY_COMPAT_SYSCONS
-.Cd options WSDISPLAY_COMPAT_USL
-.Cd options WSDISPLAY_COMPAT_RAWKBD
-.Cd options WSKBD_EVENT_AUTOREPEAT
-.Cd options WSKBD_USONLY
-.Pp
 .Cd "wsdisplay* at ..."
 .Cd "wskbd*     at ... mux N"
 .Cd "wsmouse*   at ... mux N"
 .Pp
-.Cd pseudo-device  wsmux    N
+.Cd pseudo-device wsmux
+.Pp
+.Cd options WSEMUL_SUN
+.Cd options WSEMUL_VT100
+.Cd options WSEMUL_NO_DUMB
+.Cd options WSEMUL_DEFAULT=\*qxxx\*q
+.Pp
+.Cd options WS_DEFAULT_FG=WSCOL_XXX
+.Cd options WS_DEFAULT_BG=WSCOL_XXX
+.Cd options WS_DEFAULT_COLATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.Cd options WS_DEFAULT_MONOATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.Cd options WS_KERNEL_FG=WSCOL_XXX
+.Cd options WS_KERNEL_BG=WSCOL_XXX
+.Cd options WS_KERNEL_COLATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.Cd options WS_KERNEL_MONOATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.Pp
+.Cd options WSDISPLAY_COMPAT_PCVT
+.Cd options WSDISPLAY_COMPAT_SYSCONS
+.Cd options WSDISPLAY_COMPAT_USL
+.Cd options WSCOMPAT_USL_SYNCTIMEOUT=nnn
+.Cd options WSDISPLAY_COMPAT_RAWKBD
+.Pp
+.Cd options WSKBD_EVENT_AUTOREPEAT
+.Cd options WSKBD_USONLY
 .Sh DESCRIPTION
 The
 .Nm
@@ -106,28 +109,21 @@ The
 console emulation is available if
 .Cd options WSEMUL_SUN
 was specified at kernel build time.
-It supports the control sequences of
-.Tn SUN
+It supports the control sequences of SUN
 machine consoles and delivers its keyboard codes for function and
 keypad keys in use.
 This emulation is sufficient for full-screen applications.
 .It vt100
 is available with the kernel compile option
 .Cd options WSEMUL_VT100 .
-It provides the most commonly used functions of
-.Tn DEC VT100
-terminals with some extensions introduced by the
-.Tn DEC VT220
-and
-.Tn DEC VT320
-models.
-The features of the original
-.Tn VT100
+It provides the most commonly used functions of DEC VT100
+terminals with some extensions introduced by the DEC VT220
+and DEC VT320 models.
+The features of the original VT100
 which are not or not completely implemented are:
 .Bl -bullet
 .It
-.Tn VT52
-support, 132-column-mode, smooth scroll, light background, keyboard
+VT52 support, 132-column-mode, smooth scroll, light background, keyboard
 autorepeat control, external printer support, keyboard locking,
 newline/linefeed switching: Escape sequences related
 to these features are ignored or answered with standard replies.
@@ -152,40 +148,34 @@ substituted by more or less fitting replacements.
 Depending on the keyboard used, not all function keys might be available.
 .El
 .Pp
-In addition to the plain
-.Tn VT100
-functions are supported:
+In addition to the plain VT100 functions are supported:
 .Bl -bullet
 .It
 ANSI colors.
 .It
-Some
-.Tn VT220
--like presentation state settings and -reports (DECRSPS), especially
+Some VT220-like presentation state settings and -reports (DECRSPS), especially
 tabulator settings.
 .El
 .Pp
 In most applications,
 .Nm
-will work sufficiently as a
-.Tn VT220
-emulator.
+will work sufficiently as a VT220 emulator.
 .El
 .Pp
 The
-.Va WSEMUL_DEFAULT
+.Dv WSEMUL_DEFAULT
 kernel option is used to select one of the described terminal options
 as the default choice.
 The default takes effect at kernel startup, i.e. for the operating
 system console or additional screens allocated through the
-.Va WSDISPLAY_DEFAULTSCREENS
+.Dv WSDISPLAY_DEFAULTSCREENS
 option (see
 .Xr wsdisplay 4 ) ,
 or if no emulation type was passed to the
 .Xr wsconscfg 8
 utility.
 .Ss Compatibility options
-these options allow X servers and other programs using low-level
+These options allow X servers and other programs using low-level
 console driver functions usually written specifically for other
 console drivers to run on
 .Nx
@@ -227,50 +217,52 @@ find the
 .Nm
 driver entry points, symlinks are a helpful measure.)
 .Ss Other options
-.Bl -tag -width xxxxxxxx
-.It Cd options WS_DEFAULT_FG=WSCOL_XXX ,
-.It Cd options WS_DEFAULT_BG=WSCOL_XXX ,
-.It Cd options \&WS_DEFAULT_COLATTR="(WSATTR_XXX | WSATTR_YYY)"
+.Bl -tag -width xxxxxxxx -compact
+.It Cd options WS_DEFAULT_FG=WSCOL_XXX
+.It Cd options WS_DEFAULT_BG=WSCOL_XXX
+.It Cd options WS_DEFAULT_COLATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.It Cd options WS_DEFAULT_MONOATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+Make default console output appear in specific colors and attributes.
+.Dv WS_DEFAULT_FG
 and
-.It Cd options \&WS_DEFAULT_MONOATTR="(WSATTR_XXX | WSATTR_YYY)"
-allow to make default console output appear in specific colors and
-attributes.
-.Dq WS_DEFAULT_FG
+.Dv WS_DEFAULT_BG
+set the foreground and background used on color displays.
+.Dv WS_DEFAULT_COLATTR
 and
-.Dq WS_DEFAULT_BG
-set the foreground / background used on color displays.
-The
-.Dq WSCOL_XXX
-arguments are colors as defined in
-.Pa src/sys/dev/wscons/wsdisplayvar.h .
-.Dq WS_DEFAULT_COLATTR
-and
-.Dq WS_DEFAULT_MONOATTR
+.Dv WS_DEFAULT_MONOATTR
 are additional attribute flags used on color or monochrome displays,
 respectively.
-The arguments are defined in the same header file.
 Whether the attributes
 are supported or not depends on the actually used graphics adapter.
 These options are ignored by the
 .Dq dumb
 terminal emulation.
-.It Cd options WS_KERNEL_FG=WSCOL_XXX ,
-.It Cd options WS_KERNEL_BG=WSCOL_XXX ,
-.It Cd options \&WS_KERNEL_COLATTR="(WSATTR_XXX | WSATTR_YYY)"
+.Pp
+See
+.Pa src/sys/dev/wscons/wsdisplayvar.h
+for available
+.Dv WSCOL_XXX
 and
-.It Cd options \&WS_KERNEL_MONOATTR="(WSATTR_XXX | WSATTR_YYY)"
-allow to make console output originating from the kernel appear differently
+.Dv WSATTR_XXX
+values.
+.Pp
+.It Cd options WS_KERNEL_FG=WSCOL_XXX
+.It Cd options WS_KERNEL_BG=WSCOL_XXX
+.It Cd options WS_KERNEL_COLATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+.It Cd options WS_KERNEL_MONOATTR=\*q(WSATTR_XXX\ |\ WSATTR_YYY)\*q
+Make console output originating from the kernel appear differently
 than output from user level programs (via
 .Pa /dev/console
 or the specific tty
 device like
 .Pa /dev/ttyE0 ) .
 Their meaning is the same as their
-.Sq WS_DEFAULT_*
+.Dv WS_DEFAULT_*
 counterparts.
+.Pp
 .It Cd options WSCOMPAT_USL_SYNCTIMEOUT=nnn
 The virtual screen switching protocol enabled by
-.Dq WSDISPLAY_COMPAT_USL
+.Dv WSDISPLAY_COMPAT_USL
 uses a somewhat complex handshake protocol to pass control to user programs
 such as X servers controlling a virtual screen.
 In order to prevent a non-responsive
@@ -278,9 +270,11 @@ application from locking the whole console system,
 a screen switch will be rolled
 back after a 5 second timeout if the application does not respond.
 This option can be used to specify in seconds a different timeout value.
+.Pp
 .It Cd options WSKBD_EVENT_AUTOREPEAT
 If set, this option enables auto repeat even in event mode.
 The auto repeat will generate key down events while the key is pressed.
+.Pp
 .It Cd options WSKBD_USONLY
 In order to strip down the space usage of wscons,
 all keymaps except the US english one can be removed from the kernel

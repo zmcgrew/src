@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.213 2017/12/27 08:35:20 ozaki-r Exp $	*/
+/*	$NetBSD: in.c,v 1.216 2018/01/19 08:01:05 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.213 2017/12/27 08:35:20 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.216 2018/01/19 08:01:05 ozaki-r Exp $");
 
 #include "arp.h"
 
@@ -855,9 +855,7 @@ in_purgeaddr(struct ifaddr *ifa)
 	TAILQ_REMOVE(&in_ifaddrhead, ia, ia_list);
 	IN_ADDRLIST_WRITER_REMOVE(ia);
 	ifa_remove(ifp, &ia->ia_ifa);
-#ifdef NET_MPSAFE
-	pserialize_perform(in_ifaddrhash_psz);
-#endif
+	/* Assume ifa_remove called pserialize_perform and psref_destroy */
 	mutex_exit(&in_ifaddr_lock);
 	IN_ADDRHASH_ENTRY_DESTROY(ia);
 	IN_ADDRLIST_ENTRY_DESTROY(ia);
@@ -1877,6 +1875,44 @@ out:
 	return ia;
 }
 
+int
+in_tunnel_validate(const struct ip *ip, struct in_addr src, struct in_addr dst)
+{
+	struct in_ifaddr *ia4;
+	int s;
+
+	/* check for address match */
+	if (src.s_addr != ip->ip_dst.s_addr ||
+	    dst.s_addr != ip->ip_src.s_addr)
+		return 0;
+
+	/* martian filters on outer source - NOT done in ip_input! */
+	if (IN_MULTICAST(ip->ip_src.s_addr))
+		return 0;
+	switch ((ntohl(ip->ip_src.s_addr) & 0xff000000) >> 24) {
+	case 0:
+	case 127:
+	case 255:
+		return 0;
+	}
+	/* reject packets with broadcast on source */
+	s = pserialize_read_enter();
+	IN_ADDRLIST_READER_FOREACH(ia4) {
+		if ((ia4->ia_ifa.ifa_ifp->if_flags & IFF_BROADCAST) == 0)
+			continue;
+		if (ip->ip_src.s_addr == ia4->ia_broadaddr.sin_addr.s_addr) {
+			pserialize_read_exit(s);
+			return 0;
+		}
+	}
+	pserialize_read_exit(s);
+
+	/* NOTE: packet may dropped by uRPF */
+
+	/* return valid bytes length */
+	return sizeof(src) + sizeof(dst);
+}
+
 #if NARP > 0
 
 struct in_llentry {
@@ -2119,7 +2155,7 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 
 	lle = in_lltable_find_dst(llt, sin->sin_addr);
 	if (lle == NULL) {
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));
 		log(LOG_INFO, "%s: cache for %s is not found\n",
@@ -2130,7 +2166,7 @@ in_lltable_delete(struct lltable *llt, u_int flags,
 
 	LLE_WLOCK(lle);
 	lle->la_flags |= LLE_DELETED;
-#ifdef DEBUG
+#ifdef LLTABLE_DEBUG
 	{
 		char buf[64];
 		sockaddr_format(l3addr, buf, sizeof(buf));

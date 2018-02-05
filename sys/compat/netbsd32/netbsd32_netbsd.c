@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_netbsd.c,v 1.212 2017/12/26 08:30:58 kamil Exp $	*/
+/*	$NetBSD: netbsd32_netbsd.c,v 1.214 2018/01/09 20:55:43 maya Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.212 2017/12/26 08:30:58 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_netbsd.c,v 1.214 2018/01/09 20:55:43 maya Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ddb.h"
@@ -154,7 +154,6 @@ struct emul emul_netbsd32 = {
 	.e_syscall =		syscall,
 #endif
 	.e_sysctlovly =		&netbsd32_sysctl_root,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	netbsd32_vm_default_addr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		sizeof(ucontext32_t),
@@ -2006,6 +2005,17 @@ netbsd32___fhopen40(struct lwp *l, const struct netbsd32___fhopen40_args *uap, r
 }
 
 /* virtual memory syscalls */
+int
+netbsd32_ovadvise(struct lwp *l, const struct netbsd32_ovadvise_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) anom;
+	} */
+	struct sys_ovadvise_args ua;
+
+	NETBSD32TO64_UAP(anom);
+	return (sys_ovadvise(l, &ua, retval));
+}
 
 void
 netbsd32_adjust_limits(struct proc *p)

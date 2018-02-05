@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.187 2017/12/22 02:36:46 ginsbach Exp $
+$NetBSD: acronyms.comp,v 1.189 2018/01/21 14:01:55 alnsn Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -650,6 +650,7 @@ JIT	just in time
 JPEG	Joint Photographic Experts Group
 JRE	Java Runtime Environment
 JTAG	joint test action group
+KASLR	kernel address space layout randomization
 KB	keyboard
 KB	kilobyte
 KBD	keyboard
@@ -1255,6 +1256,7 @@ SVGA	Super Video Graphics Array
 SVM	secure virtual machine
 SVM	support vector machine
 SVR	System V Release
+SVS	Separate Virtual Space
 SWF	Shockwave Flash
 SWIG	simplified wrapper [and] interface generator
 SYR	symbol timing recovery

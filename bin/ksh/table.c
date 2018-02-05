@@ -1,4 +1,4 @@
-/*	$NetBSD: table.c,v 1.4 2003/06/23 11:39:04 agc Exp $	*/
+/*	$NetBSD: table.c,v 1.6 2018/01/24 09:53:21 kamil Exp $	*/
 
 /*
  * dynamic hashed associative table for commands and variables
@@ -6,7 +6,7 @@
 #include <sys/cdefs.h>
 
 #ifndef lint
-__RCSID("$NetBSD: table.c,v 1.4 2003/06/23 11:39:04 agc Exp $");
+__RCSID("$NetBSD: table.c,v 1.6 2018/01/24 09:53:21 kamil Exp $");
 #endif
 
 
@@ -79,7 +79,7 @@ texpand(tp, nsize)
 }
 
 struct tbl *
-tsearch(tp, n, h)
+mytsearch(tp, n, h)
 	register struct table *tp;	/* table */
 	register const char *n;		/* name to enter */
 	unsigned int h;			/* hash(n) */
@@ -144,7 +144,7 @@ tenter(tp, n, h)
 }
 
 void
-tdelete(p)
+mytdelete(p)
 	register struct tbl *p;
 {
 	p->flag = 0;
@@ -223,7 +223,7 @@ tprintinfo(tp)
 		h = hash(n = te->name);
 		ncmp = 0;
 
-		/* taken from tsearch() and added counter */
+		/* taken from mytsearch() and added counter */
 		for (pp = &tp->tbls[h & (tp->size-1)]; (p = *pp); pp--) {
 			ncmp++;
 			if (*p->name == *n && strcmp(p->name, n) == 0

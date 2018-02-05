@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1025 2017/12/01 22:48:00 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1029 2018/01/27 23:59:17 christos Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -116,7 +116,9 @@ HAVE_LIBGCC_EH?=	no
 HAVE_LIBGCC_EH?=	yes
 .endif
 
-.if ${MACHINE} == "alpha" || \
+# Coverity does not like SSP
+.if defined(COVERITY_TOP_CONFIG) || \
+    ${MACHINE} == "alpha" || \
     ${MACHINE} == "hppa" || \
     ${MACHINE} == "ia64" || \
     ${MACHINE_CPU} == "mips"
@@ -310,12 +312,19 @@ TOOL_CXX.pcc=		${TOOLDIR}/bin/${MACHINE_GNU_PLATFORM}-p++
 #
 DESTDIR?=
 
+# Don't append another copy of sysroot (coming from COMPATCPPFLAGS etc.
+# because it confuses Coverity. Still we need to cov-configure specially
+# for each specific sysroot argument.
 .if !defined(HOSTPROG) && !defined(HOSTLIB)
 .  if ${DESTDIR} != ""
+.	if empty(CPPFLAGS:M*--sysroot=*)
 CPPFLAGS+=	--sysroot=${DESTDIR}
+.	endif
 LDFLAGS+=	--sysroot=${DESTDIR}
 .  else
+.	if empty(CPPFLAGS:M*--sysroot=*)
 CPPFLAGS+=	--sysroot=/
+.	endif
 LDFLAGS+=	--sysroot=/
 .  endif
 .endif
@@ -572,7 +581,7 @@ OBJC=		${TOOL_OBJC.${ACTIVE_OBJC}}
 # For each ${MACHINE_CPU}, list the ports that use it.
 MACHINES.aarch64=	evbarm64
 MACHINES.alpha=		alpha
-MACHINES.arm=		acorn26 acorn32 cats epoc32 evbarm hpcarm \
+MACHINES.arm=		acorn32 cats epoc32 evbarm hpcarm \
 			iyonix netwinder shark zaurus
 MACHINES.coldfire=	evbcf
 MACHINES.i386=		i386
@@ -995,13 +1004,15 @@ MKCTF?=		yes
 #
 # PIE is enabled on many platforms by default.
 #
-.if ${MACHINE_ARCH} == "i386" || \
+# Coverity does not like PIE
+.if !defined(COVERITY_TOP_CONFIG) && \
+    (${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64" || \
     ${MACHINE_CPU} == "arm" || \
     ${MACHINE_CPU} == "m68k" || \
     ${MACHINE_CPU} == "mips" || \
     ${MACHINE_CPU} == "sh3" || \
-    ${MACHINE} == "sparc64"
+    ${MACHINE} == "sparc64")
 MKPIE?=		yes
 .else
 MKPIE?=		no
@@ -1064,12 +1075,15 @@ MKGCCCMDS?=	${MKGCC}
 #
 # Exceptions to the above:
 #
-.if ${MACHINE} == "acorn26"	# page size is prohibitive
-MKKMOD=		no
-.endif
 
 # Rump doesn't work yet on ia64
 .if ${MACHINE} == "ia64"
+MKRUMP=		no
+.endif
+
+# RUMP uses -nostdinc which coverity does not like
+# It also does not use many new files, so disable it
+.if defined(COVERITY_TOP_CONFIG)
 MKRUMP=		no
 .endif
 
@@ -1111,7 +1125,7 @@ _MKVARS.no= \
 	MKPCC MKPIGZGZIP \
 	MKRADEONFIRMWARE MKREPRO \
 	MKSLJIT MKSOFTFLOAT MKSTRIPIDENT \
-	MKTPM \
+	MKTEGRAFIRMWARE MKTPM \
 	MKUNPRIVED MKUPDATE \
 	MKX11 MKX11MOTIF MKXORG_SERVER \
 	MKZFS
@@ -1164,6 +1178,11 @@ MKXORG_SERVER=yes
 # Only install the radeon firmware on DRM-happy systems.
 .if ${MACHINE_ARCH} == "x86_64" || ${MACHINE_ARCH} == "i386"
 MKRADEONFIRMWARE=		yes
+.endif
+
+# Only install the tegra firmware on evbarm and evbarm64.
+.if ${MACHINE} == "evbarm" || ${MACHINE} == "evbarm64"
+MKTEGRAFIRMWARE=		yes
 .endif
 
 #

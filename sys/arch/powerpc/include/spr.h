@@ -1,54 +1,119 @@
-/*	$NetBSD: spr.h,v 1.47 2017/07/07 22:50:02 macallan Exp $	*/
+/*	$NetBSD: spr.h,v 1.50 2018/01/21 09:25:45 mrg Exp $	*/
+
+/*
+ * Copyright (c) 2001, The NetBSD Foundation, Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #ifndef _POWERPC_SPR_H_
 #define	_POWERPC_SPR_H_
 
-#ifndef _LOCORE
-#ifdef PPC_OEA64_BRIDGE
+#if !defined(_LOCORE) && defined(_KERNEL)
 
+#include <powerpc/oea/cpufeat.h>
+
+#if defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64)
 static inline uint64_t
-mfspr(int reg)
+mfspr64(int reg)
 {
 	uint64_t ret;
 	register_t h, l;
-	__asm volatile( "mfspr %0,%2;" \
-			"srdi %1,%0,32;" \
+
+	__asm volatile( "mfspr %0,%2;"
+			"srdi %1,%0,32;"
 			 : "=r"(l), "=r"(h) : "K"(reg));
 	ret = ((uint64_t)h << 32) | l;
 	return ret;
 }
 
-#define mtspr(reg, v) \
-( {						\
-	volatile register_t h, l;		\
-	uint64_t val = v;			\
-	h = (val >> 32);			\
-	l = val & 0xffffffff;			\
-	__asm volatile( \
-			"sldi %2,%2,32;" \
-			"or %2,%2,%1;" \
-			"sync;" \
-			"mtspr %0,%2;" \
-			"mfspr %1,%0;" \
-			"mfspr %1,%0;" \
-			"mfspr %1,%0;" \
-			"mfspr %1,%0;" \
-			"mfspr %1,%0;" \
-			"mfspr %1,%0;" \
-			 : : "K"(reg), "r"(l), "r"(h)); \
+/* This as an inline breaks as 'reg' ends up not being an immediate */
+#define mtspr64(reg, v)						\
+( {								\
+	volatile register_t h, l;				\
+								\
+	uint64_t val = v;					\
+	h = (val >> 32);					\
+	l = val & 0xffffffff;					\
+	__asm volatile(	"sldi %2,%2,32;"			\
+			"or %2,%2,%1;"				\
+			"sync;"					\
+			"mtspr %0,%2;"				\
+			"mfspr %2,%0;"				\
+			"mfspr %2,%0;"				\
+			"mfspr %2,%0;"				\
+			"mfspr %2,%0;"				\
+			"mfspr %2,%0;"				\
+			"mfspr %2,%0;"				\
+			 : : "K"(reg), "r"(l), "r"(h));		\
 } )
+#endif /* PPC_OEA64_BRIDGE || _ARCH_PPC64 */
 
+static inline uint64_t
+mfspr32(int reg)
+{
+	register_t val;
+
+	__asm volatile("mfspr %0,%1" : "=r"(val) : "K"(reg));
+	return val;
+}
+
+static inline void
+mtspr32(int reg, uint32_t val)
+{
+
+	__asm volatile("mtspr %0,%1" : : "K"(reg), "r"(val));
+}
+
+#if (defined(PPC_OEA) + defined(PPC_OEA64) + defined(PPC_OEA64_BRIDGE)) > 1
+static inline uint64_t
+mfspr(int reg)
+{
+	if ((oeacpufeat & (OEACPU_64_BRIDGE|OEACPU_64)) != 0)
+		return mfspr64(reg);
+	return mfspr32(reg);
+}
+
+/* This as an inline breaks as 'reg' ends up not being an immediate */
+#define mtspr(reg, val)						\
+( {								\
+	if ((oeacpufeat & (OEACPU_64_BRIDGE|OEACPU_64)) != 0)	\
+		mtspr64(reg, (uint64_t)val);			\
+	else							\
+		mtspr32(reg, val);				\
+} )
+#else /* PPC_OEA + PPC_OEA64 + PPC_OEA64_BRIDGE != 1 */
+
+#if defined(PPC_OEA64) || defined(PPC_OEA64_BRIDGE)
+#define mfspr(r) mfspr64(r)
+#define mtspr(r,v) mtspr64(r,v)
 #else
-#define	mtspr(reg, val)							\
-	__asm volatile("mtspr %0,%1" : : "K"(reg), "r"(val))
-#ifdef __GNUC__
-#define	mfspr(reg)							\
-	( { register_t val;						\
-	  __asm volatile("mfspr %0,%1" : "=r"(val) : "K"(reg));	\
-	  val; } )
+#define mfspr(r) mfspr32(r)
+#define mtspr(r,v) mtspr32(r,v)
 #endif
-#endif /* PPC_OEA64_BRIDGE */
-#endif /* _LOCORE */
+
+#endif /* PPC_OEA + PPC_OEA64 + PPC_OEA64_BRIDGE > 1 */
+
+#endif /* !_LOCORE && _KERNEL */
 
 /*
  * Special Purpose Register declarations.

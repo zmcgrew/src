@@ -1,4 +1,4 @@
-/*	$NetBSD: mbuf.h,v 1.172 2017/11/09 22:34:07 riastradh Exp $	*/
+/*	$NetBSD: mbuf.h,v 1.175 2018/01/22 07:11:45 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1999, 2001, 2007 The NetBSD Foundation, Inc.
@@ -492,7 +492,7 @@ do {									\
 
 #define	MCLINITREFERENCE(m)						\
 do {									\
-	KDASSERT(((m)->m_flags & M_EXT) == 0);				\
+	KASSERT(((m)->m_flags & M_EXT) == 0);				\
 	(m)->m_ext_ref = (m);						\
 	(m)->m_ext.ext_refcnt = 1;					\
 	MCLREFDEBUGO((m), __FILE__, __LINE__);				\
@@ -604,6 +604,8 @@ do {									\
  */
 #define	M_ALIGN(m, len)							\
 do {									\
+	KASSERT(((m)->m_flags & (M_PKTHDR|M_EXT)) == 0);		\
+	KASSERT(M_LEADINGSPACE(m) == 0);				\
 	(m)->m_data += (MLEN - (len)) &~ (sizeof(long) - 1);		\
 } while (/* CONSTCOND */ 0)
 
@@ -613,6 +615,9 @@ do {									\
  */
 #define	MH_ALIGN(m, len)						\
 do {									\
+	KASSERT(((m)->m_flags & M_PKTHDR) != 0);			\
+	KASSERT(((m)->m_flags & M_EXT) == 0);				\
+	KASSERT(M_LEADINGSPACE(m) == 0);				\
 	(m)->m_data += (MHLEN - (len)) &~ (sizeof(long) - 1);		\
 } while (/* CONSTCOND */ 0)
 
@@ -858,15 +863,8 @@ struct	mbuf *m_copyback_cow(struct mbuf *, int, int, const void *, int);
 int 	m_makewritable(struct mbuf **, int, int, int);
 struct	mbuf *m_getcl(int, int, int);
 void	m_copydata(struct mbuf *, int, int, void *);
-struct	mbuf *m__free(const char *, int, struct mbuf *);
-void	m__freem(const char *, int, struct mbuf *);
-#ifdef DEBUG
-#define m_free(m)	m__free(__func__, __LINE__, m)
-#define m_freem(m)	m__freem(__func__, __LINE__, m)
-#else
 struct	mbuf *m_free(struct mbuf *);
 void	m_freem(struct mbuf *);
-#endif
 void	m_reclaim(void *, int);
 void	mbinit(void);
 void	m_ext_free(struct mbuf *);

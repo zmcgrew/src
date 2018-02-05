@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.143 2017/11/26 15:00:16 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.150 2018/01/27 17:54:13 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -159,6 +159,7 @@
 #include "opt_compat_netbsd.h"
 #include "opt_compat_netbsd32.h"
 #include "opt_xen.h"
+#include "opt_svs.h"
 
 #include "assym.h"
 #include "lapic.h"
@@ -1088,6 +1089,12 @@ ENTRY(cpu_switchto)
 	movq	%rbp,PCB_RBP(%rax)
 .Lskip_save:
 
+#ifdef SVS
+	pushq	%rdx
+	callq	_C_LABEL(svs_lwp_switch)
+	popq	%rdx
+#endif
+
 	/* Switch to newlwp's stack. */
 	movq	L_PCB(%r12),%r14
 	movq	PCB_RSP(%r14),%rsp
@@ -1105,9 +1112,14 @@ ENTRY(cpu_switchto)
 	jnz	.Lswitch_return
 
 	/* Switch ring0 stack */
-#ifndef XEN
+#ifdef SVS
+	movq	CPUVAR(RSP0),%rax
+	movq	CPUVAR(TSS),%rdi
+	movq	%rax,TSS_RSP0(%rdi)
+#elif !defined(XEN)
 	movq	PCB_RSP0(%r14),%rax
-	movq	%rax,CPUVAR(RSP0)
+	movq	CPUVAR(TSS),%rdi
+	movq	%rax,TSS_RSP0(%rdi)
 #else
 	movq	%r14,%rdi
 	callq	_C_LABEL(x86_64_switch_context);
@@ -1236,65 +1248,12 @@ ENTRY(savectx)
 	ret
 END(savectx)
 
-IDTVEC(syscall32)
-	sysret		/* go away please */
-IDTVEC_END(syscall32)
-
 /*
- * syscall()
- *
- * syscall insn entry.
+ * Syscall handler.
  */
-IDTVEC(syscall)
-#ifndef XEN
-	/*
-	 * The user %rip is in %rcx and the user %rflags in %r11. The kernel %cs
-	 * and %ss are loaded, but nothing else is.
-	 *
-	 * The 'swapgs' instruction gives us access to cpu-specific memory where
-	 * we can save a user register and then read the LWP's kernel stack
-	 * pointer.
-	 *
-	 * This code doesn't seem to set %ds, this may not matter since it is
-	 * ignored in 64bit mode, OTOH the syscall instruction sets %ss and that
-	 * is ignored as well.
-	 */
-	swapgs
-	movq	%r15,CPUVAR(SCRATCH)
-	movq	CPUVAR(CURLWP),%r15
-	movq	L_PCB(%r15),%r15
-	movq	PCB_RSP0(%r15),%r15	/* LWP's kernel stack pointer */
-
-	/* Make stack look like an 'int nn' frame */
-#define SP(x)	(x)-(TF_SS+8)(%r15)
-	movq	$(LSEL(LUDATA_SEL, SEL_UPL)),SP(TF_SS)	/* user %ss */
-	movq	%rsp,SP(TF_RSP)				/* user %rsp */
-	movq	%r11,SP(TF_RFLAGS)			/* user %rflags */
-	movq	$(LSEL(LUCODE_SEL, SEL_UPL)),SP(TF_CS)	/* user %cs */
-	movq	%rcx,SP(TF_RIP)				/* user %rip */
-
-	leaq	SP(0),%rsp		/* %rsp now valid after frame */
-	movq	CPUVAR(SCRATCH),%r15
-#undef SP
-
-	movq	$2,TF_ERR(%rsp)		/* syscall instruction size */
-	movq	$T_ASTFLT,TF_TRAPNO(%rsp)
-#else
-	/* Xen already switched to kernel stack */
-	addq	$0x10,%rsp	/* gap to match cs:rip */
-	pushq	$2		/* error code */
-	pushq	$T_ASTFLT
-	subq	$TF_REGSIZE,%rsp
-	cld
-#endif
-	INTR_SAVE_GPRS
-	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
-	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
-	movw	$0,TF_FS(%rsp)
-	movw	$0,TF_GS(%rsp)
+NENTRY(handle_syscall)
 	STI(si)
 
-.Ldo_syscall:
 	movq	CPUVAR(CURLWP),%r14
 	incq	CPUVAR(NSYSCALL)	/* count it atomically */
 	movq	%rsp,L_MD_REGS(%r14)	/* save pointer to frame */
@@ -1330,19 +1289,7 @@ IDTVEC(syscall)
 	testl	$(MDL_IRET|MDL_COMPAT32),L_MD_FLAGS(%r14)
 	jnz	intrfastexit
 
-	INTR_RESTORE_GPRS
-	SWAPGS
-#ifndef XEN
-	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
-	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
-	movq	TF_RSP(%rsp),%rsp
-do_sysret:
-	sysretq
-#else
-	addq	$TF_RIP,%rsp
-	pushq	$256	/* VGCF_IN_SYSCALL */
-	jmp	HYPERVISOR_iret
-#endif
+	jmp	syscall_sysret
 
 #ifdef DIAGNOSTIC
 	/* Report SPL error */
@@ -1374,7 +1321,7 @@ do_sysret:
 	movq	%rsp,%rdi
 	call	_C_LABEL(trap)
 	jmp	.Lsyscall_checkast	/* re-check ASTs */
-IDTVEC_END(syscall)
+END(handle_syscall)
 
 /*
  * void lwp_trampoline(void);
@@ -1394,10 +1341,83 @@ NENTRY(lwp_trampoline)
 END(lwp_trampoline)
 
 /*
+ * Entry points of the 'syscall' instruction, 64bit and 32bit mode.
+ */
+	TEXT_USER_BEGIN
+
+IDTVEC(syscall)
+#ifndef XEN
+	/*
+	 * The user %rip is in %rcx and the user %rflags in %r11. The kernel %cs
+	 * and %ss are loaded, but nothing else is.
+	 *
+	 * The 'swapgs' instruction gives us access to cpu-specific memory where
+	 * we can save a user register and then read the LWP's kernel stack
+	 * pointer.
+	 *
+	 * This code doesn't seem to set %ds, this may not matter since it is
+	 * ignored in 64bit mode, OTOH the syscall instruction sets %ss and that
+	 * is ignored as well.
+	 */
+	swapgs
+
+#ifdef SVS
+	movq	%rax,SVS_UTLS+UTLS_SCRATCH
+	movq	SVS_UTLS+UTLS_RSP0,%rax
+#define SP(x)	(x)-(TF_SS+8)(%rax)
+#else
+	movq	%r15,CPUVAR(SCRATCH)
+	movq	CPUVAR(CURLWP),%r15
+	movq	L_PCB(%r15),%r15
+	movq	PCB_RSP0(%r15),%r15	/* LWP's kernel stack pointer */
+#define SP(x)	(x)-(TF_SS+8)(%r15)
+#endif
+
+	/* Make stack look like an 'int nn' frame */
+	movq	$(LSEL(LUDATA_SEL, SEL_UPL)),SP(TF_SS)	/* user %ss */
+	movq	%rsp,SP(TF_RSP)				/* user %rsp */
+	movq	%r11,SP(TF_RFLAGS)			/* user %rflags */
+	movq	$(LSEL(LUCODE_SEL, SEL_UPL)),SP(TF_CS)	/* user %cs */
+	movq	%rcx,SP(TF_RIP)				/* user %rip */
+
+	leaq	SP(0),%rsp		/* %rsp now valid after frame */
+#ifdef SVS
+	movq	SVS_UTLS+UTLS_SCRATCH,%rax
+#else
+	movq	CPUVAR(SCRATCH),%r15
+#endif
+
+	movq	$2,TF_ERR(%rsp)		/* syscall instruction size */
+	movq	$T_ASTFLT,TF_TRAPNO(%rsp)
+#else
+	/* Xen already switched to kernel stack */
+	addq	$0x10,%rsp	/* gap to match cs:rip */
+	pushq	$2		/* error code */
+	pushq	$T_ASTFLT
+	subq	$TF_REGSIZE,%rsp
+	cld
+#endif
+	INTR_SAVE_GPRS
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
+	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
+	movw	$0,TF_FS(%rsp)
+	movw	$0,TF_GS(%rsp)
+	SVS_ENTER
+	jmp	handle_syscall
+IDTVEC_END(syscall)
+
+IDTVEC(syscall32)
+	sysret		/* go away please */
+IDTVEC_END(syscall32)
+
+	TEXT_USER_END
+
+/*
  * osyscall()
  *
  * Trap gate entry for int $80 syscall, also used by sigreturn.
  */
+	TEXT_USER_BEGIN
 IDTVEC(osyscall)
 #ifdef XEN
 	movq (%rsp),%rcx
@@ -1407,9 +1427,32 @@ IDTVEC(osyscall)
 	pushq	$2		/* size of instruction for restart */
 	pushq	$T_ASTFLT	/* trap # for doing ASTs */
 	INTRENTRY
-	STI(si)
-	jmp	.Ldo_syscall
+	jmp	handle_syscall
 IDTVEC_END(osyscall)
+	TEXT_USER_END
+
+/*
+ * Return to userland via 'sysret'.
+ */
+	TEXT_USER_BEGIN
+	_ALIGN_TEXT
+LABEL(syscall_sysret)
+	SVS_LEAVE
+	INTR_RESTORE_GPRS
+	SWAPGS
+#ifndef XEN
+	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
+	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
+	movq	TF_RSP(%rsp),%rsp
+do_sysret:
+	sysretq
+#else
+	addq	$TF_RIP,%rsp
+	pushq	$256	/* VGCF_IN_SYSCALL */
+	jmp	HYPERVISOR_iret
+#endif
+END(syscall_sysret)
+	TEXT_USER_END
 
 /*
  * bool sse2_idlezero_page(void *pg)
@@ -1472,9 +1515,14 @@ ENTRY(pagezero)
 	ret
 END(pagezero)
 
-ENTRY(intrfastexit)
+	TEXT_USER_BEGIN
+
+	_ALIGN_TEXT
+LABEL(intrfastexit)
+	NOT_XEN(cli;)
+	SVS_LEAVE
 	INTR_RESTORE_GPRS
-	testw	$SEL_UPL,TF_CS(%rsp)	/* interrupted %cs */
+	testb	$SEL_UPL,TF_CS(%rsp)	/* interrupted %cs */
 	jz	.Lkexit
 	cmpw	$LSEL(LUCODE_SEL, SEL_UPL),TF_CS(%rsp)
 	je	.Luexit64
@@ -1486,7 +1534,6 @@ ENTRY(intrfastexit)
 #endif
 
 .Luexit32:
-	NOT_XEN(cli;)
 do_mov_es:
 	movw	TF_ES(%rsp),%es
 do_mov_ds:
@@ -1501,7 +1548,6 @@ do_mov_gs:
 	jmp	.Lkexit
 
 .Luexit64:
-	NOT_XEN(cli;)
 	SWAPGS
 
 .Lkexit:

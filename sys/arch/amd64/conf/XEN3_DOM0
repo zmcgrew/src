@@ -1,4 +1,4 @@
-# $NetBSD: XEN3_DOM0,v 1.142 2017/12/10 17:19:48 bouyer Exp $
+# $NetBSD: XEN3_DOM0,v 1.147 2018/01/27 21:46:54 pgoyette Exp $
 
 include 	"arch/amd64/conf/std.xen"
 
@@ -10,7 +10,7 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #options 	UVMHIST_PRINT
 #options 	SYSCALL_DEBUG
 
-#ident		"XEN3_DOM0-$Revision: 1.142 $"
+#ident		"XEN3_DOM0-$Revision: 1.147 $"
 
 maxusers	32		# estimated number of users
 
@@ -48,6 +48,8 @@ options 	MODULAR		# new style module(7) framework
 options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 options 	BUFQ_PRIOCSCAN
 
@@ -102,6 +104,7 @@ file-system	CODA		# Coda File System; also needs vcoda (below)
 file-system	SMBFS		# experimental - CIFS; also needs nsmb (below)
 file-system	PTYFS		# /dev/pts/N support
 file-system	TMPFS		# Efficient memory file-system
+#file-system	AUTOFS		# Automounter Filesystem
 
 # File system options
 options 	QUOTA		# legacy UFS quotas
@@ -294,6 +297,9 @@ lpt0	at isa? port 0x378 irq 7	# standard PC parallel ports
 
 amdnb_misc* at pci?			# AMD NB Misc Configuration
 amdtemp* at amdnb_misc? 		# AMD CPU Temperature sensors
+
+amdsmn* at pci?				# AMD SMN Configuration
+amdzentemp* at amdsmnbus?		# AMD Ryzen Family 17h CPU temp sensors
 
 # AMD 768 and 8111 power/ACPI controllers
 amdpm*	at pci? dev ? function ?	# RNG and SMBus 1.0 interface
@@ -886,6 +892,9 @@ pseudo-device	vcoda			# coda minicache <-> venus comm.
 
 # a pseudo device needed for SMBFS
 pseudo-device	nsmb			# experimental - SMB requester
+
+# a pseudo device needed for AUTOFS
+#pseudo-device	autofs			# experimental - AUTOFS
 
 # iSCSI initiator
 #pseudo-device	iscsi

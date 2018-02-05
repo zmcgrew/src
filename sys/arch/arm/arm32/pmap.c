@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.364 2018/01/22 13:22:40 skrll Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -218,7 +218,7 @@
 #include <arm/locore.h>
 #include <arm/arm32/pmap_common.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.364 2018/01/22 13:22:40 skrll Exp $");
 
 //#define PMAP_DEBUG
 #ifdef PMAP_DEBUG
@@ -3387,12 +3387,24 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		}
 	}
 	pmap_release_pmap_lock(kpm);
+	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot);
 
-	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot)
-	    | ((flags & PMAP_NOCACHE)
-		? 0
-		: ((flags & PMAP_PTE)
-		    ? pte_l2_s_cache_mode_pt : pte_l2_s_cache_mode));
+	if (flags & PMAP_PTE) {
+		KASSERT((flags & PMAP_CACHE_MASK) == 0);
+		if (!(flags & PMAP_NOCACHE))
+			npte |= pte_l2_s_cache_mode_pt;
+	} else {
+		switch (flags & PMAP_CACHE_MASK) {
+		case PMAP_NOCACHE:
+			break;
+		case PMAP_WRITE_COMBINE:
+			npte |= pte_l2_s_wc_mode;
+			break;
+		default:
+			npte |= pte_l2_s_cache_mode;
+			break;
+		}
+	}
 	l2pte_set(ptep, npte, 0);
 	PTE_SYNC(ptep);
 

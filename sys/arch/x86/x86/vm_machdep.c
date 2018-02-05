@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_machdep.c,v 1.29 2017/06/17 07:45:13 maxv Exp $	*/
+/*	$NetBSD: vm_machdep.c,v 1.32 2018/01/18 07:25:34 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986 The Regents of the University of California.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.29 2017/06/17 07:45:13 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.32 2018/01/18 07:25:34 maxv Exp $");
 
 #include "opt_mtrr.h"
 
@@ -164,7 +164,7 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	pcb2->pcb_dbregs = NULL;
 
 #if defined(XEN)
-	pcb2->pcb_iopl = SEL_KPL;
+	pcb2->pcb_iopl = IOPL_KPL;
 #endif
 
 	/*
@@ -178,9 +178,16 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	 * returns normally.
 	 */
 	uv = uvm_lwp_getuarea(l2);
+	KASSERT(uv % PAGE_SIZE == 0);
 
 #ifdef __x86_64__
-	pcb2->pcb_rsp0 = (uv + USPACE - 16) & ~0xf;
+#ifdef SVS
+	pcb2->pcb_rsp0 = (uv + USPACE - PAGE_SIZE +
+	    sizeof(struct trapframe));
+	KASSERT((pcb2->pcb_rsp0 & 0xF) == 0);
+#else
+	pcb2->pcb_rsp0 = (uv + USPACE - 16);
+#endif
 	tf = (struct trapframe *)pcb2->pcb_rsp0 - 1;
 #else
 	pcb2->pcb_esp0 = (uv + USPACE - 16);

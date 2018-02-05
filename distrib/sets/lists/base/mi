@@ -1,4 +1,4 @@
-# $NetBSD: mi,v 1.1165 2017/12/10 20:38:13 bouyer Exp $
+# $NetBSD: mi,v 1.1170 2018/01/24 09:51:25 wiz Exp $
 #
 # Note:	Don't delete entries from here - mark them as "obsolete" instead,
 #	unless otherwise stated below.
@@ -91,6 +91,7 @@
 ./etc/X11/xserver				base-x11-root
 ./etc/X11/xsm					base-x11-root
 ./etc/atf					base-atf-bin
+./etc/autofs					base-sys-root
 ./etc/cgd					base-sys-root
 ./etc/defaults					base-sys-root
 ./etc/disklabels				base-obsolete		obsolete
@@ -247,6 +248,13 @@
 ./libdata/firmware/if_wpi/README.iwlwifi-3945-ucode	base-firmware-root
 ./libdata/firmware/if_wpi/ipw3945.ucode		base-obsolete	obsolete
 ./libdata/firmware/if_wpi/iwlwifi-3945.ucode		base-firmware-root
+./libdata/firmware/nvidia			base-firmware-root
+./libdata/firmware/nvidia/tegra124		base-firmware-root
+./libdata/firmware/nvidia/tegra124/LICENCE.nvidia	base-firmware-root	tegrafirmware
+./libdata/firmware/nvidia/tegra124/xusb.bin	base-firmware-root	tegrafirmware
+./libdata/firmware/nvidia/tegra210		base-firmware-root
+./libdata/firmware/nvidia/tegra210/LICENCE.nvidia	base-firmware-root	tegrafirmware
+./libdata/firmware/nvidia/tegra210/xusb.bin	base-firmware-root	tegrafirmware
 ./libdata/firmware/radeon			base-firmware-usr
 ./libdata/firmware/radeon/ARUBA_me.bin		base-firmware-usr	radeonfirmware
 ./libdata/firmware/radeon/ARUBA_pfp.bin		base-firmware-usr	radeonfirmware
@@ -512,6 +520,7 @@
 ./sbin/modunload				base-sysutil-root
 ./sbin/mount					base-sysutil-root
 ./sbin/mount_ados				base-adosfs-root
+./sbin/mount_autofs				base-sysutil-root
 ./sbin/mount_cd9660				base-sysutil-root
 ./sbin/mount_chfs				base-sysutil-root
 ./sbin/mount_efs				base-efs-root
@@ -1104,6 +1113,7 @@
 ./usr/include/event2				base-c-usr
 ./usr/include/filecorefs			base-c-usr
 ./usr/include/fs				base-c-usr
+./usr/include/fs/autofs				base-c-usr
 ./usr/include/fs/efs				base-c-usr
 ./usr/include/fs/hfs				base-c-usr
 ./usr/include/fs/hfsp				base-obsolete		obsolete
@@ -1613,6 +1623,9 @@
 ./usr/sbin/arp					base-netutil-bin
 ./usr/sbin/audit-packages			base-pkgutil-bin
 ./usr/sbin/authpf				base-pf-bin		pf
+./usr/sbin/automount				base-sysutil-root
+./usr/sbin/automountd				base-sysutil-root
+./usr/sbin/autounmountd				base-sysutil-root
 ./usr/sbin/bootpd				base-bootserver-bin
 ./usr/sbin/bootpef				base-bootserver-bin
 ./usr/sbin/bootpgw				base-bootserver-bin
@@ -1674,6 +1687,7 @@
 ./usr/sbin/flush				base-obsolete		obsolete
 ./usr/sbin/fsinfo				base-sysutil-bin
 ./usr/sbin/fssconfig				base-sysutil-bin
+./usr/sbin/fstyp				base-sysutil-bin
 ./usr/sbin/ftp-proxy				base-pf-bin		pf
 ./usr/sbin/fusermount				base-refuse-bin
 ./usr/sbin/fwctl				base-sysutil-bin
@@ -4346,7 +4360,7 @@
 ./usr/share/man/cat3f				base-obsolete		obsolete
 ./usr/share/man/cat3lua				base-man-share
 ./usr/share/man/cat4				base-man-share
-./usr/share/man/cat4/acorn26			base-man-share
+./usr/share/man/cat4/acorn26			base-obsolete		obsolete
 ./usr/share/man/cat4/acorn32			base-man-share
 ./usr/share/man/cat4/alpha			base-man-share
 ./usr/share/man/cat4/amiga			base-man-share
@@ -4388,7 +4402,7 @@
 ./usr/share/man/cat6				base-man-share
 ./usr/share/man/cat7				base-man-share
 ./usr/share/man/cat8				base-man-share
-./usr/share/man/cat8/acorn26			base-man-share
+./usr/share/man/cat8/acorn26			base-obsolete		obsolete
 ./usr/share/man/cat8/acorn32			base-man-share
 ./usr/share/man/cat8/algor			base-man-share
 ./usr/share/man/cat8/alpha			base-man-share
@@ -4449,7 +4463,7 @@
 ./usr/share/man/cat8/x86			base-man-share
 ./usr/share/man/cat8/x86_64			base-obsolete		obsolete
 ./usr/share/man/cat9				base-man-share
-./usr/share/man/cat9/acorn26			base-man-share
+./usr/share/man/cat9/acorn26			base-obsolete		obsolete
 ./usr/share/man/cat9/alpha			base-man-share
 ./usr/share/man/cat9/amiga			base-man-share
 ./usr/share/man/cat9/arm26			base-obsolete		obsolete
@@ -4476,7 +4490,7 @@
 ./usr/share/man/html3f				base-man-share
 ./usr/share/man/html3lua			base-man-share
 ./usr/share/man/html4				base-man-share
-./usr/share/man/html4/acorn26			base-man-share
+./usr/share/man/html4/acorn26			base-obsolete		obsolete
 ./usr/share/man/html4/acorn32			base-man-share
 ./usr/share/man/html4/alpha			base-man-share
 ./usr/share/man/html4/amiga			base-man-share
@@ -4517,7 +4531,7 @@
 ./usr/share/man/html6				base-man-share
 ./usr/share/man/html7				base-man-share
 ./usr/share/man/html8				base-man-share
-./usr/share/man/html8/acorn26			base-man-share
+./usr/share/man/html8/acorn26			base-obsolete		obsolete
 ./usr/share/man/html8/acorn32			base-man-share
 ./usr/share/man/html8/algor			base-man-share
 ./usr/share/man/html8/alpha			base-man-share
@@ -4578,7 +4592,7 @@
 ./usr/share/man/html8/x86			base-man-share
 ./usr/share/man/html8/x86_64			base-obsolete		obsolete
 ./usr/share/man/html9				base-man-share
-./usr/share/man/html9/acorn26			base-man-share
+./usr/share/man/html9/acorn26			base-obsolete		obsolete
 ./usr/share/man/html9/alpha			base-man-share
 ./usr/share/man/html9/amiga			base-man-share
 ./usr/share/man/html9/arm26			base-obsolete		obsolete
@@ -4607,7 +4621,7 @@
 ./usr/share/man/man3f				base-man-share
 ./usr/share/man/man3lua				base-man-share
 ./usr/share/man/man4				base-man-share
-./usr/share/man/man4/acorn26			base-man-share
+./usr/share/man/man4/acorn26			base-obsolete		obsolete
 ./usr/share/man/man4/acorn32			base-man-share
 ./usr/share/man/man4/alpha			base-man-share
 ./usr/share/man/man4/amiga			base-man-share
@@ -4649,7 +4663,7 @@
 ./usr/share/man/man6				base-man-share
 ./usr/share/man/man7				base-man-share
 ./usr/share/man/man8				base-man-share
-./usr/share/man/man8/acorn26			base-man-share
+./usr/share/man/man8/acorn26			base-obsolete		obsolete
 ./usr/share/man/man8/acorn32			base-man-share
 ./usr/share/man/man8/algor			base-man-share
 ./usr/share/man/man8/alpha			base-man-share
@@ -4710,7 +4724,7 @@
 ./usr/share/man/man8/x86			base-man-share
 ./usr/share/man/man8/x86_64			base-obsolete		obsolete
 ./usr/share/man/man9				base-man-share
-./usr/share/man/man9/acorn26			base-man-share
+./usr/share/man/man9/acorn26			base-obsolete		obsolete
 ./usr/share/man/man9/alpha			base-man-share
 ./usr/share/man/man9/amiga			base-man-share
 ./usr/share/man/man9/arm26			base-obsolete		obsolete
