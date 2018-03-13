@@ -1,4 +1,4 @@
-$NetBSD: acronyms.comp,v 1.189 2018/01/21 14:01:55 alnsn Exp $
+$NetBSD: acronyms.comp,v 1.193 2018/03/01 19:09:33 ginsbach Exp $
 3WHS	three-way handshake
 8VSB	8-state vestigial side band modulation
 AA	anti-aliasing
@@ -46,6 +46,7 @@ AMP	asymmetric multiprocessing
 AMQP	advanced message queuing protocol
 AMT	active management technology
 AN	Arabic number
+ANR	application not responding
 ANSI	American National Standards Institute
 AO	analog output
 AOL	Alert-on-LAN
@@ -59,6 +60,7 @@ APT	advanced persistent threat
 AQM	active queue management
 ARAT	always running APIC timer
 ARC	adaptive replacement cache
+ARC	automatic reference counting
 ARM	Advanced RISC Machines
 ARP	Address Resolution Protocol
 ARPA	Advanced Research Projects Agency
@@ -249,6 +251,7 @@ CS	cable select
 CS	chip select
 CS	code segment
 CS	computer science
+CSDL	{common,conceptual} schema definition language
 CSI	channel state information
 CSI	common system interface
 CSMA	carrier sense multiple access
@@ -351,6 +354,7 @@ DPI	dots per inch
 DPL	descriptor privilege level
 DPS	Display PostScript
 DPST	display power savings technology
+DRAAS	disaster recovery as a service
 DRAM	dynamic random access memory
 DRBG	deterministic random bit generator
 DRI	direct rendering infrastructure
@@ -560,6 +564,7 @@ HVM	hardware virtual machine
 HZ	Hertz
 I2O	intelligent input/output
 IA	information assurance
+IAAS	infrastructure as a service
 IANA	Internet Assigned Numbers Authority
 IBC	iterated block cipher
 IBM	International Business Machines
@@ -718,6 +723,7 @@ LSN	Large Scale NAT
 LSN	log sequence number
 LSR	label switch router
 LTCC	low temperature co-fired ceramic
+LTO	linear tape-open
 LTO	link time optimization
 LTR	left to right
 LTR	load task register
@@ -840,6 +846,7 @@ NFA	nondeterministic finite automaton
 NFC	near-field communication
 NFCI	no functional change intended
 NFS	network file system
+NFV	network function virtualization
 NIA	next instruction address
 NIC	network information center
 NIC	network interface card
@@ -913,6 +920,7 @@ P2P	PCI to PCI
 P2P	peer to peer
 PA	phase accumulator
 PA	physical address
+PAAS	platform as a service
 PAC	phase-amplitude converter
 PAE	physical address extension
 PAL	phase alternating line
@@ -1160,7 +1168,9 @@ SDK	software development kit
 SDL	Simple Declarative Language
 SDL	Simple Direct-media Layer 
 SDLC	{software,system,systems} development life cycle
+SDN	software defined networking
 SDRAM	synchronous dynamic random access memory
+SDS	software defined storage
 SDT	syntax-directed translation
 SEGV	segmentation violation
 SEO	search engine optimization
@@ -1196,6 +1206,7 @@ SMAP	supervisor mode access prevention
 SMART	self-monitoring analysis and reporting technology
 SMBIOS	System Management BIOS
 SMC	system management controller
+SMEP	supervisor mode execution protection
 SMF	single mode fiber
 SMI	structure of management information
 SMI	system management interrupt

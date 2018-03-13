@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.sanitizer,v 1.2 2016/06/09 07:11:08 mrg Exp $
+#	$NetBSD: Makefile.sanitizer,v 1.4 2018/02/14 02:12:07 christos Exp $
 
 SANITIZER=${GCCDIST}/libsanitizer
 .PATH: ${SANITIZER}/interception ${SANITIZER}/sanitizer_common
@@ -9,7 +9,7 @@ interception_mac.cc \
 interception_type_test.cc \
 interception_win.cc
 
-SANITIZER_SRCS= \
+SANITIZER_SRCS+= \
 sanitizer_allocator.cc \
 sanitizer_common.cc \
 sanitizer_common_libcdep.cc \
@@ -18,6 +18,7 @@ sanitizer_coverage_mapping_libcdep.cc \
 sanitizer_deadlock_detector1.cc \
 sanitizer_deadlock_detector2.cc \
 sanitizer_flags.cc \
+sanitizer_flag_parser.cc \
 sanitizer_libc.cc \
 sanitizer_libignore.cc \
 sanitizer_linux.cc \
@@ -43,22 +44,31 @@ sanitizer_suppressions.cc \
 sanitizer_symbolizer.cc \
 sanitizer_symbolizer_libbacktrace.cc \
 sanitizer_symbolizer_libcdep.cc \
+sanitizer_symbolizer_mac.cc \
 sanitizer_symbolizer_posix_libcdep.cc \
 sanitizer_symbolizer_win.cc \
 sanitizer_thread_registry.cc \
 sanitizer_tls_get_addr.cc \
-sanitizer_unwind_posix_libcdep.cc \
+sanitizer_unwind_linux_libcdep.cc \
 sanitizer_win.cc
+
+.PATH: ${SANITIZER}/ubsan
+UBSAN_SRCS+= \
+ubsan_diag.cc \
+ubsan_init.cc \
+ubsan_flags.cc \
+ubsan_value.cc
 
 # The linux build does this to avoid preinit sections on shared libraries
 CSHLIBFLAGS+= -DPIC
 
-SRCS+=	${INTERCEPTION_SRCS} ${SANITIZER_SRCS}
+SRCS+=	${INTERCEPTION_SRCS} ${SANITIZER_SRCS} ${UBSAN_SRCS}
 CPPFLAGS+=-I${SANITIZER}/include -I${SANITIZER}
 CPPFLAGS.sanitizer_netbsd.cc+=-I${GCCDIST}/gcc/ginclude
 CPPFLAGS+=-D_DEBUG -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS
 CPPFLAGS+=-D__STDC_LIMIT_MACROS -DSANITIZER_HAS_EXCEPTIONS=1
-CPPFLAGS+=-DSANITIZER_FLEXIBLE_MAPPING_AND_OFFSET=0 -DSANITIZER_NEEDS_SEGV=1
+CPPFLAGS+=-DSANITIZER_NEEDS_SEGV=1
+#CPPFLAGS+=-DCAN_SANITIZE_UB=0
 
 LIBDPLIBS+=    stdc++ ${.CURDIR}/../libstdc++-v3
 LIBDPLIBS+=    pthread ${.CURDIR}/../../../../../lib/libpthread

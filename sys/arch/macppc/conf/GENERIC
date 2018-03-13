@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.339 2018/01/23 14:47:55 sevan Exp $
+# $NetBSD: GENERIC,v 1.344 2018/02/26 23:09:32 sevan Exp $
 #
 # GENERIC machine description file
 # 
@@ -22,7 +22,7 @@ include		"arch/macppc/conf/std.macppc"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.339 $"
+#ident 		"GENERIC-$Revision: 1.344 $"
 
 maxusers	32
 
@@ -49,7 +49,7 @@ options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
 #options 	BUFQ_READPRIO
-#options 	BUFQ_PRIOCSCAN
+options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 #options 	DIAGNOSTIC	# cheap kernel consistency checks
@@ -59,7 +59,7 @@ options 	DDB		# in-kernel debugger
 #options 	DDB_ONPANIC=0	# don't go into ddb on panic.
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	TRAP_PANICWAIT
-options		DDB_COMMANDONENTER="bt"
+#options 	DDB_COMMANDONENTER="bt"
 
 #makeoptions 	DEBUG="-g"	# compile full symbol table
 
@@ -268,10 +268,6 @@ trm*	at pci? dev ? function ?	# Tekram DC-395U/UW/F, DC-315/U SCSI
 
 # Display devices
 # ofb*	at pci? dev ? function ?	# Generic Open Firmware Framebuffer
-# OFB_ENABLE_CACHE speeds up the console on many machines, but should
-# not be enabled on some older machines, such as the rev. A-D iMacs or any
-# O'Hare based machine that uses external cache like the PowerBook 3400c
-#options 	OFB_ENABLE_CACHE	# Speed up console in ofb
 #options 	OFB_FAKE_VGA_FB		# Allow X to mmap VGA regs
 # 
 # ofb is considered obsolete and machine-independent genfb should be used
@@ -295,8 +291,6 @@ genfb*		at pci? function ?
 # make sure the console display is always wsdisplay0
 wsdisplay0	at wsemuldisplaydev? console 1
 wsdisplay*	at wsemuldisplaydev?
-
-#macofcons0 at pci? dev ? function ?	# OpenFirmware console (for debugging)
 
 # Other  PCI devices
 pciide* at pci? dev ? function ? flags 0x0000	# GENERIC pciide driver
@@ -393,11 +387,7 @@ zsc*	at obio?
 zstty*	at zsc? channel ?
 mediabay* at obio?
 wdc*	at mediabay? flags 0
-# awacs is disabled because on most systems (7300 - 9600 PowerMacs,
-# many kinds of G4s), very heavy load can cause the machine to lock
-# up. ONLY enable this if your machine is never under heavy load, or
-# you'd rather have audio than worry about occasional lockups.
-#awacs*	at obio?			# Apple audio device
+awacs*	at obio?			# Apple audio device
 ki2c*	at obio?			# Keywest I2C
 ki2c*	at uni_n?			# Keywest I2C
 iic*	at ki2c?

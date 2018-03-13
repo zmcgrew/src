@@ -1,4 +1,4 @@
-/*	$NetBSD: frag6.c,v 1.64 2018/01/25 20:55:15 maxv Exp $	*/
+/*	$NetBSD: frag6.c,v 1.67 2018/03/09 11:57:38 maxv Exp $	*/
 /*	$KAME: frag6.c,v 1.40 2002/05/27 21:40:31 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: frag6.c,v 1.64 2018/01/25 20:55:15 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: frag6.c,v 1.67 2018/03/09 11:57:38 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -90,7 +90,7 @@ struct	ip6asfrag {
 	int		ip6af_offset;	/* offset in ip6af_m to next header */
 	int		ip6af_frglen;	/* fragmentable part length */
 	int		ip6af_off;	/* fragment offset */
-	bool		ip6af_more;	/* more fragment bit in frag off */
+	bool		ip6af_mff;	/* more fragment bit in frag off */
 };
 
 
@@ -356,7 +356,7 @@ frag6_input(struct mbuf **mp, int *offp, int proto)
 	ip6af->ip6af_len = ip6->ip6_plen;
 	ip6af->ip6af_nxt = ip6->ip6_nxt;
 	ip6af->ip6af_hlim = ip6->ip6_hlim;
-	ip6af->ip6af_more = (ip6f->ip6f_offlg & IP6F_MORE_FRAG) != 0;
+	ip6af->ip6af_mff = (ip6f->ip6f_offlg & IP6F_MORE_FRAG) != 0;
 	ip6af->ip6af_off = fragoff;
 	ip6af->ip6af_frglen = frgpartlen;
 	ip6af->ip6af_offset = offset;
@@ -415,7 +415,7 @@ insert:
 		}
 		next += af6->ip6af_frglen;
 	}
-	if (af6->ip6af_up->ip6af_more) {
+	if (af6->ip6af_up->ip6af_mff) {
 		mutex_exit(&frag6_lock);
 		goto done;
 	}
@@ -434,6 +434,7 @@ insert:
 			t = t->m_next;
 		t->m_next = af6->ip6af_m;
 		m_adj(t->m_next, af6->ip6af_offset);
+		m_pkthdr_remove(t->m_next);
 		kmem_intr_free(af6, sizeof(struct ip6asfrag));
 		af6 = af6dwn;
 	}
@@ -467,24 +468,33 @@ insert:
 		m_cat(m, t);
 	}
 
-	/*
-	 * Store NXT to the original.
-	 */
-	{
-		u_int8_t *prvnxtp = ip6_get_prevhdr(m, offset); /* XXX */
-		*prvnxtp = nxt;
-	}
-
 	frag6_remque(q6);
 	frag6_nfrags -= q6->ip6q_nfrag;
 	kmem_intr_free(q6, sizeof(struct ip6q));
 	frag6_nfragpackets--;
 
-	if (m->m_flags & M_PKTHDR) { /* Isn't it always true? */
+	{
+		KASSERT(m->m_flags & M_PKTHDR);
 		int plen = 0;
-		for (t = m; t; t = t->m_next)
+		for (t = m; t; t = t->m_next) {
 			plen += t->m_len;
+		}
 		m->m_pkthdr.len = plen;
+	}
+
+	/*
+	 * Restore NXT to the original.
+	 */
+	{
+		const int prvnxt = ip6_get_prevhdr(m, offset);
+		uint8_t *prvnxtp;
+
+		IP6_EXTHDR_GET(prvnxtp, uint8_t *, m, prvnxt,
+		    sizeof(*prvnxtp));
+		if (prvnxtp == NULL) {
+			goto dropfrag;
+		}
+		*prvnxtp = nxt;
 	}
 
 	IP6_STATINC(IP6_STAT_REASSEMBLED);

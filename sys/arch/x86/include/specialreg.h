@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.111 2018/01/15 08:17:20 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.114 2018/03/12 07:12:54 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1991 The Regents of the University of California.
@@ -250,7 +250,7 @@
 
 /* CPUID Fn00000001 %ebx */
 #define	CPUID_BRAND_INDEX	__BITS(7,0)
-#define	CPUID_CLFUSH_SIZE	__BITS(15,8)
+#define	CPUID_CLFLUSH_SIZE	__BITS(15,8)
 #define	CPUID_HTT_CORES		__BITS(23,16)
 #define	CPUID_LOCAL_APIC_ID	__BITS(31,24)
 
@@ -435,6 +435,35 @@
 #define CPUID_PES1_FLAGS	"\20" \
 	"\1" "XSAVEOPT"	"\2" "XSAVEC"	"\3" "XGETBV"	"\4" "XSAVES"
 
+/*
+ * Intel Deterministic Address Translation Parameter Leaf
+ * Fn0000_0018
+ */
+
+/* %ecx=0 %eax __BITS(31, 0): the maximum input value of supported sub-leaf */
+
+/* %ebx */
+#define CPUID_DATP_PGSIZE	__BITS(3, 0)	/* page size */
+#define CPUID_DATP_PGSIZE_4KB	__BIT(0)	/* 4KB page support */
+#define CPUID_DATP_PGSIZE_2MB	__BIT(1)	/* 2MB page support */
+#define CPUID_DATP_PGSIZE_4MB	__BIT(2)	/* 4MB page support */
+#define CPUID_DATP_PGSIZE_1GB	__BIT(3)	/* 1GB page support */
+#define CPUID_DATP_PARTITIONING	__BITS(10, 8)	/* Partitioning */
+#define CPUID_DATP_WAYS		__BITS(31, 16)	/* Ways of associativity */
+
+/* Number of sets: %ecx */
+
+/* %edx */
+#define CPUID_DATP_TCTYPE	__BITS(4, 0)	/* Translation Cache type */
+#define CPUID_DATP_TCTYPE_N	0		/*   NULL (not valid) */
+#define CPUID_DATP_TCTYPE_D	1		/*   Data TLB */
+#define CPUID_DATP_TCTYPE_I	2		/*   Instruction TLB */
+#define CPUID_DATP_TCTYPE_U	3		/*   Unified TLB */
+#define CPUID_DATP_TCLEVEL	__BITS(7, 5)	/* TLB level (start at 1) */
+#define CPUID_DATP_FULLASSOC	__BIT(8)	/* Full associative */
+#define CPUID_DATP_SHAREING	__BITS(25, 14)	/* shareing */
+
+
 /* Intel Fn80000001 extended features - %edx */
 #define CPUID_SYSCALL	0x00000800	/* SYSCALL/SYSRET */
 #define CPUID_XD	0x00100000	/* Execute Disable (like CPUID_NOX) */
@@ -455,6 +484,7 @@
 	"\1" "LAHF"	"\02" "B01"	"\03" "B02"		\
 			"\06" "LZCNT"				\
 	"\11" "PREFETCHW"
+
 
 /* AMD/VIA Fn80000001 extended features - %edx */
 /*	CPUID_SYSCALL			   SYSCALL/SYSRET */

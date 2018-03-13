@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ipsec.c,v 1.2 2018/01/15 02:39:53 knakahara Exp $  */
+/*	$NetBSD: if_ipsec.c,v 1.7 2018/03/13 02:12:05 knakahara Exp $  */
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ipsec.c,v 1.2 2018/01/15 02:39:53 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ipsec.c,v 1.7 2018/03/13 02:12:05 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -109,7 +109,8 @@ static inline size_t if_ipsec_set_sadb_src(struct sadb_address *,
 static inline size_t if_ipsec_set_sadb_dst(struct sadb_address *,
     struct sockaddr *, int);
 static inline size_t if_ipsec_set_sadb_x_policy(struct sadb_x_policy *,
-    struct sadb_x_ipsecrequest *, uint16_t, uint8_t, uint32_t, uint8_t);
+    struct sadb_x_ipsecrequest *, uint16_t, uint8_t, uint32_t, uint8_t,
+    struct sockaddr *, struct sockaddr *);
 static inline void if_ipsec_set_sadb_msg(struct sadb_msg *, uint16_t, uint8_t);
 static inline void if_ipsec_set_sadb_msg_add(struct sadb_msg *, uint16_t);
 static inline void if_ipsec_set_sadb_msg_del(struct sadb_msg *, uint16_t);
@@ -782,18 +783,30 @@ bad:
 }
 
 struct encap_funcs {
+#ifdef INET
 	int (*ef_inet)(struct ipsec_variant *);
+#endif
+#ifdef INET6
 	int (*ef_inet6)(struct ipsec_variant *);
+#endif
 };
 
 static struct encap_funcs ipsec_encap_attach = {
+#ifdef INET
 	.ef_inet = ipsecif4_attach,
+#endif
+#ifdef INET6
 	.ef_inet6 = &ipsecif6_attach,
+#endif
 };
 
 static struct encap_funcs ipsec_encap_detach = {
+#ifdef INET
 	.ef_inet = ipsecif4_detach,
+#endif
+#ifdef INET6
 	.ef_inet6 = &ipsecif6_detach,
+#endif
 };
 
 static int
@@ -880,7 +893,7 @@ if_ipsec_set_tunnel(struct ifnet *ifp,
 	switch(nsrc->sa_family) {
 #ifdef INET
 	case AF_INET:
-		nsport = ntohs(satosin(src)->sin_port);
+		nsport = satosin(src)->sin_port;
 		/*
 		 * avoid confuse SP when NAT-T disabled,
 		 * e.g.
@@ -888,15 +901,15 @@ if_ipsec_set_tunnel(struct ifnet *ifp,
 		 *     confuse : 10.0.1.2[600] 10.0.1.1[600] 4(ipv4)
 		 */
 		satosin(nsrc)->sin_port = 0;
-		ndport = ntohs(satosin(dst)->sin_port);
+		ndport = satosin(dst)->sin_port;
 		satosin(ndst)->sin_port = 0;
 		break;
 #endif /* INET */
 #ifdef INET6
 	case AF_INET6:
-		nsport = ntohs(satosin6(src)->sin6_port);
+		nsport = satosin6(src)->sin6_port;
 		satosin6(nsrc)->sin6_port = 0;
-		ndport = ntohs(satosin6(dst)->sin6_port);
+		ndport = satosin6(dst)->sin6_port;
 		satosin6(ndst)->sin6_port = 0;
 		break;
 #endif /* INET6 */
@@ -1297,14 +1310,38 @@ if_ipsec_unshare_sp(struct ipsec_variant *var)
 }
 
 static inline void
-if_ipsec_add_mbuf(struct mbuf *m0, void *data, size_t len)
+if_ipsec_add_mbuf_optalign(struct mbuf *m0, void *data, size_t len, bool align)
 {
 	struct mbuf *m;
 
 	MGET(m, M_WAITOK | M_ZERO, MT_DATA);
-	m->m_len = PFKEY_ALIGN8(len);
+	if (align)
+		m->m_len = PFKEY_ALIGN8(len);
+	else
+		m->m_len = len;
 	m_copyback(m, 0, len, data);
 	m_cat(m0, m);
+}
+
+static inline void
+if_ipsec_add_mbuf(struct mbuf *m0, void *data, size_t len)
+{
+
+	if_ipsec_add_mbuf_optalign(m0, data, len, true);
+}
+
+static inline void
+if_ipsec_add_mbuf_addr_port(struct mbuf *m0, struct sockaddr *addr, in_port_t port, bool align)
+{
+
+	if (port == 0) {
+		if_ipsec_add_mbuf_optalign(m0, addr, addr->sa_len, align);
+	} else {
+		struct sockaddr addrport;
+
+		if_ipsec_set_addr_port(&addrport, addr, port);
+		if_ipsec_add_mbuf_optalign(m0, &addrport, addrport.sa_len, align);
+	}
 }
 
 static inline void
@@ -1376,7 +1413,7 @@ if_ipsec_set_sadb_dst(struct sadb_address *sadst, struct sockaddr *dst,
 static inline size_t
 if_ipsec_set_sadb_x_policy(struct sadb_x_policy *xpl,
     struct sadb_x_ipsecrequest *xisr, uint16_t policy, uint8_t dir, uint32_t id,
-    uint8_t level)
+    uint8_t level, struct sockaddr *src, struct sockaddr *dst)
 {
 	size_t size;
 
@@ -1385,6 +1422,8 @@ if_ipsec_set_sadb_x_policy(struct sadb_x_policy *xpl,
 	size = sizeof(*xpl);
 	if (policy == IPSEC_POLICY_IPSEC) {
 		size += PFKEY_ALIGN8(sizeof(*xisr));
+		if (src != NULL && dst != NULL)
+			size += PFKEY_ALIGN8(src->sa_len + dst->sa_len);
 	}
 	xpl->sadb_x_policy_len = PFKEY_UNIT64(size);
 	xpl->sadb_x_policy_exttype = SADB_X_EXT_POLICY;
@@ -1396,6 +1435,9 @@ if_ipsec_set_sadb_x_policy(struct sadb_x_policy *xpl,
 
 	if (policy == IPSEC_POLICY_IPSEC) {
 		xisr->sadb_x_ipsecrequest_len = PFKEY_ALIGN8(sizeof(*xisr));
+		if (src != NULL && dst != NULL)
+			xisr->sadb_x_ipsecrequest_len +=
+				PFKEY_ALIGN8(src->sa_len + dst->sa_len);
 		xisr->sadb_x_ipsecrequest_proto = IPPROTO_ESP;
 		xisr->sadb_x_ipsecrequest_mode = IPSEC_MODE_TRANSPORT;
 		xisr->sadb_x_ipsecrequest_level = level;
@@ -1447,14 +1489,14 @@ if_ipsec_set_addr_port(struct sockaddr *addrport, struct sockaddr *addr,
 #ifdef INET
 	case AF_INET: {
 		struct sockaddr_in *sin = satosin(addrport);
-		sin->sin_port = htons(port);
+		sin->sin_port = port;
 		break;
 	}
 #endif /* INET */
 #ifdef INET6
 	case AF_INET6: {
 		struct sockaddr_in6 *sin6 = satosin6(addrport);
-		sin6->sin6_port = htons(port);
+		sin6->sin6_port = port;
 		break;
 	}
 #endif /* INET6 */
@@ -1494,7 +1536,7 @@ if_ipsec_add_sp0(struct sockaddr *src, in_port_t sport,
 	ext_msg_len += PFKEY_UNIT64(size);
 	size = if_ipsec_set_sadb_dst(&xdst, dst, proto);
 	ext_msg_len += PFKEY_UNIT64(size);
-	size = if_ipsec_set_sadb_x_policy(&xpl, &xisr, policy, dir, 0, level);
+	size = if_ipsec_set_sadb_x_policy(&xpl, &xisr, policy, dir, 0, level, src, dst);
 	ext_msg_len += PFKEY_UNIT64(size);
 	if_ipsec_set_sadb_msg_add(&msg, ext_msg_len);
 
@@ -1504,34 +1546,27 @@ if_ipsec_add_sp0(struct sockaddr *src, in_port_t sport,
 	m_copyback(m, 0, sizeof(msg), &msg);
 
 	if_ipsec_add_mbuf(m, &xsrc, sizeof(xsrc));
-	if (sport == 0) {
-		if_ipsec_add_mbuf(m, src, src->sa_len);
-	} else {
-		struct sockaddr addrport;
-
-		if_ipsec_set_addr_port(&addrport, src, sport);
-		if_ipsec_add_mbuf(m, &addrport, addrport.sa_len);
-	}
+	if_ipsec_add_mbuf_addr_port(m, src, sport, true);
 	padlen = PFKEY_UNUNIT64(xsrc.sadb_address_len)
 		- (sizeof(xsrc) + PFKEY_ALIGN8(src->sa_len));
 	if_ipsec_add_pad(m, padlen);
 
 	if_ipsec_add_mbuf(m, &xdst, sizeof(xdst));
-	if (dport == 0) {
-		if_ipsec_add_mbuf(m, dst, dst->sa_len);
-	} else {
-		struct sockaddr addrport;
-
-		if_ipsec_set_addr_port(&addrport, dst, dport);
-		if_ipsec_add_mbuf(m, &addrport, addrport.sa_len);
-	}
+	if_ipsec_add_mbuf_addr_port(m, dst, dport, true);
 	padlen = PFKEY_UNUNIT64(xdst.sadb_address_len)
 		- (sizeof(xdst) + PFKEY_ALIGN8(dst->sa_len));
 	if_ipsec_add_pad(m, padlen);
 
 	if_ipsec_add_mbuf(m, &xpl, sizeof(xpl));
-	if (policy == IPSEC_POLICY_IPSEC)
+	if (policy == IPSEC_POLICY_IPSEC) {
 		if_ipsec_add_mbuf(m, &xisr, sizeof(xisr));
+		if_ipsec_add_mbuf_addr_port(m, src, sport, false);
+		if_ipsec_add_mbuf_addr_port(m, dst, dport, false);
+	}
+	padlen = PFKEY_UNUNIT64(xpl.sadb_x_policy_len) - sizeof(xpl);
+	if (src != NULL && dst != NULL)
+		padlen -= PFKEY_ALIGN8(src->sa_len + dst->sa_len);
+	if_ipsec_add_pad(m, padlen);
 
 	/* key_kpi_spdadd() has already done KEY_SP_REF(). */
 	return key_kpi_spdadd(m);
@@ -1624,7 +1659,7 @@ if_ipsec_del_sp0(struct secpolicy *sp)
 
 	MGETHDR(m, M_WAITOK, MT_DATA);
 
-	size = if_ipsec_set_sadb_x_policy(&xpl, NULL, 0, 0, sp->id, 0);
+	size = if_ipsec_set_sadb_x_policy(&xpl, NULL, 0, 0, sp->id, 0, NULL, NULL);
 	ext_msg_len += PFKEY_UNIT64(size);
 
 	if_ipsec_set_sadb_msg_del(&msg, ext_msg_len);

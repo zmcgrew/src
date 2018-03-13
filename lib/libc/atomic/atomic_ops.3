@@ -1,4 +1,4 @@
-.\"	$NetBSD: atomic_ops.3,v 1.5 2010/04/14 08:49:49 jruoho Exp $
+.\"	$NetBSD: atomic_ops.3,v 1.7 2018/02/07 09:59:56 martin Exp $
 .\"
 .\" Copyright (c) 2007, 2008 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd April 14, 2010
+.Dd February 7, 2018
 .Dt ATOMIC_OPS 3
 .Os
 .Sh NAME
@@ -98,7 +98,7 @@ completes.
 If hardware CAS is not available, the store may not reach global visibility
 until some time after the atomic operation has completed.
 However, in all cases a subsequent atomic operation on the same memory cell
-will be delayed until the result of any preceeding operation has reached
+will be delayed until the result of any preceding operation has reached
 global visibility.
 .Pp
 Atomic operations are strongly ordered with respect to each other.

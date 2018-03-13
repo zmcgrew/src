@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.88 2018/01/21 08:46:48 mrg Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.90 2018/03/04 21:51:44 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2001 Matt Thomas.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.88 2018/01/21 08:46:48 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.90 2018/03/04 21:51:44 mrg Exp $");
 
 #include "opt_ppcparam.h"
 #include "opt_ppccache.h"
@@ -533,6 +533,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 	 * Configure power-saving mode.
 	 */
 	switch (vers) {
+#if !defined(_ARCH_PPC64)
 	case MPC604:
 	case MPC604e:
 	case MPC604ev:
@@ -582,6 +583,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 		hid0 |= HID0_NAP | HID0_DPM;
 		powersave = 1;
 		break;
+#endif
 
 	case IBM970:
 	case IBM970FX:
@@ -644,17 +646,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 	if ((oeacpufeat & OEACPU_64_BRIDGE) != 0) {
 #endif
 		if (hid64_0 != hid64_0_save) {
-			/* ppc970 needs extra goop around writes to HID0 */
-			__asm volatile( "sync;" \
-					"mtspr %0,%1;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					 : : "K"(SPR_HID0), "r"(hid64_0));
-			__asm volatile("sync;isync");
+			mtspr64(SPR_HID0, hid64_0);
 		}
 #if defined(PPC_OEA64_BRIDGE)
 	} else {

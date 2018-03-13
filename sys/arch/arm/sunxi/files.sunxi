@@ -1,4 +1,4 @@
-#	$NetBSD: files.sunxi,v 1.38 2017/11/10 00:09:23 jmcneill Exp $
+#	$NetBSD: files.sunxi,v 1.43 2018/03/07 20:55:31 bouyer Exp $
 #
 # Configuration info for Allwinner sunxi family SoCs
 #
@@ -105,6 +105,7 @@ file	arch/arm/sunxi/sun8i_a83t_gpio.c	sunxi_gpio & soc_sun8i_a83t
 file	arch/arm/sunxi/sun8i_h3_gpio.c		sunxi_gpio & (soc_sun8i_h3 | soc_sun50i_h5)
 file	arch/arm/sunxi/sun9i_a80_gpio.c		sunxi_gpio & soc_sun9i_a80
 file	arch/arm/sunxi/sun50i_a64_gpio.c	sunxi_gpio & soc_sun50i_a64
+file	arch/arm/sunxi/sun50i_h6_gpio.c		sunxi_gpio & soc_sun50i_h6
 
 # UART
 attach	com at fdt with sunxi_com
@@ -144,14 +145,17 @@ device	sunxirtc
 attach	sunxirtc at fdt with sunxi_rtc
 file	arch/arm/sunxi/sunxi_rtc.c		sunxi_rtc
 
-# EMAC (sun4i/sun7i)
-device	sun4iemac: arp, ether, ifnet, mii
-attach	sun4iemac at fdt with sun4i_emac
+# EMAC (common)
+device	emac: arp, ether, ifnet, mii
+
+# EMAC (sun4i/sun5i/sun7i)
+ifdef arm
+attach	emac at fdt with sun4i_emac
 file	arch/arm/sunxi/sun4i_emac.c		sun4i_emac
+endif
 
 # EMAC (sun8i/sun50i)
-device	sunxiemac: arp, ether, ifnet, mii
-attach	sunxiemac at fdt with sunxi_emac
+attach	emac at fdt with sunxi_emac
 file	arch/arm/sunxi/sunxi_emac.c		sunxi_emac
 
 # GMAC
@@ -227,6 +231,20 @@ device	sunxinand: nandbus
 attach	sunxinand at fdt with sunxi_nand
 file	arch/arm/sunxi/sunxi_nand.c		sunxi_nand
 
+# SPI Controller (sun6i-compatible)
+device	sun6ispi: spibus
+attach	sun6ispi at fdt with sun6i_spi
+file	arch/arm/sunxi/sun6i_spi.c		sun6i_spi
+
+# A10/A20 CAN
+device	sunxican { } : ifnet
+attach	sunxican at fdt with sunxi_can
+file	arch/arm/sunxi/sunxi_can.c		sunxi_can
+
+# LRADC
+device	sunxilradc
+attach	sunxilradc at fdt with sunxi_lradc
+file	arch/arm/sunxi/sunxi_lradc.c		sunxi_lradc
 # SOC parameters
 defflag	opt_soc.h			SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN4I: SOC_SUNXI
@@ -245,3 +263,4 @@ defflag	opt_soc.h			SOC_SUN9I_A80: SOC_SUN9I
 defflag	opt_soc.h			SOC_SUN50I: SOC_SUNXI
 defflag	opt_soc.h			SOC_SUN50I_A64: SOC_SUN50I
 defflag	opt_soc.h			SOC_SUN50I_H5: SOC_SUN50I
+defflag	opt_soc.h			SOC_SUN50I_H6: SOC_SUN50I

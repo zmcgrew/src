@@ -1,4 +1,4 @@
-.\"	$NetBSD: ascii.7,v 1.8 2017/07/03 21:30:59 wiz Exp $
+.\"	$NetBSD: ascii.7,v 1.13 2018/02/11 13:31:17 wiz Exp $
 .\"
 .\" Copyright (c) 1989, 1990, 1993
 .\"	The Regents of the University of California.  All rights reserved.
@@ -29,14 +29,12 @@
 .\"
 .\"	@(#)ascii.7	8.1 (Berkeley) 6/5/93
 .\"
-.Dd June 5, 1993
+.Dd February 8, 2017
 .Dt ASCII 7
 .Os
 .Sh NAME
 .Nm ascii
-.Nd octal, hexadecimal and decimal
-.Tn ASCII
-character sets
+.Nd octal, hexadecimal and decimal ASCII character sets
 .Sh DESCRIPTION
 The
 .Nm octal
@@ -103,6 +101,16 @@ set:
 112  p   113  q   114  r   115  s   116  t   117  u   118  v   119  w
 120  x   121  y   122  z   123  {   124  |   125  }   126  ~   127 del
 .Ed
+.Pp
+Note that the
+.Dv nl
+and
+.Dv np
+characters in the original ASCII specification are
+.Dv lf
+and
+.Dv ff
+respectively.
 .Sh FILES
 .Bl -tag -width /usr/share/misc/ascii -compact
 .It Pa /usr/share/misc/ascii

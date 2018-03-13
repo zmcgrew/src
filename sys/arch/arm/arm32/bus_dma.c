@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_dma.c,v 1.101 2017/12/29 08:58:57 skrll Exp $	*/
+/*	$NetBSD: bus_dma.c,v 1.106 2018/03/04 08:04:59 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -35,22 +35,13 @@
 #include "opt_arm_bus_space.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.101 2017/12/29 08:58:57 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bus_dma.c,v 1.106 2018/03/04 08:04:59 skrll Exp $");
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/proc.h>
-#include <sys/buf.h>
 #include <sys/bus.h>
 #include <sys/cpu.h>
-#include <sys/reboot.h>
-#include <sys/conf.h>
-#include <sys/file.h>
 #include <sys/kmem.h>
 #include <sys/mbuf.h>
-#include <sys/vnode.h>
-#include <sys/device.h>
 
 #include <uvm/uvm.h>
 
@@ -127,13 +118,11 @@ EVCNT_ATTACH_STATIC(bus_dma_sync_postwrite);
 
 int	_bus_dmamap_load_buffer(bus_dma_tag_t, bus_dmamap_t, void *,
 	    bus_size_t, struct vmspace *, int);
-static struct arm32_dma_range *
-	_bus_dma_paddr_inrange(struct arm32_dma_range *, int, paddr_t);
 
 /*
  * Check to see if the specified page is in an allowed DMA range.
  */
-inline struct arm32_dma_range *
+static inline struct arm32_dma_range *
 _bus_dma_paddr_inrange(struct arm32_dma_range *ranges, int nranges,
     bus_addr_t curaddr)
 {
@@ -325,8 +314,8 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 	void *mapstore;
 
 #ifdef DEBUG_DMA
-	printf("dmamap_create: t=%p size=%lx nseg=%x msegsz=%lx boundary=%lx flags=%x\n",
-	    t, size, nsegments, maxsegsz, boundary, flags);
+	printf("dmamap_create: t=%p size=%lx nseg=%x msegsz=%lx boundary=%lx"
+	    " flags=%x\n", t, size, nsegments, maxsegsz, boundary, flags);
 #endif	/* DEBUG_DMA */
 
 	/*
@@ -537,8 +526,8 @@ int
 _bus_dmamap_load_mbuf(bus_dma_tag_t t, bus_dmamap_t map, struct mbuf *m0,
     int flags)
 {
-	int error;
 	struct mbuf *m;
+	int error;
 
 #ifdef DEBUG_DMA
 	printf("dmamap_load_mbuf: t=%p map=%p m0=%p f=%d\n",
@@ -681,10 +670,10 @@ int
 _bus_dmamap_load_uio(bus_dma_tag_t t, bus_dmamap_t map, struct uio *uio,
     int flags)
 {
-	int i, error;
 	bus_size_t minlen, resid;
 	struct iovec *iov;
 	void *addr;
+	int i, error;
 
 	/*
 	 * Make sure that on error condition we return "no valid mappings."
@@ -801,8 +790,20 @@ _bus_dmamap_unload(bus_dma_tag_t t, bus_dmamap_t map)
 }
 
 static void
-_bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool readonly_p)
+_bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops,
+    bool readonly_p)
 {
+
+#ifdef ARM_MMU_EXTENDED
+	/*
+	 * No optimisations are available for readonly mbufs on armv6+, so
+	 * assume it's not readonly from here on.
+	 *
+ 	 * See the comment in _bus_dmamap_sync_mbuf
+	 */
+	readonly_p = false;
+#endif
+
 	KASSERTMSG((va & PAGE_MASK) == (pa & PAGE_MASK),
 	    "va %#lx pa %#lx", va, pa);
 #if 0
@@ -812,19 +813,13 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool read
 
 	switch (ops) {
 	case BUS_DMASYNC_PREREAD|BUS_DMASYNC_PREWRITE:
-#ifdef ARM_MMU_EXTENDED
-		(void)readonly_p;
-#else
 		if (!readonly_p) {
-#endif
 			STAT_INCR(sync_prereadwrite);
 			cpu_dcache_wbinv_range(va, len);
 			cpu_sdcache_wbinv_range(va, pa, len);
 			break;
-#ifndef ARM_MMU_EXTENDED
 		}
 		/* FALLTHROUGH */
-#endif
 
 	case BUS_DMASYNC_PREREAD: {
 		const size_t line_size = arm_dcache_align;
@@ -875,13 +870,11 @@ _bus_dmamap_sync_segment(vaddr_t va, paddr_t pa, vsize_t len, int ops, bool read
 	 */
 	case BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE:
 		STAT_INCR(sync_postreadwrite);
-		arm_dmb();
 		cpu_dcache_inv_range(va, len);
 		cpu_sdcache_inv_range(va, pa, len);
 		break;
 	case BUS_DMASYNC_POSTREAD:
 		STAT_INCR(sync_postread);
-		arm_dmb();
 		cpu_dcache_inv_range(va, len);
 		cpu_sdcache_inv_range(va, pa, len);
 		break;

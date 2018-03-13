@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.sun3,v 1.104 2015/04/15 19:13:47 mrg Exp $
+# $NetBSD: Makefile.sun3,v 1.107 2018/03/07 15:02:36 maya Exp $
 
 # Makefile for NetBSD
 #
@@ -39,7 +39,14 @@ AFLAGS+=	-x assembler-with-cpp
 ##
 ## (3) libkern and compat
 ##
+OPT_MODULAR=   %MODULAR%
+.if !empty(OPT_MODULAR)
 KERN_AS=	obj
+COMPAT_AS=	obj
+.else
+KERN_AS=	library
+COMPAT_AS=	library
+.endif
 
 ##
 ## (4) local objects, compile rules, and dependencies
@@ -50,6 +57,8 @@ MD_SFILES=	${SUN3}/${MACHTYPE}/locore.s
 
 locore.o: ${SUN3}/${MACHTYPE}/locore.s
 	${NORMAL_S}
+
+.include "$S/arch/m68k/conf/Makefile.kern.m68k.inc"
 
 ##
 ## (5) link settings

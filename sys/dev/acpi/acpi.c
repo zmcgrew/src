@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $	*/
+/*	$NetBSD: acpi.c,v 1.268 2018/03/04 16:34:20 scole Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,8 +100,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.265 2017/11/23 15:48:24 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.268 2018/03/04 16:34:20 scole Exp $");
 
+#include "pci.h"
 #include "opt_acpi.h"
 #include "opt_pcifixup.h"
 
@@ -487,10 +488,12 @@ acpi_attach(device_t parent, device_t self, void *aux)
 	 */
 	acpi_build_tree(sc);
 
+#if NPCI > 0
 	/*
 	 * Probe MCFG table
 	 */
 	acpimcfg_probe(sc);
+#endif
 
 	acpi_md_callback(sc);
 

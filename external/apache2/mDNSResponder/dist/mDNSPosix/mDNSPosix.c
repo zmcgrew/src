@@ -657,7 +657,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
         // to bind to the socket. Our suggestion was to switch the order in which
         // SO_REUSEPORT and SO_REUSEADDR was tested so that SO_REUSEADDR stays on
         // top and SO_REUSEPORT to be used only if SO_REUSEADDR doesn't exist.
-        #if defined(SO_REUSEADDR) && !defined(__MAC_OS_X_VERSION_MIN_REQUIRED)
+        #if defined(SO_REUSEADDR) && !defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && !defined(__NetBSD__)
         err = setsockopt(*sktPtr, SOL_SOCKET, SO_REUSEADDR, &kOn, sizeof(kOn));
         #elif defined(SO_REUSEPORT)
         err = setsockopt(*sktPtr, SOL_SOCKET, SO_REUSEPORT, &kOn, sizeof(kOn));
@@ -666,6 +666,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
         #endif
         if (err < 0) { err = errno; perror("setsockopt - SO_REUSExxxx"); }
 
+#ifndef __NetBSD__
         // Enable inbound packets on IFEF_AWDL interface.
         // Only done for multicast sockets, since we don't expect unicast socket operations
         // on the IFEF_AWDL interface. Operation is a no-op for other interface types.
@@ -673,6 +674,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
         #define SO_RECV_ANYIF   0x1104      /* unrestricted inbound processing */
         #endif
         if (setsockopt(*sktPtr, SOL_SOCKET, SO_RECV_ANYIF, &kOn, sizeof(kOn)) < 0) perror("setsockopt - SO_RECV_ANYIF");
+#endif
     }
 
     // We want to receive destination addresses and interface identifiers.
@@ -745,6 +747,10 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
         // And start listening for packets
         if (err == 0)
         {
+	    mDNSPlatformMemZero(&bindAddr, sizeof(bindAddr));
+#ifndef NOT_HAVE_SA_LEN
+	    bindAddr.sin_len         = sizeof(bindAddr);
+#endif
             bindAddr.sin_family      = AF_INET;
             bindAddr.sin_port        = port.NotAnInteger;
             bindAddr.sin_addr.s_addr = INADDR_ANY; // Want to receive multicasts AND unicasts on this socket
@@ -1054,6 +1060,9 @@ mDNSlocal mStatus OpenIfNotifySocket(int *pFD)
 
     /* Subscribe the socket to Link & IP addr notifications. */
     mDNSPlatformMemZero(&snl, sizeof snl);
+#ifndef NOT_HAVE_SA_LEN
+    snl.nl_len    = sizeof(snl);
+#endif
     snl.nl_family = AF_NETLINK;
     snl.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR;
     ret = bind(sock, (struct sockaddr *) &snl, sizeof snl);
@@ -1266,6 +1275,11 @@ mDNSlocal mDNSBool mDNSPlatformInit_CanReceiveUnicast(void)
     int err;
     int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in s5353;
+
+    mDNSPlatformMemZero(&s5353, sizeof(s5353));
+#ifndef NOT_HAVE_SA_LEN
+    s5353.sin_len         = sizeof(s5353);
+#endif
     s5353.sin_family      = AF_INET;
     s5353.sin_port        = MulticastDNSPort.NotAnInteger;
     s5353.sin_addr.s_addr = 0;

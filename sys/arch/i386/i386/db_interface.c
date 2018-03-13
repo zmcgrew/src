@@ -1,4 +1,4 @@
-/*	$NetBSD: db_interface.c,v 1.76 2017/09/17 09:41:35 maxv Exp $	*/
+/*	$NetBSD: db_interface.c,v 1.81 2018/02/13 06:44:13 maxv Exp $	*/
 
 /*
  * Mach Operating System
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.76 2017/09/17 09:41:35 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_interface.c,v 1.81 2018/02/13 06:44:13 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -72,8 +72,12 @@ extern const char *const trap_type[];
 extern int trap_types;
 
 int	db_active = 0;
-db_regs_t ddb_regs;	/* register state */
+#ifdef MULTIPROCESSOR
+/* ddb_regs defined as a macro */
 db_regs_t *ddb_regp = NULL;
+#else
+db_regs_t ddb_regs;
+#endif
 
 void db_mach_cpu (db_expr_t, bool, db_expr_t, const char *);
 
@@ -195,7 +199,9 @@ int
 kdb_trap(int type, int code, db_regs_t *regs)
 {
 	int s, flags;
+#ifdef MULTIPROCESSOR
 	db_regs_t dbreg;
+#endif
 
 	flags = regs->tf_err & TC_FLAGMASK;
 	regs->tf_err &= ~TC_FLAGMASK;
@@ -253,8 +259,9 @@ kdb_trap(int type, int code, db_regs_t *regs)
 #ifdef MULTIPROCESSOR
 	db_resume_others();
 	}
-#endif
+	/* Restore dbreg because ddb_regp can be changed by db_mach_cpu */
 	ddb_regp = &dbreg;
+#endif
 
 	regs->tf_gs     = ddb_regs.tf_gs;
 	regs->tf_fs     = ddb_regs.tf_fs;
@@ -275,6 +282,10 @@ kdb_trap(int type, int code, db_regs_t *regs)
 		regs->tf_esp    = ddb_regs.tf_esp;
 		regs->tf_ss     = ddb_regs.tf_ss;
 	}
+
+#ifdef MULTIPROCESSOR
+	ddb_regp = NULL;
+#endif
 
 	return (1);
 }

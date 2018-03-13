@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_mutex.c,v 1.69 2018/01/18 08:40:56 skrll Exp $	*/
+/*	$NetBSD: kern_mutex.c,v 1.73 2018/02/25 18:54:29 chs Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 #define	__MUTEX_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.69 2018/01/18 08:40:56 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.73 2018/02/25 18:54:29 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -54,10 +54,14 @@ __KERNEL_RCSID(0, "$NetBSD: kern_mutex.c,v 1.69 2018/01/18 08:40:56 skrll Exp $"
 #include <sys/intr.h>
 #include <sys/lock.h>
 #include <sys/types.h>
+#include <sys/cpu.h>
 
 #include <dev/lockstat.h>
 
 #include <machine/lock.h>
+
+#define MUTEX_PANIC_SKIP_SPIN 1
+#define MUTEX_PANIC_SKIP_ADAPTIVE 1
 
 /*
  * When not running a debug kernel, spin mutexes are not much
@@ -281,11 +285,11 @@ lockops_t mutex_adaptive_lockops = {
 };
 
 syncobj_t mutex_syncobj = {
-	SOBJ_SLEEPQ_SORTED,
-	turnstile_unsleep,
-	turnstile_changepri,
-	sleepq_lendpri,
-	(void *)mutex_owner,
+	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_unsleep	= turnstile_unsleep,
+	.sobj_changepri	= turnstile_changepri,
+	.sobj_lendpri	= sleepq_lendpri,
+	.sobj_owner	= (void *)mutex_owner,
 };
 
 /*
@@ -327,8 +331,10 @@ mutex_abort(const char *func, size_t line, const kmutex_t *mtx, const char *msg)
  *	sleeps - see comments in mutex_vector_enter() about releasing
  *	mutexes unlocked.
  */
+void _mutex_init(kmutex_t *, kmutex_type_t, int, uintptr_t);
 void
-mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl)
+_mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl,
+    uintptr_t return_address)
 {
 	bool dodebug;
 
@@ -354,24 +360,30 @@ mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl)
 
 	switch (type) {
 	case MUTEX_NODEBUG:
-		dodebug = LOCKDEBUG_ALLOC(mtx, NULL,
-		    (uintptr_t)__builtin_return_address(0));
+		dodebug = LOCKDEBUG_ALLOC(mtx, NULL, return_address);
 		MUTEX_INITIALIZE_SPIN(mtx, dodebug, ipl);
 		break;
 	case MUTEX_ADAPTIVE:
 		dodebug = LOCKDEBUG_ALLOC(mtx, &mutex_adaptive_lockops,
-		    (uintptr_t)__builtin_return_address(0));
+		    return_address);
 		MUTEX_INITIALIZE_ADAPTIVE(mtx, dodebug);
 		break;
 	case MUTEX_SPIN:
 		dodebug = LOCKDEBUG_ALLOC(mtx, &mutex_spin_lockops,
-		    (uintptr_t)__builtin_return_address(0));
+		    return_address);
 		MUTEX_INITIALIZE_SPIN(mtx, dodebug, ipl);
 		break;
 	default:
 		panic("mutex_init: impossible type");
 		break;
 	}
+}
+
+void
+mutex_init(kmutex_t *mtx, kmutex_type_t type, int ipl)
+{
+
+	_mutex_init(mtx, type, ipl, (uintptr_t)__builtin_return_address(0));
 }
 
 /*
@@ -480,8 +492,10 @@ mutex_vector_enter(kmutex_t *mtx)
 		 * to reduce cache line ping-ponging between CPUs.
 		 */
 		do {
+#if MUTEX_PANIC_SKIP_SPIN
 			if (panicstr != NULL)
 				break;
+#endif
 			while (MUTEX_SPINBIT_LOCKED_P(mtx)) {
 				SPINLOCK_BACKOFF(count);
 #ifdef LOCKDEBUG
@@ -507,6 +521,7 @@ mutex_vector_enter(kmutex_t *mtx)
 
 	MUTEX_DASSERT(mtx, MUTEX_ADAPTIVE_P(mtx));
 	MUTEX_ASSERT(mtx, curthread != 0);
+	MUTEX_ASSERT(mtx, !cpu_intr_p());
 	MUTEX_WANTLOCK(mtx);
 
 	if (panicstr == NULL) {
@@ -537,10 +552,12 @@ mutex_vector_enter(kmutex_t *mtx)
 			owner = mtx->mtx_owner;
 			continue;
 		}
+#if MUTEX_PANIC_SKIP_ADAPTIVE
 		if (__predict_false(panicstr != NULL)) {
 			KPREEMPT_ENABLE(curlwp);
 			return;
 		}
+#endif
 		if (__predict_false(MUTEX_OWNER(owner) == curthread)) {
 			MUTEX_ABORT(mtx, "locking against myself");
 		}
@@ -716,8 +733,10 @@ mutex_vector_exit(kmutex_t *mtx)
 	if (MUTEX_SPIN_P(mtx)) {
 #ifdef FULL
 		if (__predict_false(!MUTEX_SPINBIT_LOCKED_P(mtx))) {
+#if MUTEX_PANIC_SKIP_SPIN
 			if (panicstr != NULL)
 				return;
+#endif
 			MUTEX_ABORT(mtx, "exiting unheld spin mutex");
 		}
 		MUTEX_UNLOCKED(mtx);
@@ -727,11 +746,13 @@ mutex_vector_exit(kmutex_t *mtx)
 		return;
 	}
 
+#ifdef MUTEX_PANIC_SKIP_ADAPTIVE
 	if (__predict_false((uintptr_t)panicstr | cold)) {
 		MUTEX_UNLOCKED(mtx);
 		MUTEX_RELEASE(mtx);
 		return;
 	}
+#endif
 
 	curthread = (uintptr_t)curlwp;
 	MUTEX_DASSERT(mtx, curthread != 0);
@@ -922,8 +943,10 @@ mutex_spin_retry(kmutex_t *mtx)
 	 * to reduce cache line ping-ponging between CPUs.
 	 */
 	do {
+#if MUTEX_PANIC_SKIP_SPIN
 		if (panicstr != NULL)
 			break;
+#endif
 		while (MUTEX_SPINBIT_LOCKED_P(mtx)) {
 			SPINLOCK_BACKOFF(count);
 #ifdef LOCKDEBUG

@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.1 2016/08/20 11:20:32 christos Exp $
+# $NetBSD: Makefile,v 1.3 2018/02/06 03:30:18 christos Exp $
 
 PROG=unbound
 

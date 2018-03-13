@@ -1,10 +1,10 @@
 #!/bin/sh
-#	$NetBSD: mknative-gcc,v 1.90 2017/10/04 21:42:20 christos Exp $
+#	$NetBSD: mknative-gcc,v 1.92 2018/02/06 07:04:01 mrg Exp $
 #
 # Shell script for generating all the constants needed for a native
 # platform build of gcc.
 #
-# This version is for GCC 5.3
+# This version is for GCC 6.4
 
 # initialise
 
@@ -221,6 +221,9 @@ get_libstdcxx_v3 () {
 		<$_TMPDIR/$_PLATFORM/libstdc++-v3/include/gstdint.h
 
 	{
+		getvars $_PLATFORM/libstdc++-v3/Makefile \
+			port_specific_symbol_files
+
 		# libsupc++
 		getvars $_PLATFORM/libstdc++-v3/libsupc++/Makefile \
 			sources | sed 's/^G_sources=/G_LIBSUPCXX_SOURCES=/'
@@ -303,7 +306,7 @@ get_gcc () {
 			-e 's#build/##g'
 		getvars gcc/Makefile \
 			ALL_CFLAGS ALL_CPPFLAGS C_AND_OBJC_OBJS C_OBJS CCCP_OBJS \
-			GCC_OBJS GCOV_OBJS GXX_OBJS GTM_H PROTO_OBJS ${_extravars1} \
+			GCC_OBJS GCOV_OBJS GCOV_DUMP_OBJS GXX_OBJS GTM_H PROTO_OBJS ${_extravars1} \
 			INCLUDES md_file OBJC_OBJS OBJS out_file version \
 			BUILD_PREFIX RTL_H RTL_BASE_H TREE_H ${_hconfig_h} BASIC_BLOCK_H GCC_H \
 			GGC_H \

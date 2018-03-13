@@ -1,10 +1,13 @@
-#	$NetBSD: Makefile,v 1.39 2017/10/08 11:08:55 joerg Exp $
+#	$NetBSD: Makefile,v 1.43 2018/02/11 02:12:28 christos Exp $
 
 LIBISPRIVATE=	yes
 
 LIB=		backend
 
-SRCS=		${G_OBJS:.o=.c} ${G_out_file:T} regsub.c
+SRCS=		${G_OBJS} ${G_out_file:T} regsub.c
+
+# XXX: something misses these.
+CLEANDIRFILES+=	${G_OBJS:.o=.d}
 
 # Make sure we use the pre-generated C files
 .l.c:
@@ -21,21 +24,13 @@ CPPFLAGS+=	-I${.CURDIR}/../../lib/libgcc/libgcov/arch/${MACHINE_ARCH}
 CPPFLAGS.cppdefault.c+=	-DPREFIX=\"/usr\" \
 			-DNATIVE_SYSTEM_HEADER_DIR=\"${G_NATIVE_SYSTEM_HEADER_DIR}\"
 
+HOST_CXXFLAGS+=	-std=gnu++98
+
 HOSTPROG_CXX=	1
 
-.include <bsd.own.mk>
+.include <bsd.init.mk>
 
 HOST_LIBIBERTYOBJ!=	cd ${.CURDIR}/../host-libiberty && ${PRINTOBJDIR}
-
-# XXX ${G_OBJS:.o=.c} is invalid in GCC 5.3, but work around for now
-BUILDSYMLINKS+=	${GNUHOSTDIST}/gcc/wide-int-print.cc wide-int-print.c
-BUILDSYMLINKS+=	${GNUHOSTDIST}/gcc/wide-int.cc wide-int.c
-
-.if ${MACHINE_CPU} == "sh3"
-BUILDSYMLINKS+= ${GNUHOSTDIST}/gcc/config/sh/sh-mem.cc sh-mem.c
-BUILDSYMLINKS+= ${GNUHOSTDIST}/gcc/config/sh/sh_treg_combine.cc sh_treg_combine.c
-BUILDSYMLINKS+= ${GNUHOSTDIST}/gcc/config/sh/sh_optimize_sett_clrt.cc sh_optimize_sett_clrt.c
-.endif
 
 .include <bsd.lib.mk>
 
@@ -172,10 +167,10 @@ genmodes: genmodes.lo build-errors.lo
 
 CLEANFILES+=	genmodes insn-modes.c insn-modes.h-test min-insn-modes.c
 
-gimple-match.c: genmatch
+gimple-match.c: genmatch cfn-operators.pd
 	./genmatch --gimple ${GNUHOSTDIST}/gcc/match.pd > gimple-match.c.tmp
 	mv gimple-match.c.tmp gimple-match.c
-generic-match.c: genmatch
+generic-match.c: genmatch cfn-operators.pd
 	./genmatch --generic ${GNUHOSTDIST}/gcc/match.pd > generic-match.c.tmp
 	mv generic-match.c.tmp generic-match.c
 genmatch.lo: ${HH_NORTL} ${G_GGC_H}
@@ -208,13 +203,19 @@ ${G_OBJS} ${G_OBJS:.o=.d}:	tm_p.h		# XXX crude
 # depends upon) it.
 CLEANFILES+=	auto-build.h
 HOST_CFLAGS+= -I${.OBJDIR}
+HOST_CXXFLAGS+= -I${.OBJDIR}
+
+# Set this to "true" to leave .ab around
+HOST_AB_CLEAN?=	rm -rf .ab
+
 auto-build.h: gmp.h Makefile
 	${_MKTARGET_CREATE}
 	rm -rf .ab && \
 	mkdir .ab && \
 	(cd .ab && \
 		AWK=${TOOL_AWK:Q} \
-		CC=${ORIGHOST_CC:Q} CFLAGS=${HOST_CFLAGS:Q} CXX=${HOST_CXX:Q} \
+		CC=${ORIGHOST_CC:Q} CFLAGS=${HOST_CFLAGS:Q} \
+		CXX=${HOST_CXX:Q} CXXFLAGS=${HOST_CXXFLAGS:Q} \
 		MAKE=${TOOL_GMAKE:Q} \
 		CONFIG_SHELL=${HOST_SH:Q} \
 		gcc_cv_ld=${LD:Q} \
@@ -224,7 +225,7 @@ auto-build.h: gmp.h Makefile
 			--host=`${HOST_SH} ${GNUHOSTDIST}/config.guess` \
 			--target=${MACHINE_GNU_PLATFORM} && \
 		mv auto-host.h ../auto-build.h) && \
-	rm -rf .ab
+	${HOST_AB_CLEAN}
 
 pass-instances.def: passes.def gen-pass-instances.awk
 	${_MKTARGET_CREATE}
@@ -238,12 +239,12 @@ CLEANFILES+=	pass-instances.def
 #
 
 build-rtl.c: rtl.c \
-  ${G_RTL_H} real.h ${G_GCC_H} ${G_GGC_H} errors.h
+  ${G_RTL_H} real.h ${G_GCC_H} ${G_RTL_BASE_H} ${G_GGC_H} errors.h
 	${_MKTARGET_CREATE}
 	rm -f build-rtl.c
 	${TOOL_SED} -e 's/<config[.]h/hconfig.h/' \
 		${GNUHOSTDIST}/gcc/rtl.c >${.TARGET}
-build-rtl.lo: ${HH}
+build-rtl.lo: ${HH} insn-constants.h
 CLEANFILES+=	build-rtl.c
 
 build-print-rtl.c: print-rtl.c \
@@ -305,6 +306,8 @@ build-vec.c: vec.c vec.h ${G_GGC_H}
 build-vec.lo: ${HH_NORTL}
 CLEANFILES+=	build-vec.c
 
+build-genattrtab.o: ${G_GGC_H}
+
 #
 # The normal insn-foo generators
 #
@@ -326,8 +329,9 @@ GENPROG_RTL_DEPENDS=	${G_BUILD_RTL:.o=.lo} ${GENPROG_READER_DEPENDS} ${GENPROG_E
 # First we generate the rules for the generators.
 #
 .for f in attr attr-common attrtab automata codes conditions config emit \
-	  extract flags opinit output peep preds recog mddump condmd
-gen${f}.lo: ${HH} gen${f}.c
+	  extract flags opinit output peep preds recog mddump condmd \
+	  target-def cfn-macros
+gen${f}.lo: ${HH} gen${f}.c ${G_RTL_BASE_H}
 gen${f}: gen${f}.lo ${GENPROG_RTL_DEPENDS} 
 	${_MKTARGET_LINK}
 	${HOST_LINK.cc} -o ${.TARGET} ${.ALLSRC} ${NBCOMPATLIB} ${HOSTLIBIBERTY} ${LDFLAGS.${.TARGET}}
@@ -335,15 +339,15 @@ CLEANFILES+=	gen${f} gen${f}.lo
 .endfor
 
 .for f in mddeps constants enums
-gen${f}.lo: ${HH} gen${f}.c
-gen${f}: gen${f}.lo ${GENPROG_READER_DEPENDS} 
+gen${f}.lo: ${HH} gen${f}.c ${G_RTL_BASE_H}
+gen${f}: gen${f}.lo ${GENPROG_READER_DEPENDS}
 	${_MKTARGET_LINK}
 	${HOST_LINK.cc} -o ${.TARGET} ${.ALLSRC} ${NBCOMPATLIB} ${HOSTLIBIBERTY} ${LDFLAGS.${.TARGET}}
 CLEANFILES+=	gen${f} gen${f}.lo
 .endfor
 
 .for f in check checksum
-gen${f}.lo: ${HH} gen${f}.c
+gen${f}.lo: ${HH} gen${f}.c ${G_RTL_BASE_H}
 gen${f}: gen${f}.lo
 	${_MKTARGET_LINK}
 	${HOST_LINK.cc} -o ${.TARGET} ${.ALLSRC} ${NBCOMPATLIB} ${HOSTLIBIBERTY} ${LDFLAGS.${.TARGET}}
@@ -362,7 +366,8 @@ CLEANFILES+=	gen${f} gen${f}.lo
 
 # RTL based files
 .for f in attr.h attr-common.h codes.h config.h flags.h \
-	  automata.c emit.c extract.c output.c peep.c recog.c
+	  automata.c emit.c extract.c output.c peep.c recog.c \
+	  target-def.h
 insn-${f}: gen${f:R} ${G_md_file} insn-conditions.md
 	${_MKTARGET_CREATE}
 	./gen${f:R} ${G_md_file} insn-conditions.md >${.TARGET}
@@ -412,16 +417,41 @@ insn-conditions.md: gencondmd
 	./gencondmd >${.TARGET}
 CLEANFILES+=	insn-conditions.md 
 
+# build params.list for params.h.
+params.h: params.list
+${SRCS}: params.list
+params-list.h: params.def
+params.list: params-list.h
+	${CPP} ${.ALLSRC} | sed 's/^#.*//;/^$$/d' > params.list.tmp && \
+	mv params.list.tmp params.list
+CLEANFILES+=	params.list.tmp params.list
+
+# build case-cfn-macros.h and cfn-operators.pd
+case-cfn-macros.h: gencfn-macros
+	./gencfn-macros -c > case-cfn-macros.h.tmp && \
+	mv case-cfn-macros.h.tmp case-cfn-macros.h
+cfn-operators.pd: gencfn-macros
+	./gencfn-macros -o > cfn-operators.pd.tmp && \
+	mv cfn-operators.pd.tmp cfn-operators.pd
+CLEANFILES+=	case-cfn-macros.h.tmp case-cfn-macros.h \
+		cfn-operators.pd.tmp cfn-operators.pd
+
+CASECFNDEPS=	aarch64-builtins.c arm-builtins.c i386.c rs6000.c builtins.c \
+		fold-const.c tree-ssa-math-opts.c tree-ssa-reassoc.c \
+		tree-vect-patterns.c tree-vrp.c generic-match-head.c \
+		gimple-match-head.c ChangeLog-2015 fold-const-call.c \
+		gimple-ssa-backprop.c
+${CASECFNDEPS}: case-cfn-macros.h
 
 #
 # Required hard-coded dependancies.
 #
 genextract.lo: insn-config.h
 gencondmd.lo: tm_p.h tm-constrs.h
-read-rtl.lo gencodes.lo genattrtab.lo genautomata.lo: insn-constants.h
-genattr-common.lo gensupport.lo genconditions.lo: insn-constants.h
-genattr.lo genflags.lo genemit.lo genconfig.lo gencheck.lo: insn-constants.h
-genopinit.lo genrecog.lo genpreds.lo genoutput.lo genpeep.lo: insn-constants.h
+read-rtl.lo gencodes.lo genattrtab.lo genautomata.lo: insn-constants.h gtype-desc.h
+genattr-common.lo gensupport.lo genconditions.lo gentarget-def.lo: insn-constants.h
+genattr.lo genflags.lo genemit.lo genconfig.lo gencheck.lo: insn-constants.h gtype-desc.h
+genopinit.lo genrecog.lo genpreds.lo genoutput.lo genpeep.lo: insn-constants.h 
 build-ggc-none.lo: gtype-desc.h
 ggc-none.o: gtype-desc.h
 
@@ -442,6 +472,8 @@ data-streamer.o data-streamer-out.o coverage.o gcov-dump.o gcov-io.o gcov-iov.o 
 gcov-io.h: gcov-iov.h
 df-scan.d df-scan.o: target-hooks-def.h
 read-md.d read-md.o read-md.lo: auto-build.h
+hash-table.d hash-table.o hash-table.lo: auto-build.h gtype-desc.h
+gencfn-macros.d gencfn-macros.o gencfn-macros.lo: gtype-desc.h
 cgraphunit.d cgraphunit.o: pass-instances.def
 
 # XXX make all hooks generated for now.
@@ -455,11 +487,20 @@ alpha.d: pass-instances.def
 .if ${MACHINE_CPU} == "arm"
 arm.d arm.o: insn-constants.h tm_p.h insn-opinit.h target-hooks-def.h
 arm-builtins.d arm-builtins.o: insn-opinit.h
+# XXX insn-recog.c:10304:7: error: this decimal constant is unsigned only in ISO C90 [-Werror]
+COPTS.insn-recog.c+=-Wno-error
+.endif
+
+.if ${MACHINE_CPU} == "mips"
+# XXX mips.md:3474:11: error: this decimal constant is unsigned only in ISO C90 [-Werror]
+COPTS.insn-recog.c+=-Wno-error
 .endif
 
 .if ${GCC_MACHINE_ARCH} == "i386" || ${GCC_MACHINE_ARCH} == "x86_64"
 i386.d i386.o: tm-constrs.h
 .endif
+
+${G_out_file:T:.c=.o}: insn-target-def.h
 
 .if ${GCC_MACHINE_ARCH} == "vax"
 CPPFLAGS+=-I${.CURDIR}/../../lib/libgcc/libgcov/arch/${GCC_MACHINE_ARCH}
@@ -522,6 +563,11 @@ COPTS.generic-match.c+=-fno-jump-tables
 COPTS.gimple-match.c+=-fno-jump-tables
 .endif
 
+# Don't fight with decimal128Local.h.
+# The GCC build only ignores the warning?
+COPTS.dfp.c+=	-fno-strict-aliasing
+
+CFLAGS+= -fno-exceptions -fno-rtti -fasynchronous-unwind-tables
 
 .PATH: ${DIST}/gcc ${DIST}/libiberty ${GCCARCH} ${G_out_file:H} ${DIST}/include
 .PATH: ${DIST}/gcc/config

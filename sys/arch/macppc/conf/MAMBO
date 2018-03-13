@@ -6,7 +6,7 @@ include 	"arch/macppc/conf/std.macppc.g5"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.27 $"
+#ident 		"GENERIC-$Revision: 1.31 $"
 
 maxusers	32
 
@@ -33,7 +33,8 @@ options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
-#options 	NEW_BUFQ_STRATEGY
+#options 	BUFQ_READPRIO
+options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# cheap kernel consistency checks
@@ -130,20 +131,11 @@ ppb*	at pci? dev ? function ?	# PCI-PCI bridges
 
 # Other  PCI devices
 #ofb*	at pci? dev ? function ?	# Generic Open Firmware Framebuffer
-# OFB_ENABLE_CACHE speeds up the console on many machines, but should
-# not be enabled on some older machines, such as the rev. A-D iMacs.
-#options 	OFB_ENABLE_CACHE	# Speed up console
 pciide* at pci? dev ? function ? flags 0x0000	# GENERIC pciide driver
 obio*	at pci? dev ? function ?
-macofcons0 at pci? dev ? function ?	# OpenFirmware console (for debugging)
-#macofcons0 at mainbus? 		# OpenFirmware console (for debugging)
 
 # PCI serial interfaces
 nvram*	at obio?			# nvram
-# awacs is disabled because on most systems (7300 - 9600 PowerMacs,
-# many kinds of G4s), very heavy load can cause the machine to lock
-# up. ONLY enable this if your machine is never under heavy load, or
-# you'd rather have audio than worry about occasional lockups.
 #awacs*	at obio?			# Apple audio device
 #ki2c*	at obio?			# Keywest I2C
 wi*	at obio?			# AirMac

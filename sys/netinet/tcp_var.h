@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_var.h,v 1.182 2018/01/19 07:53:01 ozaki-r Exp $	*/
+/*	$NetBSD: tcp_var.h,v 1.184 2018/02/12 08:22:26 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -880,7 +880,7 @@ struct tcpcb *
 	 tcp_drop(struct tcpcb *, int);
 #ifdef TCP_SIGNATURE
 int	 tcp_signature_apply(void *, void *, u_int);
-struct secasvar *tcp_signature_getsav(struct mbuf *, struct tcphdr *);
+struct secasvar *tcp_signature_getsav(struct mbuf *);
 int	 tcp_signature(struct mbuf *, struct tcphdr *, int, struct secasvar *,
 	    char *);
 #endif
@@ -968,7 +968,7 @@ struct syn_cache *syn_cache_lookup(const struct sockaddr *, const struct sockadd
 		struct syn_cache_head **);
 void	 syn_cache_reset(struct sockaddr *, struct sockaddr *,
 		struct tcphdr *);
-int	 syn_cache_respond(struct syn_cache *, struct mbuf *);
+int	 syn_cache_respond(struct syn_cache *);
 void	 syn_cache_cleanup(struct tcpcb *);
 
 int	 tcp_input_checksum(int, struct mbuf *, const struct tcphdr *, int, int,

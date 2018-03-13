@@ -1,4 +1,4 @@
-#	$NetBSD: DEVNAMES,v 1.300 2017/12/18 07:05:16 msaitoh Exp $
+#	$NetBSD: DEVNAMES,v 1.307 2018/03/02 06:04:16 pgoyette Exp $
 #
 # This file contains all used device names and defined attributes in
 # alphabetical order. New devices added to the system somewhere should first
@@ -88,10 +88,7 @@ apm			i386
 aps			MI
 arbus			evbmips
 arc			MI		Attribute
-arckbd			acorn26
 arcmsr			MI
-arcpp			acorn26
-arcvideo		acorn26
 aria			MI
 armgic			arm
 arml2cc			arm
@@ -287,7 +284,6 @@ cpciic			MI
 cpctim			MI
 cprofb			MI
 cpsw			evbarm
-cpu			acorn26
 cpu			acorn32
 cpu			algor
 cpu			alpha
@@ -380,9 +376,7 @@ ebus			sparc
 ebus			sparc64
 ec			MI
 ec			sun2
-eca			acorn26
 eccmemctl		sparc
-eco			MI		Attribute
 ed			MI (MCA)
 ed			amiga
 ed			amigappc
@@ -395,7 +389,6 @@ ef			MI
 efa			amiga
 eg			MI
 ega			MI
-eh			acorn26
 ehci			MI
 ei			MI
 eisa			MI
@@ -488,7 +481,6 @@ fec			arm
 ffb			sparc64
 fhpib			hp300
 finsio			MI
-fiq			acorn26		Attribute
 flash			evbppc
 flsc			amiga
 flsc			amigappc
@@ -497,7 +489,6 @@ fmv			MI
 footbridge		cats		Attribute
 footbridge		netwinder	Attribute
 fpa			MI
-fpu			acorn26
 fpu			mac68k
 frodo			hp300
 fta			MI
@@ -617,7 +608,7 @@ hydra			acorn32
 hyper			amiga
 hyper			amigappc
 hyper			hp300
-i2c			MI		Attribute
+i2cbus			MI		Attribute
 i2c_eeprom		MI		Attribute
 i8042			shark		Attribute
 i82586			MI		Attribute
@@ -642,11 +633,15 @@ ifpci			MI
 ifuba			MI		Attribute
 igsfb			MI
 iha			MI
-iic			acorn26
+iic			MI		(Source file i2c.c)
 iic			acorn32
 ik			vax
 il			MI
 imc			sgimips
+imc			amd64
+imc			i386
+imcsmb			amd64
+imcsmb			i386
 inphy			MI
 intersil7170		MI		Attribute
 interwave		MI		Attribute
@@ -658,9 +653,6 @@ intvid			mac68k
 ioasic			MI
 ioat			MI
 iobl			amiga
-iobus			acorn26
-ioc			acorn26
-ioeb			acorn26
 iomd			acorn32
 iomdiic			acorn32
 iomdkbc			acorn32
@@ -751,7 +743,6 @@ kdb			MI
 kft			alpha
 kse			MI
 kue			MI
-latches			acorn26
 lc			MI
 lca			alpha
 ld			MI
@@ -792,7 +783,6 @@ mace			sgimips
 macepci			sgimips
 macfb			mac68k
 machfb			sparc64
-macofcons		macppc
 macvid			mac68k
 magma			MI
 mainbus			acorn32
@@ -967,7 +957,6 @@ njs			MI
 np			vax
 npx			i386
 nsclpcsio		MI
-nsio			acorn26		Attribute
 nsphy			MI
 nsphyter		MI
 ntwoc			MI
@@ -1178,7 +1167,6 @@ rk			vax
 rl			vax
 rlc			vax
 rt			MI
-rtc			acorn26
 rtc			acorn32
 rtc			evbmips
 rtc			hp300
@@ -1442,7 +1430,6 @@ umodem_common		MI		Attribute
 ums			MI
 uninorth		macppc
 univ_pci		MI		Attribute
-unixbp			acorn26
 up			vax
 upc			MI
 upl			MI

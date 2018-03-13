@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.README,v 1.366 2018/01/07 20:59:25 jmcneill Exp $
+#	$NetBSD: bsd.README,v 1.369 2018/03/11 09:56:44 mrg Exp $
 #	@(#)bsd.README	8.2 (Berkeley) 4/2/94
 
 This is the README file for the make "include" files for the NetBSD
@@ -688,8 +688,7 @@ X11SRCDIR.<package>
 		The path to the xorg src tree for the specificed package>.
 		[${X11SRCDIR}/external/mit/xorg/<package>/dist]
 
-X11ROOTDIR	Root directory of the X11 installation.  [/usr/X11R6 or
-		[/usr/X11R7]
+X11ROOTDIR	Root directory of the X11 installation.  [/usr/X11R7]
 
 X11BINDIR	X11 bin directory.  [${X11ROOTDIR}/bin]
 
@@ -1678,6 +1677,7 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBXDMCP?=	${DESTDIR}/usr/X11R7/lib/libXdmcp.a
 		LIBXEXT?=	${DESTDIR}/usr/X11R7/lib/libXext.a
 		LIBXFONT?=	${DESTDIR}/usr/X11R7/lib/libXfont.a
+		LIBXFONT2?=	${DESTDIR}/usr/X11R7/lib/libXfont2.a
 		LIBXFT?=	${DESTDIR}/usr/X11R7/lib/libXft.a
 		LIBXI?=		${DESTDIR}/usr/X11R7/lib/libXi.a
 		LIBXINERAMA?=	${DESTDIR}/usr/X11R7/lib/libXinerama.a
@@ -1695,7 +1695,6 @@ DPADD		Additional dependencies for the program.  Usually used for
 		LIBXXF86VM?=	${DESTDIR}/usr/X11R7/lib/libXxf86vm.a
 		LIBDPS?=	${DESTDIR}/usr/X11R7/lib/libdps.a
 		LIBFNTSTUBS?=	${DESTDIR}/usr/X11R7/lib/libfntstubs.a
-		LIBFONTCACHE?=	${DESTDIR}/usr/X11R7/lib/libfontcache.a
 		LIBFONTCONFIG?=	${DESTDIR}/usr/X11R7/lib/libfontconfig.a
 		LIBFONTENC?=	${DESTDIR}/usr/X11R7/lib/libfontenc.a
 		LIBFREETYPE?=	${DESTDIR}/usr/X11R7/lib/libfreetype.a

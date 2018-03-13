@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.12 2016/10/14 16:09:43 spz Exp $
+#	$NetBSD: Makefile,v 1.15 2018/03/04 04:09:03 christos Exp $
 
 # RCSid:
 #	Id: Makefile,v 1.33 1998/11/11 11:53:53 sjg Exp
@@ -28,14 +28,20 @@ USE_FIPS=	no
 WARNS=0
 CWARNFLAGS.clang+=	-Wno-empty-body -Wno-unused-value -Wno-parentheses
 
+# XXX Not yet.
+LINTFLAGS+=-D__int128='long long'
+
 CPPFLAGS+= -Dlib${LIB} -I. -I${OPENSSLSRC}/crypto -I${OPENSSLSRC}
+CPPFLAGS+= -I${OPENSSLSRC}/include -I${OPENSSLSRC}/crypto/include
 CPPFLAGS+= -I${OPENSSLSRC}/crypto/asn1 -I${OPENSSLSRC}/crypto/evp
 CPPFLAGS+= -I${OPENSSLSRC}/crypto/modes
+CPPFLAGS+= -I${OPENSSLSRC}/../include
 
 CRYPTODIST=	${NETBSDSRCDIR}/crypto
 
 .include "${NETBSDSRCDIR}/crypto/Makefile.openssl"
-.PATH: ${OPENSSLSRC}
+.PATH: ${OPENSSLSRC} ${OPENSSLSRC}/include/openssl
+.PATH: ${OPENSSLSRC}/../include/openssl ${OPENSSLSRC}/include/internal
 
 .include "srcs.inc"
 
@@ -62,12 +68,12 @@ CLEANFILES+= buildinf.h
 INCS+=	aes.h asn1.h asn1_mac.h asn1t.h bio.h blowfish.h bn.h \
 	buffer.h cast.h cmac.h cms.h comp.h conf.h conf_api.h crypto.h des.h \
 	dh.h dsa.h dso.h e_os2.h ebcdic.h ec.h ecdh.h ecdsa.h engine.h \
-	err.h evp.h hmac.h krb5_asn.h lhash.h md2.h md4.h md5.h modes.h \
+	err.h evp.h hmac.h lhash.h kdf.h md2.h md4.h md5.h modes.h \
 	obj_mac.h objects.h ocsp.h opensslconf.h opensslv.h ossl_typ.h \
 	pem.h pem2.h pkcs12.h pkcs7.h rand.h rc2.h rc4.h ripemd.h \
-	rsa.h safestack.h sha.h srp.h stack.h store.h symhacks.h ts.h txt_db.h \
-	ui.h ui_compat.h x509.h x509_vfy.h x509v3.h pqueue.h camellia.h \
-	whrlpool.h seed.h
+	rsa.h safestack.h sha.h srp.h stack.h symhacks.h ts.h txt_db.h \
+	ui.h x509.h x509_vfy.h x509v3.h camellia.h \
+	whrlpool.h seed.h ct.h
 #	des_old.h 
 
 # IDEA - patented, but we install the header anyways
@@ -115,9 +121,11 @@ COPTS.eng_padlock.c = -Wno-stack-protector
 
 INCSDIR=/usr/include/openssl
 
+LDFLAGS+=-Wl,--version-script=${.CURDIR}/crypto.map
+
 PKGCONFIG=libcrypto
 .include "${.CURDIR}/../../pkgconfig.mk"
 
+
 .include <bsd.lib.mk>
-# RC5 warning
-LDFLAGS+=-Wl,--no-fatal-warnings
+

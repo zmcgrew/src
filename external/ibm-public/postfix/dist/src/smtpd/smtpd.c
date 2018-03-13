@@ -1,4 +1,4 @@
-/*	$NetBSD: smtpd.c,v 1.14 2017/02/14 01:16:48 christos Exp $	*/
+/*	$NetBSD: smtpd.c,v 1.16 2018/02/01 03:32:00 christos Exp $	*/
 
 /*++
 /* NAME
@@ -1196,6 +1196,8 @@
 #include <smtpd_proxy.h>
 #include <smtpd_milter.h>
 #include <smtpd_expand.h>
+
+#include "pfilter.h"
 
  /*
   * Tunable parameters. Make sure that there is some bound on the length of
@@ -5050,6 +5052,7 @@ static void smtpd_proto(SMTPD_STATE *state)
 		state->error_mask |= MAIL_ERROR_PROTOCOL;
 		smtpd_chat_reply(state, "421 4.7.0 %s Error: too many errors",
 				 var_myhostname);
+		pfilter_notify(1, vstream_fileno(state->client));
 		break;
 	    }
 	    watchdog_pat();

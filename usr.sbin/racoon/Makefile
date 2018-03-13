@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.30 2017/05/21 14:20:45 riastradh Exp $
+# $NetBSD: Makefile,v 1.34 2018/02/25 00:16:49 mrg Exp $
 
 WARNS?=	0	# XXX third-party program, many issues
 NOCLANGERROR=	# defined
@@ -30,6 +30,10 @@ CPPFLAGS+= -I${NETBSDSRCDIR}/lib/libipsec -I.
 CPPFLAGS+= -DIPSEC_DEBUG -DHAVE_CONFIG_H -DENABLE_WILDCARD_MATCH
 CPPFLAGS+= -DADMINPORTDIR=\"/var/run\"
 CPPFLAGS+= -DSYSCONFDIR=\"/etc/racoon\"
+.if ${HAVE_OPENSSL} < 11
+CPPFLAGS+= -DHAVE_OPENSSL_RC5_H
+CPPFLAGS+= -DOPENSSL_API_COMPAT=0x10100000L
+.endif
 
 LDADD+= -ll -ly -lipsec -lutil
 DPADD+= ${LIBL} ${LIBY} ${LIBCRYPTO} ${LIBUTIL}
@@ -46,13 +50,10 @@ DPADD+=	${LIBPAM} ${PAM_STATIC_DPADD}
 .endif
 .if (${USE_KERBEROS} != "no")
 CPPFLAGS+=-DHAVE_GSSAPI
-LDADD+= -lgssapi -lkrb5 -lhx509 -lheimntlm -lcom_err \
-	-lroken -lasn1 -lsqlite3
-DPADD+= ${LIBGSSAPI} ${LIBKRB5} ${LIBHX509} ${LIBHEIMNTLM} ${LIBCOM_ERR} \
-	${LIBROKEN} ${LIBASN1} ${LIBSQLITE3}
+LDADD+= -lgssapi -lheimntlm ${LIBKRB5_LDADD}
+DPADD+= ${LIBGSSAPI} ${LIBHEIMNTLM} ${LIBKRB5_DPADD}
 .endif
 CPPFLAGS+=-DHAVE_OPENSSL_IDEA_H
-CPPFLAGS+=-DHAVE_OPENSSL_RC5_H
 .if (${USE_INET6} != "no")
 CPPFLAGS+=-DINET6
 .endif
