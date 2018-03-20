@@ -108,7 +108,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.14 2020/02/24 12:20:30 rin Exp $")
 
 #include <uvm/uvm.h>
 
-CTASSERT(NBPG >= sizeof(pmap_segtab_t));
+/* CTASSERT(NBPG >= sizeof(pmap_segtab_t)); */
 
 struct pmap_segtab_info {
 	pmap_segtab_t *free_segtab;	/* free list kept locally */

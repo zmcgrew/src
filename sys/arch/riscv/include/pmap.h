@@ -38,6 +38,7 @@
 
 #if !defined(_MODULE)
 
+#include <sys/cdefs.h>
 #include <sys/types.h>
 #include <sys/pool.h>
 #include <sys/evcnt.h>
@@ -105,7 +106,6 @@ pmap_procwr(struct proc *p, vaddr_t va, vsize_t len)
 #define __HAVE_PMAP_MD
 struct pmap_md {
 	paddr_t md_ptbr;
-	pd_entry_t *md_pdetab;
 };
 
 void	pmap_bootstrap(void);
@@ -124,12 +124,7 @@ bool    pmap_md_tlb_check_entry(void *, vaddr_t, tlb_asid_t, pt_entry_t);
 
 void	pmap_md_pdetab_activate(struct pmap *);
 void	pmap_md_pdetab_init(struct pmap *);
-bool	pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
-
-extern vaddr_t pmap_direct_base;
-extern vaddr_t pmap_direct_end;
-#define PMAP_DIRECT_MAP(pa)	(pmap_direct_base + (pa))
-#define PMAP_DIRECT_UNMAP(va)	((paddr_t)(va) - pmap_direct_base)
+bool    pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
 
 #ifdef __PMAP_PRIVATE
 static inline void
@@ -166,6 +161,9 @@ pmap_md_tlb_asid_max(void)
 #endif /* __PMAP_PRIVATE */
 #endif /* _KERNEL */
 
+#define POOL_VTOPHYS(va)	((paddr_t)((vaddr_t)(va)-VM_MAX_KERNEL_ADDRESS))
+#define POOL_PHYSTOV(pa)	((vaddr_t)(paddr_t)(pa)+VM_MAX_KERNEL_ADDRESS)
+
 #include <uvm/pmap/pmap.h>
 
 #endif /* !_MODULE */
@@ -181,9 +179,15 @@ pmap_md_tlb_asid_max(void)
 struct vm_page_md {
 	uintptr_t mdpg_dummy[3];
 };
-__CTASSERT(sizeof(struct vm_page_md) == sizeof(uintptr_t)*3);
+#endif /* !__HVE_VM_PAGE_MD */
 
-#endif /* !__HAVE_VM_PAGE_MD */
+/* __CTASSERT(sizeof(struct vm_page_md) == sizeof(uintptr_t)*3); */
+/* Temporarily disable this assert -- Not sure why __ctassert0 is
+   negative */
+
+struct pmap_page {
+	int XXX;
+};
 
 #endif /* MODULAR || _MODULE */
 

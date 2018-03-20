@@ -43,34 +43,24 @@ __RCSID("$NetBSD: pmap_machdep.c,v 1.6 2020/03/14 16:12:16 skrll Exp $");
 
 int riscv_poolpage_vmfreelist = VM_FREELIST_DEFAULT;
 
-vaddr_t pmap_direct_base __read_mostly;
-vaddr_t pmap_direct_end __read_mostly;
-
-void
-pmap_bootstrap(void)
-{
-
-	pmap_bootstrap_common();
-}
-
 void
 pmap_zero_page(paddr_t pa)
 {
-#ifdef PMAP_DIRECT_MAP
-	memset((void *)PMAP_DIRECT_MAP(pa), 0, PAGE_SIZE);
+#ifdef POOL_PHYSTOV
+	memset((void *)POOL_PHYSTOV(pa), 0, PAGE_SIZE);
 #else
-#error "no direct map"
+#error FIX pmap_zero_page!
 #endif
 }
 
 void
 pmap_copy_page(paddr_t src, paddr_t dst)
 {
-#ifdef PMAP_DIRECT_MAP
-	memcpy((void *)PMAP_DIRECT_MAP(dst), (const void *)PMAP_DIRECT_MAP(src),
+#ifdef POOL_PHYSTOV
+	memcpy((void *)POOL_PHYSTOV(dst), (const void *)POOL_PHYSTOV(src),
 	    PAGE_SIZE);
 #else
-#error "no direct map"
+#error FIX pmap_copy_page!
 #endif
 }
 
@@ -87,7 +77,7 @@ pmap_md_alloc_poolpage(int flags)
 vaddr_t
 pmap_md_map_poolpage(paddr_t pa, vsize_t len)
 {
-	return PMAP_DIRECT_MAP(pa);
+	return POOL_PHYSTOV(pa);
 }
 
 void
@@ -111,17 +101,35 @@ pmap_md_io_vaddr_p(vaddr_t va)
 paddr_t
 pmap_md_direct_mapped_vaddr_to_paddr(vaddr_t va)
 {
-#ifdef _LP64
-	return PMAP_DIRECT_UNMAP(va);
-#else
-#error "no direct map"
-#endif
+	KASSERT(VM_MAX_KERNEL_ADDRESS <= va && (intptr_t) va < 0);
+	/* const pmap_pdetab_t *ptb = pmap_kernel()->pm_pdetab; */
+/* 	pd_entry_t pde; */
+
+/* #ifdef _LP64 */
+/* 	pde = ptb->pde_pde[(va >> XSEGSHIFT) & (NPDEPG-1)]; */
+/* 	if ((pde & PTE_V) == 0) { */
+/* 		return -(paddr_t)1; */
+/* 	} */
+/* 	if ((pde & PTE_T) == 0) { */
+/* 		return pde & ~XSEGOFSET; */
+/* 	} */
+/* 	ptb = (const pmap_pdetab_t *)POOL_PHYSTOV(pte_pde_to_paddr(pde)); */
+/* #endif */
+/* 	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)]; */
+/* 	if ((pde & PTE_V) == 0) { */
+/* 		return -(paddr_t)1; */
+/* 	} */
+/* 	if ((pde & PTE_T) == 0) { */
+/* 		return pde & ~SEGOFSET; */
+/* 	} */
+/* 	return -(paddr_t)1; */
+  return (paddr_t *)0;
 }
 
 vaddr_t
 pmap_md_direct_map_paddr(paddr_t pa)
 {
-	return PMAP_DIRECT_MAP(pa);
+	return POOL_PHYSTOV(pa);
 }
 
 void
@@ -145,15 +153,17 @@ pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 void
 pmap_md_pdetab_activate(struct pmap *pmap)
 {
-	__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
+	//__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
 }
 
 void
 pmap_md_pdetab_init(struct pmap *pmap)
 {
-	pmap->pm_md.md_pdetab[NPDEPG-1] = pmap_kernel()->pm_md.md_pdetab[NPDEPG-1];
+	/*
+	pmap->pm_pdetab[NPDEPG-1] = pmap_kernel()->pm_pdetab[NPDEPG-1];
 	pmap->pm_md.md_ptbr =
-	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_md.md_pdetab);
+	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab);
+	*/
 }
 
 /* -------------------------------------------------------------------------- */
@@ -193,7 +203,7 @@ tlb_update_addr(vaddr_t va, tlb_asid_t asid, pt_entry_t pte, bool insert_p)
 }
 
 u_int
-tlb_record_asids(u_long *ptr, tlb_asid_t asid_max)
+tlb_record_asids(u_long *ptr, tlb_asid_t UNUSED) 
 {
 	memset(ptr, 0xff, PMAP_TLB_NUM_PIDS / (8 * sizeof(u_long)));
 	ptr[0] = -2UL;

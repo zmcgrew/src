@@ -257,8 +257,8 @@ trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
 		}
 #if 0		/* XXX Outdated */
 		if (cause == CAUSE_FAULT_STORE) {
-			if ((npte & PTE_NW) != 0) {
-				npte &= ~PTE_NW;
+			if ((npte & PTE_D) != 0) {
+				npte &= ~PTE_D;
 				attr |= VM_PAGEMD_MODIFIED;
 			}
 		} else if (cause == CAUSE_FAULT_FETCH) {
