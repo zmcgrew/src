@@ -247,7 +247,7 @@ static bool
 trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
     intptr_t addr)
 {
-	pt_entry_t * const ptep = pmap_pte_lookup(pmap, addr, NULL);
+	pt_entry_t * const ptep = pmap_pte_lookup(pmap, addr);
 	struct vm_page *pg;
 
 	if (ptep == NULL)
@@ -271,8 +271,8 @@ trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
 			attr |= VM_PAGEMD_REFERENCED;
 		}
 		if (cause == CAUSE_FAULT_STORE) {
-			if ((npte & PTE_NW) != 0) {
-				npte &= ~PTE_NW;
+			if ((npte & PTE_D) != 0) {
+				npte &= ~PTE_D;
 				attr |= VM_PAGEMD_MODIFIED;
 			}
 		} else if (cause == CAUSE_FAULT_FETCH) {

@@ -207,14 +207,14 @@ static inline uint32_t
 riscvreg_asid_read(void)
 {
 	uint32_t __asid;
-	__asm __volatile("csrr\t%0, sasid" : "=r"(__asid));
+//	__asm __volatile("csrr\t%0, sasid" : "=r"(__asid));
 	return __asid;
 }
 
 static inline void
 riscvreg_asid_write(uint32_t __asid)
 {
-	__asm __volatile("csrw\tsasid, %0" :: "r"(__asid));
+//	__asm __volatile("csrw\tsasid, %0" :: "r"(__asid));
 }
 
 #endif /* _RISCV_SYSREG_H_ */

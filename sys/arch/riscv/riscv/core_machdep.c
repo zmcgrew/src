@@ -83,7 +83,7 @@ CORENAME(cpu_coredump)(struct lwp *l, struct coredump_iostate *iocookie,
 	cpustate.tf.tf_badaddr = tf->tf_badaddr;
 	cpustate.tf.tf_cause = tf->tf_cause;
 	cpustate.tf.tf_sr = tf->tf_sr;
-	if (fpu_valid_p()) {
+	if (fpu_valid_p(l)) {
 		cpustate.fpregs = ((struct pcb *)lwp_getpcb(l))->pcb_fpregs;
 	} else {
 		memset(&cpustate.fpregs, 0, sizeof(cpustate.fpregs));

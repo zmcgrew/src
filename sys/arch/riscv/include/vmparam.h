@@ -43,7 +43,7 @@
  */
 
 /*
- * We use a 8K page on RV64 and 4K on RV32 systems.
+ * We use a 4K page on both RV64 and RV32 systems.
  * Override PAGE_* definitions to compile-time constants.
  */
 #define	PAGE_SHIFT	PGSHIFT

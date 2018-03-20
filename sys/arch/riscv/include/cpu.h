@@ -68,11 +68,10 @@ struct cpu_info {
 	volatile u_int ci_intr_depth;
 
 	tlb_asid_t ci_pmap_asid_cur;
-#if 0
-	union pmap_pdetab *ci_pmap_user_pdetab;
+
+	union pmap_segtab *ci_pmap_user_segtab;
 #ifdef _LP64
-	union pmap_pdetab *ci_pmap_user_pde0tab;
-#endif
+	union pmap_segtab *ci_pmap_user_seg0tab;
 #endif
 
 	struct evcnt ci_ev_fpu_saves;

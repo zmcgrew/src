@@ -100,27 +100,28 @@ paddr_t
 pmap_md_direct_mapped_vaddr_to_paddr(vaddr_t va)
 {
 	KASSERT(VM_MAX_KERNEL_ADDRESS <= va && (intptr_t) va < 0);
-	const pmap_pdetab_t *ptb = pmap_kernel()->pm_pdetab;
-	pd_entry_t pde;
+	/* const pmap_pdetab_t *ptb = pmap_kernel()->pm_pdetab; */
+/* 	pd_entry_t pde; */
 
-#ifdef _LP64
-	pde = ptb->pde_pde[(va >> XSEGSHIFT) & (NPDEPG-1)];
-	if ((pde & PTE_V) == 0) {
-		return -(paddr_t)1;
-	}
-	if ((pde & PTE_T) == 0) {
-		return pde & ~XSEGOFSET;
-	}
-	ptb = (const pmap_pdetab_t *)POOL_PHYSTOV(pte_pde_to_paddr(pde));
-#endif
-	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)];
-	if ((pde & PTE_V) == 0) {
-		return -(paddr_t)1;
-	}
-	if ((pde & PTE_T) == 0) {
-		return pde & ~SEGOFSET;
-	}
-	return -(paddr_t)1;
+/* #ifdef _LP64 */
+/* 	pde = ptb->pde_pde[(va >> XSEGSHIFT) & (NPDEPG-1)]; */
+/* 	if ((pde & PTE_V) == 0) { */
+/* 		return -(paddr_t)1; */
+/* 	} */
+/* 	if ((pde & PTE_T) == 0) { */
+/* 		return pde & ~XSEGOFSET; */
+/* 	} */
+/* 	ptb = (const pmap_pdetab_t *)POOL_PHYSTOV(pte_pde_to_paddr(pde)); */
+/* #endif */
+/* 	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)]; */
+/* 	if ((pde & PTE_V) == 0) { */
+/* 		return -(paddr_t)1; */
+/* 	} */
+/* 	if ((pde & PTE_T) == 0) { */
+/* 		return pde & ~SEGOFSET; */
+/* 	} */
+/* 	return -(paddr_t)1; */
+  return (paddr_t *)0;
 }
 
 vaddr_t
@@ -136,6 +137,12 @@ pmap_md_init(void)
 }
 
 bool
+pmap_md_ok_to_steal_p(const uvm_physseg_t bank, size_t npgs)
+{
+	return true;
+}
+
+bool
 pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 {
 	return false;
@@ -144,15 +151,17 @@ pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 void
 pmap_md_pdetab_activate(struct pmap *pmap)
 {
-	__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
+	//__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
 }
 
 void
 pmap_md_pdetab_init(struct pmap *pmap)
 {
+	/*
 	pmap->pm_pdetab[NPDEPG-1] = pmap_kernel()->pm_pdetab[NPDEPG-1];
 	pmap->pm_md.md_ptbr =
 	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab);
+	*/
 }
 
 // TLB mainenance routines
@@ -192,7 +201,7 @@ tlb_update_addr(vaddr_t va, tlb_asid_t asid, pt_entry_t pte, bool insert_p)
 }
 
 u_int
-tlb_record_asids(u_long *ptr)
+tlb_record_asids(u_long *ptr, tlb_asid_t UNUSED) 
 {
 	memset(ptr, 0xff, PMAP_TLB_NUM_PIDS / (8 * sizeof(u_long)));
 	ptr[0] = -2UL;

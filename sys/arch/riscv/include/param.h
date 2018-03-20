@@ -74,11 +74,9 @@
 #define NKMEMPAGES_MAX_DEFAULT	(2048UL * 1024 * 1024)
 #define NKMEMPAGES_MIN_DEFAULT	(128UL * 1024 * 1024)
 
-#ifdef _LP64
-#define PGSHIFT		13
-#else
+/* Both RV64 and RV32 use 4K pages */
 #define PGSHIFT		12
-#endif
+
 #define	NBPG		(1 << PGSHIFT)
 #define PGOFSET		(NBPG - 1)
 
