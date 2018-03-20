@@ -31,47 +31,47 @@
 #ifndef _RISCV_PTE_H_
 #define _RISCV_PTE_H_
 
-//
-// RV32 page table entry (4 GB VA space)
-//   [31..22] = PPN[1]
-//   [21..12] = PPN[0]
-//   [11.. 9] = software
-//
-// RV64 page table entry (4 TB VA space)
-//   [64..43] = 0
-//   [42..33] = PPN[2]
-//   [32..23] = PPN[1]
-//   [22..13] = PPN[0]
-//   [12.. 9] = software
-//
-// Common to both:
-//   [8] = SX
-//   [7] = SW
-//   [6] = SR
-//   [5] = UX
-//   [4] = UW
-//   [3] = UR
-//   [2] = G
-//   [1] = T
-//   [0] = V
-//
+/*
+  Sv39 Page Table Entry (512 GB VA Space)
+    [63..54] = 0
+    [53..28] = PPN[2]
+    [27..19] = PPN[1]
+    [18..10] = PPN[0]
 
-#define NPTEPG		(1 + __BITS(9, 0))	// PTEs per Page
+  Sv32 Page Table Entry (4 GB VA Space)
+    [31..20] = PPN[1]
+    [19..10] = PPN[0]
+
+  Common to both:
+    [9] = NetBSD specific (Wired = Do Not Delete)
+    [8] = NetBSD specific (Not eXecuted)
+    [7] = D
+    [6] = A
+    [5] = G
+    [4] = U
+    [3] = X
+    [2] = W
+    [1] = R
+    [0] = V
+*/
+
+#define NPTEPG		__BIT(9)	// PTEs per Page
 #define NSEGPG		NPTEPG
 #define NPDEPG		NPTEPG
-#ifdef _LP64
-#define PTE_PPN		__BITS(63, 13)	// Physical Page Number
-#define	PTE_PPN0	__BITS(42, 33)	// 1K 8-byte SDEs / PAGE
-#define	PTE_PPN1	__BITS(32, 23)	// 1K 8-byte PDEs / PAGE
-#define	PTE_PPN2	__BITS(22, 13)	// 1K 8-byte PTEs / PAGE
+
+#ifdef _LP64 /* Sv39 */
+#define PTE_PPN		__BITS(53, 10)	// Physical Page Number
+#define	PTE_PPN2	__BITS(53, 28)	// 1K 8-byte SDEs / PAGE
+#define	PTE_PPN1	__BITS(27, 19)	// 1K 8-byte PDEs / PAGE
+#define	PTE_PPN0	__BITS(18, 10)	// 1K 8-byte PTEs / PAGE
 typedef __uint64_t pt_entry_t;
 typedef __uint64_t pd_entry_t;
 #define atomic_cas_pte	atomic_cas_64
 #define atomic_cas_pde	atomic_cas_64
 #else
-#define PTE_PPN		__BITS(31, 12)	// Physical Page Number
-#define	PTE_PPN0	__BITS(31, 22)	// 1K 4-byte PDEs / PAGE
-#define	PTE_PPN1	__BITS(21, 12)	// 1K 4-byte PTEs / PAGE
+#define PTE_PPN		__BITS(31, 10)	// Physical Page Number
+#define	PTE_PPN1	__BITS(31, 20)	// 1K 4-byte PDEs / PAGE
+#define	PTE_PPN0	__BITS(19, 10)	// 1K 4-byte PTEs / PAGE
 typedef __uint32_t pt_entry_t;
 typedef __uint32_t pd_entry_t;
 #define atomic_cas_pte	atomic_cas_32
@@ -79,19 +79,17 @@ typedef __uint32_t pd_entry_t;
 #endif
 
 // These only mean something to NetBSD
-#define	PTE_NX		__BIT(11)	// Unexecuted
-#define	PTE_NW		__BIT(10)	// Unmodified
 #define	PTE_WIRED	__BIT(9)	// Do Not Delete
+#define	PTE_NX		__BIT(8)	// Not eXecuted?
 
 // These are hardware defined bits
-#define	PTE_SX		__BIT(8)	// Supervisor eXecute
-#define	PTE_SW		__BIT(7)	// Supervisor Write 
-#define	PTE_SR		__BIT(6)	// Supervisor Read
-#define	PTE_UX		__BIT(5)	// User eXecute
-#define	PTE_UW		__BIT(4)	// User Write
-#define	PTE_UR		__BIT(3)	// User Read
-#define	PTE_G		__BIT(2)	// Global
-#define	PTE_T		__BIT(1)	// "Transit" (non-leaf)
+#define	PTE_D		__BIT(7)	// Dirty
+#define	PTE_A		__BIT(6)	// Accessed
+#define	PTE_G		__BIT(5)	// Global
+#define	PTE_U		__BIT(4)	// User
+#define	PTE_X		__BIT(3)	// eXecute
+#define	PTE_W		__BIT(2)	// Write
+#define	PTE_R		__BIT(1)	// Read
 #define	PTE_V		__BIT(0)	// Valid
 
 static inline bool
@@ -109,12 +107,13 @@ pte_wired_p(pt_entry_t pte)
 static inline bool
 pte_modified_p(pt_entry_t pte)
 {
-	return (pte & PTE_NW) == 0 && (pte & (PTE_UW|PTE_SW)) != 0;
+	return (pte & PTE_D) != 0;
 }
 
 static inline bool
 pte_cached_p(pt_entry_t pte)
 {
+  /* TODO: This seems wrong... */
 	return true;
 }
 
@@ -151,15 +150,15 @@ pte_nv_entry(bool kernel_p)
 static inline pt_entry_t
 pte_prot_nowrite(pt_entry_t pte)
 {
-	return pte & ~(PTE_NW|PTE_SW|PTE_UW);
+	return pte & ~PTE_W;
 }
 
 static inline pt_entry_t
 pte_prot_downgrade(pt_entry_t pte, vm_prot_t newprot)
 {
-	pte &= ~(PTE_NW|PTE_SW|PTE_UW);
+	pte &= ~PTE_W;
 	if ((newprot & VM_PROT_EXECUTE) == 0)
-		pte &= ~(PTE_NX|PTE_SX|PTE_UX);
+		pte &= ~(PTE_NX|PTE_X);
 	return pte;
 }
 
@@ -167,20 +166,20 @@ static inline pt_entry_t
 pte_prot_bits(struct vm_page_md *mdpg, vm_prot_t prot, bool kernel_p)
 {
 	KASSERT(prot & VM_PROT_READ);
-	pt_entry_t pt_entry = PTE_SR | (kernel_p ? 0 : PTE_UR);
-	if (prot & VM_PROT_EXECUTE) {
-		if (mdpg != NULL && !VM_PAGEMD_EXECPAGE_P(mdpg))
-			pt_entry |= PTE_NX;
-		else
-			pt_entry |= kernel_p ? PTE_SX : PTE_UX;
-	}
-	if (prot & VM_PROT_WRITE) {
-		if (mdpg != NULL && !VM_PAGEMD_MODIFIED_P(mdpg))
-			pt_entry |= PTE_NW;
-		else
-			pt_entry |= PTE_SW | (kernel_p ? 0 : PTE_UW);
-	}
-	return pt_entry;
+	/* pt_entry_t pt_entry = PTE_SR | (kernel_p ? 0 : PTE_UR); */
+	/* if (prot & VM_PROT_EXECUTE) { */
+	/* 	if (mdpg != NULL && !VM_PAGEMD_EXECPAGE_P(mdpg)) */
+	/* 		pt_entry |= PTE_NX; */
+	/* 	else */
+	/* 		pt_entry |= kernel_p ? PTE_SX : PTE_UX; */
+	/* } */
+	/* if (prot & VM_PROT_WRITE) { */
+	/* 	if (mdpg != NULL && !VM_PAGEMD_MODIFIED_P(mdpg)) */
+	/* 		pt_entry |= PTE_NW; */
+	/* 	else */
+	/* 		pt_entry |= PTE_SW | (kernel_p ? 0 : PTE_UW); */
+	/* } */
+	return 0;
 }
 
 static inline pt_entry_t
@@ -248,19 +247,19 @@ pte_invalid_pde(void)
 static inline pd_entry_t
 pte_pde_pdetab(paddr_t pa)
 {
-	return PTE_V | PTE_G | PTE_T | pa;
+	return 0;
 }
 
 static inline pd_entry_t
 pte_pde_ptpage(paddr_t pa)
 {
-	return PTE_V | PTE_G | PTE_T | pa;
+	return 0;
 }
 
 static inline bool
 pte_pde_valid_p(pd_entry_t pde)
 {
-	return (pde & (PTE_V|PTE_T)) == (PTE_V|PTE_T);
+	return 0;
 }
 
 static inline paddr_t

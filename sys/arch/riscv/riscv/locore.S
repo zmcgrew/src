@@ -83,22 +83,22 @@ ENTRY_NP(start)
 .L01:	PTR_LA	t0, physmem
 	INT_S	a7, (t0)		// store it in physmem
 
-	li	t4, PTE_V | PTE_SX | PTE_SW | PTE_SR | PTE_G
+	//li	t4, PTE_V | PTE_SX | PTE_SW | PTE_SR | PTE_G
 #ifdef _LP64
 	REG_S	t4, 0(s2)		// keep a mapping for the first 8GB.
 	or	t0, s3, t4		// point to next page
-	or	t0, t0, PTE_T		// tranverse it.
+	//or	t0, t0, PTE_T		// tranverse it.
 	REG_S	t0, -SZREG(s3)		// store in highest first level PDE
 #endif
 
-#if (VM_MIN_KERNEL_ADDRESS >> XSEGSHIFT) != (VM_MAX_KERNEL_ADDRESS >> XSEGSHIFT)
-#error VM_MIN_KERNEL_ADDRESS not in same first level PDE as VM_MAX_KERNEL_ADDRESS
-#endif
+// #if (VM_MIN_KERNEL_ADDRESS >> XSEGSHIFT) != (VM_MAX_KERNEL_ADDRESS >> XSEGSHIFT)
+// #error VM_MIN_KERNEL_ADDRESS not in same first level PDE as VM_MAX_KERNEL_ADDRESS
+// #endif
 	// We allocated the kernel first PTE page so let's insert in the
 	// page table.  For now, we assume it's in the same PDE page as the
 	// direct-mapped memory.
 	or	t0, s4, t4
-	or	t0, t0, PTE_T
+	//or	t0, t0, PTE_T
 #if ((VM_MIN_KERNEL_ADDRESS >> SEGSHIFT) & (NPDEPG-1)) * SZREG
 	li	t1, ((VM_MIN_KERNEL_ADDRESS >> SEGSHIFT) & (NPDEPG-1)) * SZREG
 	add	t1, t1, s3
@@ -144,8 +144,8 @@ ENTRY_NP(start)
 
 	PTR_LA	t1, _C_LABEL(kernel_pmap_store)
 	add	t2, s2, s11 		// PA -> VA
-	PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
-	PTR_S	s2, PM_MD_PTBR(t1)	// PA of kernel PDETAB
+	//PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
+	//PTR_S	s2, PM_MD_PTBR(t1)	// PA of kernel PDETAB
 
 	// Now we should ready to start initializing the kernel.
 	PTR_LA	a0, _C_LABEL(start)	// kernel_start

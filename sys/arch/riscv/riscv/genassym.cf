@@ -187,12 +187,12 @@ define	PGSHIFT		PGSHIFT
 define	NPDEPG		NPDEPG
 define	NBSEG		NBSEG
 
-define	PTE_T		PTE_T
+#define	PTE_T		PTE_T
 define	PTE_V		PTE_V
 define	PTE_G		PTE_G
-define	PTE_SX		PTE_SX
-define	PTE_SW		PTE_SW
-define	PTE_SR		PTE_SR
+define	PTE_X		PTE_X
+define	PTE_W		PTE_W
+define	PTE_R		PTE_R
 
-define	PM_PDETAB	offsetof(struct pmap, pm_pdetab)
-define	PM_MD_PTBR	offsetof(struct pmap, pm_md.md_ptbr)
+#define	PM_PDETAB	offsetof(struct pmap, pm_pdetab)
+#define	PM_MD_PTBR	offsetof(struct pmap, pm_md.md_ptbr)

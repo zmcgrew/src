@@ -83,7 +83,7 @@ riscv_mutex_spinbit_lock_init(kmutex_t *__mtx)
 }
 
 static inline bool
-riscv_mutex_spinbit_locked_p(kmutex_t *__mtx)
+riscv_mutex_spinbit_locked_p(const kmutex_t *__mtx)
 {
 	return (__mtx->mtx_owner & MTX_LOCK) != 0;
 }
