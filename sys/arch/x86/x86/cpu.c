@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.150 2018/03/11 13:38:02 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.153 2018/03/28 14:56:59 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.150 2018/03/11 13:38:02 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.153 2018/03/28 14:56:59 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */

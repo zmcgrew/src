@@ -1,4 +1,4 @@
-/*	$NetBSD: uninorth.c,v 1.18 2015/10/02 05:22:51 msaitoh Exp $	*/
+/*	$NetBSD: uninorth.c,v 1.20 2018/03/22 21:30:34 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uninorth.c,v 1.18 2015/10/02 05:22:51 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uninorth.c,v 1.20 2018/03/22 21:30:34 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -36,6 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: uninorth.c,v 1.18 2015/10/02 05:22:51 msaitoh Exp $"
 #include <dev/pci/pcivar.h>
 #include <dev/ofw/openfirm.h>
 #include <dev/ofw/ofw_pci.h>
+#include <powerpc/oea/cpufeat.h>
 
 #include <machine/autoconf.h>
 #include <machine/pio.h>
@@ -161,13 +162,13 @@ uninorth_attach(device_t parent, device_t self, void *aux)
 	pc->pc_memt = &sc->sc_memt;
 
 	if (ver < 3) {
-		pc->pc_addr = mapiodev(reg[0] + 0x800000, 4, false);
-		pc->pc_data = mapiodev(reg[0] + 0xc00000, 8, false);
+		pc->pc_addr = oea_mapiodev(reg[0] + 0x800000, 4);
+		pc->pc_data = oea_mapiodev(reg[0] + 0xc00000, 8);
 		pc->pc_conf_read = uninorth_conf_read;
 		pc->pc_conf_write = uninorth_conf_write;
 	} else {
-		pc->pc_addr = mapiodev(reg[1] + 0x800000, 4, false);
-		pc->pc_data = mapiodev(reg[1] + 0xc00000, 8, false);
+		pc->pc_addr = oea_mapiodev(reg[1] + 0x800000, 4);
+		pc->pc_data = oea_mapiodev(reg[1] + 0xc00000, 8);
 		pc->pc_conf_read = uninorth_conf_read_v3;
 		pc->pc_conf_write = uninorth_conf_write_v3;
 	}
@@ -287,7 +288,11 @@ uninorth_conf_read_v3(void *cookie, pcitag_t tag, int reg)
 
 	pci_decompose_tag(pc, tag, &bus, &dev, &func);
 
-	x = (bus << 16) | (dev << 11) | (func << 8) | (reg & 0xfc) | 1;
+	if (bus == 0) {
+		if (dev < 11) return 0xffffffff;
+		x = (1 << dev) | (func << 8) | reg;
+	} else
+		x = (bus << 16) | (dev << 11) | (func << 8) | (reg & 0xfc) | 1;
 	/* Set extended register bits */
 	x |= (reg >> 8) << 28;
 
@@ -296,8 +301,9 @@ uninorth_conf_read_v3(void *cookie, pcitag_t tag, int reg)
 	out32rb(pc->pc_addr, x);
 	in32rb(pc->pc_addr);
 	data = 0xffffffff;
-	if (!badaddr(daddr, 4))
+	if (!badaddr(daddr, 4)) {
 		data = in32rb(daddr);
+	}
 	out32rb(pc->pc_addr, 0);
 	in32rb(pc->pc_addr);
 	splx(s);
@@ -322,7 +328,11 @@ uninorth_conf_write_v3(void *cookie, pcitag_t tag, int reg, pcireg_t data)
 
 	pci_decompose_tag(pc, tag, &bus, &dev, &func);
 
-	x = (bus << 16) | (dev << 11) | (func << 8) | (reg & 0xfc) | 1;
+	if (bus == 0) {
+		if (dev < 11) return;
+		x = (1 << dev) | (func << 8) | reg;
+	} else
+		x = (bus << 16) | (dev << 11) | (func << 8) | (reg & 0xfc) | 1;
 	/* Set extended register bits */
 	x |= (reg >> 8) << 28;
 

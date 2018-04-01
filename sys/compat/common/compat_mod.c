@@ -1,4 +1,4 @@
-/*	$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp $	*/
+/*	$NetBSD: compat_mod.c,v 1.27 2018/03/18 20:33:52 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.27 2018/03/18 20:33:52 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -60,6 +60,9 @@ __KERNEL_RCSID(0, "$NetBSD: compat_mod.c,v 1.24 2016/11/05 23:30:22 pgoyette Exp
 #include <compat/common/compat_util.h>
 #include <compat/common/compat_mod.h>
 #include <compat/common/if_43.h>
+#include <compat/sys/uvm.h>
+#include <compat/sys/cpuio.h>
+#include <compat/sys/ccdvar.h>
 
 #if defined(COMPAT_09) || defined(COMPAT_43) || defined(COMPAT_50)
 static struct sysctllog *compat_clog = NULL;
@@ -238,6 +241,9 @@ compat_modcmd(modcmd_t cmd, void *arg)
 		ttcompatvec = ttcompat;
 		if_43_init();
 #endif
+#ifdef COMPAT_13
+		uvm_13_init();
+#endif
 #ifdef COMPAT_16
 #if defined(COMPAT_SIGCONTEXT)
 		KASSERT(emul_netbsd.e_sigobject == NULL);
@@ -251,9 +257,19 @@ compat_modcmd(modcmd_t cmd, void *arg)
 #endif
 #endif
 		compat_sysctl_init();
+#ifdef COMPAT_50
+		uvm_50_init();
+#endif
+#ifdef COMPAT_60
+		kern_cpu_60_init();
+		ccd_60_init();
+#endif
 		return 0;
 
 	case MODULE_CMD_FINI:
+#ifdef COMPAT_13
+		uvm_13_fini();
+#endif
 #ifdef COMPAT_16
 		/*
 		 * Ensure sendsig_sigcontext() is not being used.
@@ -308,6 +324,13 @@ compat_modcmd(modcmd_t cmd, void *arg)
 #endif
 #endif	/* COMPAT_16 */
 		compat_sysctl_fini();
+#ifdef COMPAT_50
+		uvm_50_fini();
+#endif
+#ifdef COMPAT_60
+		kern_cpu_60_fini();
+		ccd_60_fini();
+#endif
 		return 0;
 
 	default:

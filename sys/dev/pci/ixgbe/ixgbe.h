@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.35 2018/03/09 06:27:53 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.39 2018/03/30 03:58:20 knakahara Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -114,7 +114,6 @@
 #include "ixgbe_netbsd.h"
 #include "ixgbe_api.h"
 #include "ixgbe_common.h"
-#include "ixgbe_phy.h"
 #include "ixgbe_vf.h"
 #include "ixgbe_features.h"
 
@@ -256,7 +255,6 @@
                                 IXGBE_EITR_ITR_INT_MASK)
 
 
-
 /************************************************************************
  * vendor_info_array
  *
@@ -341,8 +339,13 @@ struct ix_queue {
 	char             namebuf[32];
 	char             evnamebuf[32];
 
-	kmutex_t         im_mtx;	/* lock for im_nest and this queue's EIMS/EIMC bit */
-	int              im_nest;
+	kmutex_t         dc_mtx;	/* lock for disabled_count and this queue's EIMS/EIMC bit */
+	int              disabled_count;/*
+					 * means
+					 *     0   : this queue is enabled
+					 *     > 0 : this queue is disabled
+					 *           the value is ixgbe_disable_queue() called count
+					 */
 };
 
 /*
@@ -372,8 +375,8 @@ struct tx_ring {
 	u16			atr_sample;
 	u16			atr_count;
 
-	u32			bytes;  /* used for AIM */
-	u32			packets;
+	u64			bytes;  /* used for AIM */
+	u64			packets;
 	/* Soft Stats */
 	struct evcnt	   	tso_tx;
 	struct evcnt		no_desc_avail;
@@ -415,8 +418,8 @@ struct rx_ring {
 	struct ixgbe_rx_buf	*rx_buffers;
 	ixgbe_dma_tag_t		*ptag;
 
-	u32			bytes; /* Used for AIM calc */
-	u32			packets;
+	u64			bytes; /* Used for AIM calc */
+	u64			packets;
 
 	/* Soft stats */
 	struct evcnt		rx_copies;
@@ -578,6 +581,10 @@ struct adapter {
 	struct evcnt	   	tso_err;
 	struct evcnt	   	watchdog_events;
 	struct evcnt		link_irq;
+	struct evcnt		link_sicount;
+	struct evcnt		mod_sicount;
+	struct evcnt		msf_sicount;
+	struct evcnt		phy_sicount;
 
 	union {
 		struct ixgbe_hw_stats pf;
@@ -604,7 +611,6 @@ struct adapter {
 	const struct sysctlnode *sysctltop;
 	ixgbe_extmem_head_t jcl_head;
 };
-
 
 /* Precision Time Sync (IEEE 1588) defines */
 #define ETHERTYPE_IEEE1588      0x88F7
@@ -681,10 +687,10 @@ static __inline int
 drbr_needs_enqueue(struct ifnet *ifp, struct buf_ring *br)
 {
 #ifdef ALTQ
-        if (ALTQ_IS_ENABLED(&ifp->if_snd))
-                return (1);
+	if (ALTQ_IS_ENABLED(&ifp->if_snd))
+		return (1);
 #endif
-        return (!buf_ring_empty(br));
+	return (!buf_ring_empty(br));
 }
 #endif
 
@@ -752,7 +758,6 @@ bool ixgbe_rxeof(struct ix_queue *);
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 
 #include "ixgbe_bypass.h"
-#include "ixgbe_sriov.h"
 #include "ixgbe_fdir.h"
 #include "ixgbe_rss.h"
 #include "ixgbe_netmap.h"

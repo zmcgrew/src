@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.157 2018/02/25 12:37:16 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.163 2018/03/30 09:53:08 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -330,7 +330,6 @@
 	.globl	_C_LABEL(biosbasemem)
 	.globl	_C_LABEL(biosextmem)
 	.globl	_C_LABEL(lwp0uarea)
-	.globl	do_sysret
 	.globl	do_mov_es
 	.globl	do_mov_ds
 	.globl	do_mov_fs
@@ -1097,6 +1096,16 @@ ENTRY(cpu_switchto)
 	callq	_C_LABEL(svs_lwp_switch)
 .Lskip_svs:
 	popq	%rdx
+
+	/* Restore rdi/rsi for speculation_barrier */
+	movq	%r13,%rdi
+	movq	%r12,%rsi
+#endif
+
+#ifndef XEN
+	pushq	%rdx
+	callq	_C_LABEL(speculation_barrier)
+	popq	%rdx
 #endif
 
 	/* Switch to newlwp's stack. */
@@ -1414,6 +1423,7 @@ IDTVEC(\name)
 	cld
 #endif
 	INTR_SAVE_GPRS
+	IBRS_ENTER
 	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_DS(%rsp)
 	movw	$GSEL(GUDATA_SEL, SEL_UPL),TF_ES(%rsp)
 	movw	$0,TF_FS(%rsp)
@@ -1465,13 +1475,13 @@ IDTVEC_END(osyscall)
 	_ALIGN_TEXT
 LABEL(syscall_sysret)
 	SVS_LEAVE
+	IBRS_LEAVE
 	INTR_RESTORE_GPRS
 	SWAPGS
 #ifndef XEN
 	movq	TF_RIP(%rsp),%rcx	/* %rip for sysret */
 	movq	TF_RFLAGS(%rsp),%r11	/* %flags for sysret */
 	movq	TF_RSP(%rsp),%rsp
-do_sysret:
 	sysretq
 #else
 	addq	$TF_RIP,%rsp
@@ -1550,14 +1560,15 @@ END(pagezero)
  * documentation in amd64_trap.S for an explanation.
  */
 
-#define TF_BACKW(val, reg)	(val - TF_REGSIZE)(reg)
+#define TF_BACKW(val, reg)	(val - (TF_REGSIZE+16))(reg)
 
 	_ALIGN_TEXT
 LABEL(intrfastexit)
 	NOT_XEN(cli;)
 	SVS_LEAVE
+	IBRS_LEAVE
 	INTR_RESTORE_GPRS
-	addq	$TF_REGSIZE,%rsp	/* iret frame */
+	addq	$(TF_REGSIZE+16),%rsp	/* iret frame */
 
 	testb	$SEL_UPL,TF_BACKW(TF_CS, %rsp)
 	jz	.Lkexit
@@ -1588,7 +1599,6 @@ do_mov_gs:
 	SWAPGS
 
 .Lkexit:
-	addq	$16,%rsp	/* 16 = T_xxx + error code */
 do_iret:
 	iretq
 END(intrfastexit)
@@ -1652,3 +1662,33 @@ LABEL(nosvs_leave_altstack)
 	NOSVS_LEAVE_ALTSTACK
 LABEL(nosvs_leave_altstack_end)
 #endif
+
+	.globl	ibrs_enter, ibrs_enter_end
+	.globl	ibrs_leave, ibrs_leave_end
+
+	/* IBRS <- 1 */
+LABEL(ibrs_enter)
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	movl	$IA32_SPEC_CTRL_IBRS,%eax
+	movl	$(IA32_SPEC_CTRL_IBRS >> 32),%edx
+	wrmsr
+LABEL(ibrs_enter_end)
+
+	/* IBRS <- 0 */
+LABEL(ibrs_leave)
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	1234f
+	movl	$MSR_IA32_SPEC_CTRL,%ecx
+	xorl	%eax,%eax
+	xorl	%edx,%edx
+	wrmsr
+1234:
+LABEL(ibrs_leave_end)
+
+LABEL(noibrs_enter)
+	NOIBRS_ENTER
+LABEL(noibrs_enter_end)
+
+LABEL(noibrs_leave)
+	NOIBRS_LEAVE
+LABEL(noibrs_leave_end)

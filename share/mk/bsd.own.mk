@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1048 2018/03/11 07:18:49 mrg Exp $
+#	$NetBSD: bsd.own.mk,v 1.1053 2018/04/01 04:35:02 ryo Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -600,7 +600,7 @@ FC=		${TOOL_FC.${ACTIVE_FC}}
 OBJC=		${TOOL_OBJC.${ACTIVE_OBJC}}
 
 # For each ${MACHINE_CPU}, list the ports that use it.
-MACHINES.aarch64=	evbarm64
+MACHINES.aarch64=	evbarm
 MACHINES.alpha=		alpha
 MACHINES.arm=		acorn32 cats epoc32 evbarm hpcarm \
 			iyonix netwinder shark zaurus
@@ -1201,8 +1201,8 @@ MKXORG_SERVER=yes
 MKRADEONFIRMWARE=		yes
 .endif
 
-# Only install the tegra firmware on evbarm and evbarm64.
-.if ${MACHINE} == "evbarm" || ${MACHINE} == "evbarm64"
+# Only install the tegra firmware on evbarm.
+.if ${MACHINE} == "evbarm"
 MKTEGRAFIRMWARE=		yes
 .endif
 
@@ -1339,7 +1339,7 @@ ${var}?= yes
 # USE_* options which default to "no".
 #
 # For now, disable pigz as compressor by default
-.for var in USE_PIGZGZIP USE_LIBTRE
+.for var in USE_PIGZGZIP
 ${var}?= no
 .endfor
 
@@ -1391,10 +1391,7 @@ X11SRCDIR.${_lib}?=		${X11SRCDIRMIT}/lib${_lib}/dist
 .endfor
 
 .for _proto in \
-	xcmisc xext xf86bigfont bigreqs input kb x fonts fixes scrnsaver \
-	xinerama dri2 dri3 render resource record video xf86dga xf86misc \
-	xf86vidmode composite damage trap gl randr fontcache xf86dri \
-	present xcb-
+	xcb- xorg
 X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .endfor
 
@@ -1597,7 +1594,8 @@ TARGETS+=	lintmanpages
 TESTSBASE=	/usr/tests${MLIBDIR:D/${MLIBDIR}}
 
 # Override with tools versions if needed
-.if ${MKCTF:Uno} != "no" && !defined(NOCTF)
+.if ${MKCTF:Uno} != "no" && !defined(NOCTF) && \
+    (exists(${TOOL_CTFCONVERT}) || exists(/usr/bin/${TOOL_CTFCONVERT}))
 CTFCONVERT=	${TOOL_CTFCONVERT}
 CTFMERGE=	${TOOL_CTFMERGE}
 .endif

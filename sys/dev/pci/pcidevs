@@ -1,4 +1,4 @@
-$NetBSD: pcidevs,v 1.1319 2018/03/04 13:24:17 jdolecek Exp $
+$NetBSD: pcidevs,v 1.1323 2018/03/31 14:39:47 sevan Exp $
 
 /*
  * Copyright (c) 1995, 1996 Christopher G. Demetriou
@@ -1150,7 +1150,7 @@ product APPLE OHARE		0x0007	OHare I/O Controller
 product APPLE BANDIT2		0x0008	Bandit Host-PCI Bridge
 product APPLE HEATHROW		0x0010	Heathrow I/O Controller
 product APPLE PADDINGTON	0x0017	Paddington I/O Controller
-product APPLE PBG3_FW		0x0018  PowerBook G3 Firewire
+product APPLE UNINORTH_FW	0x0018  UniNorth Firewire
 product APPLE KEYLARGO_USB	0x0019	KeyLargo USB Controller
 product APPLE UNINORTH1		0x001e	UniNorth Host-PCI Bridge
 product APPLE UNINORTH2		0x001f	UniNorth Host-PCI Bridge
@@ -1167,7 +1167,7 @@ product APPLE UNINORTH_AGP2	0x002d	UniNorth AGP Interface
 product APPLE UNINORTH3		0x002e	UniNorth Host-PCI Bridge
 product APPLE UNINORTH4		0x002f	UniNorth Host-PCI Bridge
 product APPLE PANGEA_FW		0x0030	Pangea Firewire
-product APPLE UNINORTH_FW	0x0031	UniNorth Firewire
+product APPLE UNINORTH2_FW	0x0031	UniNorth Firewire
 product APPLE GMAC3		0x0032	GMAC Ethernet
 product APPLE UNINORTH_ATA	0x0033	UniNorth ATA/100 Controller
 product APPLE UNINORTH_AGP3	0x0034	UniNorth AGP Bridge
@@ -3304,12 +3304,12 @@ product INTEL I219_V2		0x15b8	I219-V Ethernet Connection
 product INTEL I219_LM3		0x15b9	I219-LM Ethernet Connection
 product INTEL C3K_X553_KRKX	0x15c2	C3000 X553 Backplane (KR/KX 10G SKU)
 product INTEL C3K_X553_KX_25G	0x15c3	C3000 X553 Backplane (KX 2.5G)
-product INTEL C3K_X553_SFI_SFP	0x15c4	C3000 X553 10G SFP+
+product INTEL C3K_X553_SFI_SFP	0x15c4	C3000 X553 10G SFP+ (SFI)
 product INTEL C3K_X553_VF	0x15c5	C3000 X553 VF
 product INTEL C3K_X553_SGMII_BP	0x15c6	C3000 X553 1GbE SGMII Backplane (10G SKU)
 product INTEL C3K_X553_SGMII_BP_L 0x15c7 C3000 X553 1GbE SGMII Backplane (non-10G SKU)
 product INTEL C3K_X553_10G_T	0x15c8	C3000 X553 10GBASE-T (X557)
-product INTEL C3K_X553_KR_SFP	0x15ce	C3000 X553 10G SFP+
+product INTEL C3K_X553_KR_SFP	0x15ce	C3000 X553 10G SFP+ (KR)
 product INTEL X550T1	 	0x15d1	X550 10G Ethernet
 product INTEL I219_V5		0x15d6	I219-V Ethernet Connection
 product INTEL I219_LM4		0x15d7	I219-LM Ethernet Connection
@@ -3738,6 +3738,7 @@ product INTEL WIFI_LINK_3168	0x24fb	Dual Band Wireless AC 3168
 product INTEL WIFI_LINK_8265	0x24fd	Dual Band Wireless AC 8265
 product INTEL 82820_MCH		0x2501	82820 MCH (Camino)
 product INTEL 82820_AGP		0x250f	82820 AGP
+product INTEL WIFI_LINK_9260	0x2526	Wireless AC 9260
 product INTEL 82850_HB		0x2530	82850 Host
 product INTEL 82860_HB		0x2531	82860 Host
 product INTEL 82850_AGP		0x2532	82850/82860 AGP
@@ -7106,6 +7107,8 @@ product VIATECH CHROME9_HC	0x3371	Chrome9 HC IGP
 product VIATECH VT8237S_ISA	0x3372	VT8237S PCI-ISA Bridge
 product VIATECH VT8237A_PPB	0x337a	VT8237A PCI-PCI Bridge
 product VIATECH VT8237A_HB	0x337b	VT8237A Host Bridge
+product VIATECH VL80x_XHCI 	0x3432	VL80x xHCI
+product	VIATECH	VL805_XHCI	0x3483	VL805 xHCI
 product VIATECH KT880_4		0x4269	KT880 CPU to PCI Bridge
 product VIATECH VT3351_HB_4351	0x4351	VT3351 Host Bridge
 product VIATECH P4M900_4	0x4364	CN896/P4M900 Host Bridge

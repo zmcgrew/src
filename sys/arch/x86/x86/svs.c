@@ -1,4 +1,4 @@
-/*	$NetBSD: svs.c,v 1.13 2018/03/01 16:49:06 maxv Exp $	*/
+/*	$NetBSD: svs.c,v 1.17 2018/03/30 19:58:05 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.13 2018/03/01 16:49:06 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.17 2018/03/30 19:58:05 maxv Exp $");
 
 #include "opt_svs.h"
 
@@ -647,6 +647,7 @@ svs_disable_cpu(void *arg1, void *arg2)
 	u_long psl;
 
 	psl = x86_read_psl();
+	x86_disable_intr();
 
 	atomic_dec_ulong(&svs_cpu_barrier1);
 	while (atomic_cas_ulong(&svs_cpu_barrier1, 0, 0) != 0) {
@@ -719,9 +720,10 @@ int
 sysctl_machdep_svs_enabled(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
-	int error, val;
+	int error;
+	bool val;
 
-	val = *(int *)rnode->sysctl_data;
+	val = *(bool *)rnode->sysctl_data;
 
 	node = *rnode;
 	node.sysctl_data = &val;
@@ -731,7 +733,10 @@ sysctl_machdep_svs_enabled(SYSCTLFN_ARGS)
 		return error;
 
 	if (val == 1) {
-		error = EINVAL;
+		if (svs_enabled)
+			error = 0;
+		else
+			error = EOPNOTSUPP;
 	} else {
 		if (svs_enabled)
 			error = svs_disable();
@@ -745,8 +750,21 @@ sysctl_machdep_svs_enabled(SYSCTLFN_ARGS)
 void
 svs_init(void)
 {
+	uint64_t msr;
+
 	if (cpu_vendor != CPUVENDOR_INTEL) {
 		return;
 	}
+	if (cpu_info_primary.ci_feat_val[7] & CPUID_SEF_ARCH_CAP) {
+		msr = rdmsr(MSR_IA32_ARCH_CAPABILITIES);
+		if (msr & IA32_ARCH_RDCL_NO) {
+			/*
+			 * The processor indicates it is not vulnerable to the
+			 * Rogue Data Cache Load (Meltdown) flaw.
+			 */
+			return;
+		}
+	}
+
 	svs_enable();
 }

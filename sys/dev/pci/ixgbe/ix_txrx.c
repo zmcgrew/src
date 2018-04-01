@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.35 2018/03/09 06:27:53 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.37 2018/03/30 03:58:20 knakahara Exp $ */
 
 /******************************************************************************
 
@@ -865,23 +865,23 @@ ixgbe_tx_ctx_setup(struct tx_ring *txr, struct mbuf *mp,
 
 	/* No support for offloads for non-L4 next headers */
  	switch (ipproto) {
- 		case IPPROTO_TCP:
-			if (mp->m_pkthdr.csum_flags &
-			    (M_CSUM_TCPv4 | M_CSUM_TCPv6))
-				type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_TCP;
-			else
-				offload = false;
-			break;
-		case IPPROTO_UDP:
-			if (mp->m_pkthdr.csum_flags &
-			    (M_CSUM_UDPv4 | M_CSUM_UDPv6))
-				type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_UDP;
-			else
-				offload = false;
-			break;
-		default:
+	case IPPROTO_TCP:
+		if (mp->m_pkthdr.csum_flags &
+		    (M_CSUM_TCPv4 | M_CSUM_TCPv6))
+			type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_TCP;
+		else
 			offload = false;
-			break;
+		break;
+	case IPPROTO_UDP:
+		if (mp->m_pkthdr.csum_flags &
+		    (M_CSUM_UDPv4 | M_CSUM_UDPv6))
+			type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_UDP;
+		else
+			offload = false;
+		break;
+	default:
+		offload = false;
+		break;
 	}
 
 	if (offload) /* Insert L4 checksum into data descriptors */
@@ -2298,8 +2298,8 @@ ixgbe_allocate_queues(struct adapter *adapter)
 		que->txr = &adapter->tx_rings[i];
 		que->rxr = &adapter->rx_rings[i];
 
-		mutex_init(&que->im_mtx, MUTEX_DEFAULT, IPL_NET);
-		que->im_nest = 0;
+		mutex_init(&que->dc_mtx, MUTEX_DEFAULT, IPL_NET);
+		que->disabled_count = 0;
 	}
 
 	return (0);
