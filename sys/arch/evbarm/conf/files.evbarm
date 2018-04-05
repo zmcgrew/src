@@ -1,4 +1,4 @@
-#	$NetBSD: files.evbarm,v 1.28 2017/12/18 15:53:38 skrll Exp $
+#	$NetBSD: files.evbarm,v 1.30 2018/04/01 04:35:04 ryo Exp $
 #
 # First try for arm-specific configuration info
 #
@@ -22,7 +22,6 @@ file	arch/arm32/fpe-arm/armfpe_glue.S	armfpe
 file	arch/arm32/fpe-arm/armfpe_init.c	armfpe
 file	arch/arm32/fpe-arm/armfpe.s		armfpe
 
-
 #
 # Machine-independent drivers
 #
@@ -36,6 +35,10 @@ include "dev/pcmcia/files.pcmcia"		# PCMCIA devices
 include "dev/sdmmc/files.sdmmc"			# SD/MMC devices
 include "dev/scsipi/files.scsipi"		# SCSI devices
 include "dev/usb/files.usb"			# USB devices
+
+
+# Kernel boot arguments
+defparam	opt_machdep.h			BOOT_ARGS
 
 #
 # ARM evaluation board specific devices
@@ -51,6 +54,10 @@ file	arch/evbarm/dev/plcom.c			plcom needs-flag
 #
 # Maximum number of memory ranges
 #
-defparam	opt_machdep.h			DRAM_BLOCKS
+defparam	opt_bootconfig.h		DRAM_BLOCKS
 
+ifdef arm32
 include "arch/arm/conf/majors.arm32"
+else
+include "arch/aarch64/conf/majors.aarch64"
+endif

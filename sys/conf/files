@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1192 2018/01/18 00:32:48 mrg Exp $
+#	$NetBSD: files,v 1.1196 2018/02/27 14:28:01 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -28,6 +28,7 @@ defflag	opt_modular.h		MODULAR_DEFAULT_AUTOLOAD
 defflag				KEYLOCK
 defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
 defflag opt_diagnostic.h	_DIAGNOSTIC
+defflag				GPROF
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -417,11 +418,10 @@ include "dev/splash/files.splash"
 include "dev/videomode/files.videomode"
 
 # net device attributes - we have generic code for arc(net), ether(net),
-# fddi, token ring, atm and eco(net).
+# fddi, token ring, and atm.
 #
 define	arcnet
 define	atm
-define	eco
 define	ether
 define	fddi
 define	hippi
@@ -517,6 +517,7 @@ file	dev/ic/ld_cac.c			ld_cac
 
 # HP/Compaq Command Interface for SCSI-3 Support
 #
+defflag	opt_ciss.h			CISS_NO_INTERRUPT_HACK
 device ciss: scsi
 file	dev/ic/ciss.c			ciss
 
@@ -1246,7 +1247,6 @@ include "dev/wsfb/files.wsfb"
 define	isabus	{ }			# ISA attachment
 define	eisabus	{ }			# EISA attachment
 define	pcibus	{[bus = -1]}		# PCI attachment
-define	tcbus	{ }			# TURBOchannel attachment
 define	mcabus	{ }			# MicroChannel attachment
 define	usbus	{ }			# USB attachment
 define	fwbus	{ }			# IEEE 1394 attachment

@@ -1,4 +1,4 @@
-# $NetBSD: ad.arm,v 1.81 2018/01/24 09:51:26 wiz Exp $
+# $NetBSD: ad.arm,v 1.84 2018/03/20 10:14:29 ryo Exp $
 ./usr/include/acorn26				comp-obsolete		obsolete
 ./usr/include/acorn26/ansi.h			comp-obsolete		obsolete
 ./usr/include/acorn26/aout_machdep.h		comp-obsolete		obsolete
@@ -133,6 +133,7 @@
 ./usr/include/arm/cdefs.h			comp-c-include
 ./usr/include/arm/cpu.h				comp-c-include
 ./usr/include/arm/cpuconf.h			comp-c-include
+./usr/include/arm/cputypes.h			comp-c-include
 ./usr/include/arm/db_machdep.h			comp-obsolete		obsolete
 ./usr/include/arm/disklabel.h			comp-c-include
 ./usr/include/arm/disklabel_acorn.h		comp-obsolete		obsolete
@@ -404,11 +405,16 @@
 ./usr/include/gcc-4.8/mmintrin.h		comp-obsolete		obsolete
 ./usr/include/gcc-4.8/tgmath.h			comp-obsolete		obsolete
 ./usr/include/gcc-4.8/unwind-arm-common.h	comp-obsolete		obsolete
-./usr/include/gcc-5/arm_acle.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/arm_neon.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/mmintrin.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/unwind-arm-common.h		comp-c-include		gcccmds,gcc=53,eabi
+./usr/include/gcc-5/arm_acle.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/arm_neon.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/mmintrin.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/unwind-arm-common.h		comp-c-include		gcccmds,gcc=5,eabi
+./usr/include/gcc-6/arm_acle.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/arm_neon.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/mmintrin.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/tgmath.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/unwind-arm-common.h		comp-c-include		gcccmds,gcc=6,eabi
 ./usr/include/hpcarm				comp-c-include
 ./usr/include/hpcarm/ansi.h			comp-obsolete		obsolete
 ./usr/include/hpcarm/aout_machdep.h		comp-obsolete		obsolete

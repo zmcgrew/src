@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $	*/
+/*	$NetBSD: raw_ip.c,v 1.172 2018/03/21 14:23:54 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.172 2018/03/21 14:23:54 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -101,8 +101,7 @@ __KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.167 2017/12/11 05:47:18 ryo Exp $");
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #include <netipsec/ipsec_var.h>
-#include <netipsec/ipsec_private.h>
-#endif	/* IPSEC */
+#endif
 
 struct inpcbtable rawcbtable;
 
@@ -147,7 +146,7 @@ rip_sbappendaddr(struct inpcb *last, struct ip *ip, const struct sockaddr *sa,
 	    || SOOPT_TIMESTAMP(last->inp_socket->so_options))
 		ip_savecontrol(last, &opts, ip, n);
 	if (sbappendaddr(&last->inp_socket->so_rcv, sa, n, opts) == 0) {
-		/* should notify about lost packet */
+		soroverflow(last->inp_socket);
 		m_freem(n);
 		if (opts)
 			m_freem(opts);
@@ -204,9 +203,7 @@ rip_input(struct mbuf *m, ...)
 			;
 #if defined(IPSEC)
 		/* check AH/ESP integrity. */
-		else if (ipsec_used &&
-		    ipsec4_in_reject(m, last)) {
-			IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
+		else if (ipsec_used && ipsec_in_reject(m, last)) {
 			/* do not inject data to pcb */
 		}
 #endif /*IPSEC*/
@@ -219,10 +216,8 @@ rip_input(struct mbuf *m, ...)
 	}
 #if defined(IPSEC)
 	/* check AH/ESP integrity. */
-	if (ipsec_used && last != NULL
-	    && ipsec4_in_reject(m, last)) {
+	if (ipsec_used && last != NULL && ipsec_in_reject(m, last)) {
 		m_freem(m);
-		IPSEC_STATINC(IPSEC_STAT_IN_POLVIO);
 		IP_STATDEC(IP_STAT_DELIVERED);
 		/* do not inject data to pcb */
 	} else

@@ -1,4 +1,4 @@
-#	$NetBSD: 3RDPARTY,v 1.1497 2018/01/25 22:49:32 christos Exp $
+#	$NetBSD: 3RDPARTY,v 1.1507 2018/03/27 06:34:25 roy Exp $
 #
 # This file contains a list of the software that has been integrated into
 # NetBSD where we are not the primary maintainer.
@@ -41,7 +41,7 @@
 
 Package:	acpica
 Version:	20171110
-Current Vers:	20170111
+Current Vers:	20180105
 Maintainer:	Intel
 Archive Site:	http://www.acpica.org/downloads/
 Home Page:	http://www.acpica.org/
@@ -132,8 +132,8 @@ Then binclude4netbsd script to import into src/external/bsd/bind/include.
 The libc and include parts of the resolver are now part of libbind.
 
 Package:	unbound 
-Version:	1.5.9
-Current Vers:	1.5.9
+Version:	1.6.8
+Current Vers:	1.6.8
 Maintainer:	Christos Zoulas
 Archive Site:	https://www.unbound.net/downloads/unbound-latest.tar.gz
 Home Page:	https://www.unbound.net/
@@ -146,8 +146,8 @@ Use cleantags to import
 run configure and update config files in include
 
 Package:	nsd 
-Version:	4.1.14
-Current Vers:	4.1.14
+Version:	4.1.19
+Current Vers:	4.1.19
 Maintainer:	Christos Zoulas
 Archive Site:	https://www.nlnetlabs.nl/svn/nsd/
 Home Page:	https://www.nlnetlabs.nl/projects/nsd/
@@ -186,7 +186,7 @@ Todo[5]: Reconcile the doc directory.
 
 Package:	binutils
 Version:	2.27
-Current Vers:	2.29.1
+Current Vers:	2.30
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/binutils/
 Home Page:	http://www.gnu.org/software/binutils/
@@ -334,8 +334,8 @@ Notes:
 Use the dhcp2netbsd script.
 
 Package:	dhcpcd
-Version:	7.0.0
-Current Vers:	7.0.0
+Version:	7.0.2
+Current Vers:	7.0.2
 Maintainer:	roy
 Archive Site:	ftp://roy.marples.name/pub/dhcpcd/
 Home Page:	http://roy.marples.name/projects/dhcpcd/
@@ -483,7 +483,7 @@ Before importing a new version of external/gpl3/gcc:
 
 Package:	gdb
 Version:	8.0.1
-Current Vers:	8.0.1
+Current Vers:	8.1
 Maintainer:	FSF
 Archive Site:	ftp://ftp.gnu.org/gnu/gdb/
 Home Page:	http://www.gnu.org/software/gdb/
@@ -847,8 +847,8 @@ Notes:
 Uses libc's ohash
 
 Package:	mDNSResponder
-Version:	878.1.1
-Current Vers:	878.1.1
+Version:	878.30.4
+Current Vers:	878.30.4
 Maintainer:	Apple
 Archive Site:	https://www.opensource.apple.com/tarballs/mDNSResponder/
 Home Page:	https://developer.apple.com/bonjour/
@@ -981,8 +981,8 @@ Notes:
 We have lots of local fixes.
 
 Package:	OpenLDAP
-Version:	2.4.44
-Current Vers:	2.4.44
+Version:	2.4.45
+Current Vers:	2.4.45
 Maintainer:	OpenLDAP Foundation
 Archive Site:	http://www.openldap.org/
 Home Page:	http://www.openldap.org/
@@ -1411,8 +1411,8 @@ Notes:
 Added changes from a5 -> a12 manually.
 
 Package:	tz
-Version:	tzcode2018c / tzdata2018c
-Current Vers:	tzcode2018c / tzdata2018c
+Version:	tzcode2018c / tzdata2018d
+Current Vers:	tzcode2018d / tzdata2018d
 Maintainer:	Paul Eggert <eggert@cs.ucla.edu>
 Archive Site:	ftp://ftp.iana.org/tz/releases/
 Archive Site:	ftp://munnari.oz.au/pub/oldtz/
@@ -1995,14 +1995,15 @@ Package:	tigon
 Version:	12.4.11
 Current Vers:
 Maintainer:	wpaul@brak.osd.bsdi.com
-Archive Site:
-Home Page:
+Archive Site:   https://people.freebsd.org/~wpaul/Alteon/
+Home Page:	http://www.alteon.com/support/openkits (extinct)
 Mailing List:
-License:	unknown
+License:	Alteon WebSystems, Inc.
 Responsible:	
 Location:	sys/dev/microcode/tigon
 Notes:
-Is also distributed by FreeBSD.
+See https://lists.debian.org/debian-legal/2011/10/msg00001.html
+
 
 Package:	typhoon
 Version:	

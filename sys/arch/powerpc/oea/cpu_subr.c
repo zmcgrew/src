@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.88 2018/01/21 08:46:48 mrg Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.92 2018/03/29 16:19:46 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001 Matt Thomas.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.88 2018/01/21 08:46:48 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.92 2018/03/29 16:19:46 macallan Exp $");
 
 #include "opt_ppcparam.h"
 #include "opt_ppccache.h"
@@ -533,6 +533,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 	 * Configure power-saving mode.
 	 */
 	switch (vers) {
+#if !defined(_ARCH_PPC64)
 	case MPC604:
 	case MPC604e:
 	case MPC604ev:
@@ -582,6 +583,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 		hid0 |= HID0_NAP | HID0_DPM;
 		powersave = 1;
 		break;
+#endif
 
 	case IBM970:
 	case IBM970FX:
@@ -591,7 +593,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 		KASSERT((oeacpufeat & OEACPU_64_BRIDGE) != 0);
 #endif
 		hid64_0 &= ~(HID0_64_DOZE | HID0_64_NAP | HID0_64_DEEPNAP);
-		hid64_0 |= HID0_64_DOZE | HID0_64_DPM | HID0_64_EX_TBEN |
+		hid64_0 |= HID0_64_NAP | HID0_64_DPM | HID0_64_EX_TBEN |
 			   HID0_64_TB_CTRL | HID0_64_EN_MCHK;
 		powersave = 1;
 		break;
@@ -644,17 +646,7 @@ cpu_setup(device_t self, struct cpu_info *ci)
 	if ((oeacpufeat & OEACPU_64_BRIDGE) != 0) {
 #endif
 		if (hid64_0 != hid64_0_save) {
-			/* ppc970 needs extra goop around writes to HID0 */
-			__asm volatile( "sync;" \
-					"mtspr %0,%1;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					"mfspr %1,%0;" \
-					 : : "K"(SPR_HID0), "r"(hid64_0));
-			__asm volatile("sync;isync");
+			mtspr64(SPR_HID0, hid64_0);
 		}
 #if defined(PPC_OEA64_BRIDGE)
 	} else {
@@ -1334,24 +1326,26 @@ cpu_spinup(device_t self, struct cpu_info *ci)
 	else
 		h->hatch_asr = 0;
 
-	/* copy the bat regs */
-	__asm volatile ("mfibatu %0,0" : "=r"(h->hatch_ibatu[0]));
-	__asm volatile ("mfibatl %0,0" : "=r"(h->hatch_ibatl[0]));
-	__asm volatile ("mfibatu %0,1" : "=r"(h->hatch_ibatu[1]));
-	__asm volatile ("mfibatl %0,1" : "=r"(h->hatch_ibatl[1]));
-	__asm volatile ("mfibatu %0,2" : "=r"(h->hatch_ibatu[2]));
-	__asm volatile ("mfibatl %0,2" : "=r"(h->hatch_ibatl[2]));
-	__asm volatile ("mfibatu %0,3" : "=r"(h->hatch_ibatu[3]));
-	__asm volatile ("mfibatl %0,3" : "=r"(h->hatch_ibatl[3]));
-	__asm volatile ("mfdbatu %0,0" : "=r"(h->hatch_dbatu[0]));
-	__asm volatile ("mfdbatl %0,0" : "=r"(h->hatch_dbatl[0]));
-	__asm volatile ("mfdbatu %0,1" : "=r"(h->hatch_dbatu[1]));
-	__asm volatile ("mfdbatl %0,1" : "=r"(h->hatch_dbatl[1]));
-	__asm volatile ("mfdbatu %0,2" : "=r"(h->hatch_dbatu[2]));
-	__asm volatile ("mfdbatl %0,2" : "=r"(h->hatch_dbatl[2]));
-	__asm volatile ("mfdbatu %0,3" : "=r"(h->hatch_dbatu[3]));
-	__asm volatile ("mfdbatl %0,3" : "=r"(h->hatch_dbatl[3]));
-	__asm volatile ("sync; isync");
+	if ((oeacpufeat & OEACPU_NOBAT) == 0) {
+		/* copy the bat regs */
+		__asm volatile ("mfibatu %0,0" : "=r"(h->hatch_ibatu[0]));
+		__asm volatile ("mfibatl %0,0" : "=r"(h->hatch_ibatl[0]));
+		__asm volatile ("mfibatu %0,1" : "=r"(h->hatch_ibatu[1]));
+		__asm volatile ("mfibatl %0,1" : "=r"(h->hatch_ibatl[1]));
+		__asm volatile ("mfibatu %0,2" : "=r"(h->hatch_ibatu[2]));
+		__asm volatile ("mfibatl %0,2" : "=r"(h->hatch_ibatl[2]));
+		__asm volatile ("mfibatu %0,3" : "=r"(h->hatch_ibatu[3]));
+		__asm volatile ("mfibatl %0,3" : "=r"(h->hatch_ibatl[3]));
+		__asm volatile ("mfdbatu %0,0" : "=r"(h->hatch_dbatu[0]));
+		__asm volatile ("mfdbatl %0,0" : "=r"(h->hatch_dbatl[0]));
+		__asm volatile ("mfdbatu %0,1" : "=r"(h->hatch_dbatu[1]));
+		__asm volatile ("mfdbatl %0,1" : "=r"(h->hatch_dbatl[1]));
+		__asm volatile ("mfdbatu %0,2" : "=r"(h->hatch_dbatu[2]));
+		__asm volatile ("mfdbatl %0,2" : "=r"(h->hatch_dbatl[2]));
+		__asm volatile ("mfdbatu %0,3" : "=r"(h->hatch_dbatu[3]));
+		__asm volatile ("mfdbatl %0,3" : "=r"(h->hatch_dbatl[3]));
+		__asm volatile ("sync; isync");
+	}
 
 	if (md_setup_trampoline(h, ci) == -1)
 		return -1;
@@ -1416,28 +1410,37 @@ cpu_hatch(void)
 	curlwp = ci->ci_curlwp;
 	cpu_spinstart_ack = 0;
 
-	/* Initialize MMU. */
-	__asm ("mtibatu 0,%0" :: "r"(h->hatch_ibatu[0]));
-	__asm ("mtibatl 0,%0" :: "r"(h->hatch_ibatl[0]));
-	__asm ("mtibatu 1,%0" :: "r"(h->hatch_ibatu[1]));
-	__asm ("mtibatl 1,%0" :: "r"(h->hatch_ibatl[1]));
-	__asm ("mtibatu 2,%0" :: "r"(h->hatch_ibatu[2]));
-	__asm ("mtibatl 2,%0" :: "r"(h->hatch_ibatl[2]));
-	__asm ("mtibatu 3,%0" :: "r"(h->hatch_ibatu[3]));
-	__asm ("mtibatl 3,%0" :: "r"(h->hatch_ibatl[3]));
-	__asm ("mtdbatu 0,%0" :: "r"(h->hatch_dbatu[0]));
-	__asm ("mtdbatl 0,%0" :: "r"(h->hatch_dbatl[0]));
-	__asm ("mtdbatu 1,%0" :: "r"(h->hatch_dbatu[1]));
-	__asm ("mtdbatl 1,%0" :: "r"(h->hatch_dbatl[1]));
-	__asm ("mtdbatu 2,%0" :: "r"(h->hatch_dbatu[2]));
-	__asm ("mtdbatl 2,%0" :: "r"(h->hatch_dbatl[2]));
-	__asm ("mtdbatu 3,%0" :: "r"(h->hatch_dbatu[3]));
-	__asm ("mtdbatl 3,%0" :: "r"(h->hatch_dbatl[3]));
+	if ((oeacpufeat & OEACPU_NOBAT) == 0) {
+		/* Initialize MMU. */
+		__asm ("mtibatu 0,%0" :: "r"(h->hatch_ibatu[0]));
+		__asm ("mtibatl 0,%0" :: "r"(h->hatch_ibatl[0]));
+		__asm ("mtibatu 1,%0" :: "r"(h->hatch_ibatu[1]));
+		__asm ("mtibatl 1,%0" :: "r"(h->hatch_ibatl[1]));
+		__asm ("mtibatu 2,%0" :: "r"(h->hatch_ibatu[2]));
+		__asm ("mtibatl 2,%0" :: "r"(h->hatch_ibatl[2]));
+		__asm ("mtibatu 3,%0" :: "r"(h->hatch_ibatu[3]));
+		__asm ("mtibatl 3,%0" :: "r"(h->hatch_ibatl[3]));
+		__asm ("mtdbatu 0,%0" :: "r"(h->hatch_dbatu[0]));
+		__asm ("mtdbatl 0,%0" :: "r"(h->hatch_dbatl[0]));
+		__asm ("mtdbatu 1,%0" :: "r"(h->hatch_dbatu[1]));
+		__asm ("mtdbatl 1,%0" :: "r"(h->hatch_dbatl[1]));
+		__asm ("mtdbatu 2,%0" :: "r"(h->hatch_dbatu[2]));
+		__asm ("mtdbatl 2,%0" :: "r"(h->hatch_dbatl[2]));
+		__asm ("mtdbatu 3,%0" :: "r"(h->hatch_dbatu[3]));
+		__asm ("mtdbatl 3,%0" :: "r"(h->hatch_dbatl[3]));
+	}
 
-	mtspr(SPR_HID0, h->hatch_hid0);
+#ifdef PPC_OEA64_BRIDGE
+	if ((oeacpufeat & OEACPU_64_BRIDGE) != 0) {
+		mtspr64(SPR_HID0, h->hatch_hid0);
+	} else
+#endif
+		mtspr(SPR_HID0, h->hatch_hid0);
 
-	__asm ("mtibatl 0,%0; mtibatu 0,%1; mtdbatl 0,%0; mtdbatu 0,%1;"
-	    :: "r"(battable[0].batl), "r"(battable[0].batu));
+	if ((oeacpufeat & OEACPU_NOBAT) == 0) {
+		__asm ("mtibatl 0,%0; mtibatu 0,%1; mtdbatl 0,%0; mtdbatu 0,%1;"
+		    :: "r"(battable[0].batl), "r"(battable[0].batu));
+	}
 
 	__asm volatile ("sync");
 	for (i = 0; i < 16; i++)

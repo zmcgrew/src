@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.83 2017/12/20 08:21:11 skrll Exp $	*/
+/*	$NetBSD: xhci.c,v 1.86 2018/02/07 15:55:58 prlw1 Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.83 2017/12/20 08:21:11 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.86 2018/02/07 15:55:58 prlw1 Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -577,8 +577,10 @@ xhci_childdet(device_t self, device_t child)
 {
 	struct xhci_softc * const sc = device_private(self);
 
-	KASSERT(sc->sc_child == child);
-	if (child == sc->sc_child)
+	KASSERT((sc->sc_child == child) || (sc->sc_child2 == child));
+	if (child == sc->sc_child2)
+		sc->sc_child2 = NULL;
+	else if (child == sc->sc_child)
 		sc->sc_child = NULL;
 }
 
@@ -3656,15 +3658,12 @@ xhci_root_intr_start(struct usbd_xfer *xfer)
 static void
 xhci_root_intr_abort(struct usbd_xfer *xfer)
 {
-	struct xhci_softc * const sc = XHCI_XFER2SC(xfer);
-	const size_t bn = XHCI_XFER2BUS(xfer) == &sc->sc_bus ? 0 : 1;
+	struct xhci_softc * const sc __diagused = XHCI_XFER2SC(xfer);
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	KASSERT(xfer->ux_pipe->up_intrxfer == xfer);
-
-	sc->sc_intrxfer[bn] = NULL;
 
 	xfer->ux_status = USBD_CANCELLED;
 	usb_transfer_complete(xfer);

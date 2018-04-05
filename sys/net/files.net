@@ -1,4 +1,4 @@
-#	$NetBSD: files.net,v 1.14 2018/01/10 10:56:30 knakahara Exp $
+#	$NetBSD: files.net,v 1.16 2018/02/27 14:28:01 maxv Exp $
 
 # XXX CLEANUP
 define	net
@@ -12,7 +12,6 @@ file	net/if_arcsubr.c		arcnet			needs-flag
 file	net/if_atmsubr.c		atm
 file	net/if_bridge.c			bridge			needs-flag
 file	net/bridgestp.c			bridge
-file	net/if_ecosubr.c		eco
 file	net/if_etherip.c		etherip			needs-flag
 file	net/if_ethersubr.c		ether | fddi | netatalk | token |
 					    wlan		needs-flag
@@ -48,6 +47,7 @@ file	net/radix.c			net
 file	net/raw_cb.c			net
 file	net/raw_usrreq.c		net
 file	net/route.c			net
+file	net/rss_config.c		net
 file	net/rtbl.c			net
 file	net/rtsock.c			net
 file	net/slcompress.c		sl | ppp | strip | (irip & irip_vj)

@@ -1,6 +1,6 @@
-/*	$NetBSD: mbuf.h,v 1.175 2018/01/22 07:11:45 maxv Exp $	*/
+/*	$NetBSD: mbuf.h,v 1.180 2018/03/21 17:03:09 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1996, 1997, 1999, 2001, 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -130,7 +130,7 @@ enum mowner_counter_index {
 struct mowner_counter {
 	u_long mc_counter[MOWNER_COUNTER_NCOUNTERS];
 };
-#endif /* defined(_KERNEL) */
+#endif
 
 /* userland-exported version of struct mowner */
 struct mowner_user {
@@ -146,7 +146,7 @@ struct mowner_user {
  */
 #define	mtod(m, t)	((t)((m)->m_data))
 
-/* header at beginning of each mbuf: */
+/* header at beginning of each mbuf */
 struct m_hdr {
 	struct	mbuf *mh_next;		/* next buffer in chain */
 	struct	mbuf *mh_nextpkt;	/* next chain in queue/record */
@@ -177,7 +177,7 @@ struct m_hdr {
  * Size ILP32: 40
  *       LP64: 56
  */
-struct	pkthdr {
+struct pkthdr {
 	union {
 		void		*ctx;		/* for M_GETCTX/M_SETCTX */
 		if_index_t	index;		/* rcv interface index */
@@ -200,10 +200,7 @@ struct	pkthdr {
 	void	*pattr_hdr;		/* ALTQ: saved header position in mbuf */
 };
 
-/*
- * Note: These bits are carefully arrange so that the compiler can have
- * a prayer of generating a jump table.
- */
+/* Checksumming flags. */
 #define	M_CSUM_TCPv4		0x00000001	/* TCP header/payload */
 #define	M_CSUM_UDPv4		0x00000002	/* UDP header/payload */
 #define	M_CSUM_TCP_UDP_BAD	0x00000004	/* TCP/UDP checksum bad */
@@ -238,7 +235,7 @@ struct	pkthdr {
  * M_CSUM_DATA_IPv6_HL: length of ip6_hdr + ext header.
  * ie. offset of UDP/TCP header in the packet.
  *
- * M_CSUM_DATA_IPv6_OFFSET: offset of the checksum field in UDP/TCP header. 
+ * M_CSUM_DATA_IPv6_OFFSET: offset of the checksum field in UDP/TCP header.
  */
 
 #define	M_CSUM_DATA_IPv6_HL(x)		((x) >> 16)
@@ -353,7 +350,7 @@ MBUF_DEFINE(mbuf, MHLEN, MLEN);
 					 * IP header */
 #define	M_DECRYPTED	0x00000020	/* confidentiality */
 #define	M_LOOP		0x00000040	/* for Mbuf statistics */
-#define	M_AUTHIPDGM     0x00000080	/* data origin authentication */
+#define	M_AUTHIPDGM	0x00000080	/* data origin authentication */
 #define	M_BCAST		0x00000100	/* send/received as link-level
 					 * broadcast */
 #define	M_MCAST		0x00000200	/* send/received as link-level
@@ -365,7 +362,6 @@ MBUF_DEFINE(mbuf, MHLEN, MLEN);
 #define	M_LINK0		0x00001000	/* link layer specific flag */
 #define	M_LINK1		0x00002000	/* link layer specific flag */
 #define	M_LINK2		0x00004000	/* link layer specific flag */
-
 #define	M_LINK3		0x00008000	/* link layer specific flag */
 #define	M_LINK4		0x00010000	/* link layer specific flag */
 #define	M_LINK5		0x00020000	/* link layer specific flag */
@@ -816,13 +812,13 @@ struct mbstat_cpu {
 
 #ifdef	_KERNEL
 extern struct mbstat mbstat;
-extern int	nmbclusters;		/* limit on the # of clusters */
-extern int	mblowat;		/* mbuf low water mark */
-extern int	mcllowat;		/* mbuf cluster low water mark */
-extern int	max_linkhdr;		/* largest link-level header */
-extern int	max_protohdr;		/* largest protocol header */
-extern int	max_hdr;		/* largest link+protocol header */
-extern int	max_datalen;		/* MHLEN - max_hdr */
+extern int nmbclusters;		/* limit on the # of clusters */
+extern int mblowat;		/* mbuf low water mark */
+extern int mcllowat;		/* mbuf cluster low water mark */
+extern int max_linkhdr;		/* largest link-level header */
+extern int max_protohdr;		/* largest protocol header */
+extern int max_hdr;		/* largest link+protocol header */
+extern int max_datalen;		/* MHLEN - max_hdr */
 extern const int msize;			/* mbuf base size */
 extern const int mclbytes;		/* mbuf cluster size */
 extern pool_cache_t mb_cache;
@@ -837,10 +833,12 @@ extern struct mowner revoked_mowner;
 MALLOC_DECLARE(M_MBUF);
 MALLOC_DECLARE(M_SONAME);
 
+void	m_pkthdr_remove(struct mbuf *);
+
 struct	mbuf *m_copym(struct mbuf *, int, int, int);
 struct	mbuf *m_copypacket(struct mbuf *, int);
 struct	mbuf *m_devget(char *, int, int, struct ifnet *,
-			    void (*copy)(const void *, void *, size_t));
+    void (*copy)(const void *, void *, size_t));
 struct	mbuf *m_dup(struct mbuf *, int, int, int);
 struct	mbuf *m_get(int, int);
 struct	mbuf *m_getclr(int, int);
@@ -854,13 +852,12 @@ struct	mbuf *m_getptr(struct mbuf *, int, int *);
 void	m_adj(struct mbuf *, int);
 struct	mbuf *m_defrag(struct mbuf *, int);
 int	m_apply(struct mbuf *, int, int,
-		int (*)(void *, void *, unsigned int), void *);
+    int (*)(void *, void *, unsigned int), void *);
 void	m_cat(struct mbuf *,struct mbuf *);
 void	m_clget(struct mbuf *, int);
-int	m_mballoc(int, int);
 void	m_copyback(struct mbuf *, int, int, const void *);
 struct	mbuf *m_copyback_cow(struct mbuf *, int, int, const void *, int);
-int 	m_makewritable(struct mbuf **, int, int, int);
+int	m_makewritable(struct mbuf **, int, int, int);
 struct	mbuf *m_getcl(int, int, int);
 void	m_copydata(struct mbuf *, int, int, void *);
 struct	mbuf *m_free(struct mbuf *);
@@ -868,7 +865,6 @@ void	m_freem(struct mbuf *);
 void	m_reclaim(void *, int);
 void	mbinit(void);
 void	m_ext_free(struct mbuf *);
-char *	m_mapin(struct mbuf *);
 void	m_move_pkthdr(struct mbuf *, struct mbuf *);
 
 bool	m_ensure_contig(struct mbuf **, int);
@@ -899,34 +895,16 @@ struct	m_tag *m_tag_next(struct mbuf *, struct m_tag *);
 
 /* Packet tag types */
 #define PACKET_TAG_NONE				0  /* Nothing */
-						   /* 1: Used to be VLAN ID */
-#define PACKET_TAG_ENCAP			2  /* encapsulation data */
-#define PACKET_TAG_ESP				3  /* ESP information */
 #define PACKET_TAG_SO				4  /* sending socket pointer */
 #define PACKET_TAG_PF				11 /* packet filter */
 #define PACKET_TAG_ALTQ_QID			12 /* ALTQ queue id */
-
-#define PACKET_TAG_IPSEC_IN_CRYPTO_DONE		16
-#define PACKET_TAG_IPSEC_IN_DONE		17
 #define PACKET_TAG_IPSEC_OUT_DONE		18
-#define	PACKET_TAG_IPSEC_OUT_CRYPTO_NEEDED	19  /* NIC IPsec crypto req'ed */
-#define	PACKET_TAG_IPSEC_IN_COULD_DO_CRYPTO	20  /* NIC notifies IPsec */
-#define	PACKET_TAG_IPSEC_PENDING_TDB		21  /* Reminder to do IPsec */
-
-#define	PACKET_TAG_IPSEC_SOCKET			22 /* IPSEC socket ref */
-#define	PACKET_TAG_IPSEC_HISTORY		23 /* IPSEC history */
-
 #define	PACKET_TAG_IPSEC_NAT_T_PORTS		25 /* two uint16_t */
-
 #define	PACKET_TAG_INET6			26 /* IPv6 info */
-
-#define	PACKET_TAG_ECO_RETRYPARMS		27 /* Econet retry parameters */
-
 #define	PACKET_TAG_TUNNEL_INFO			28 /* tunnel identification and
 						    * protocol callback, for
 						    * loop detection/recovery
 						    */
-
 #define	PACKET_TAG_MPLS				29 /* Indicate it's for MPLS */
 #define	PACKET_TAG_SRCROUTE			30 /* IPv4 source routing */
 
@@ -946,22 +924,6 @@ m_length(const struct mbuf *m)
 	for (m0 = m; m0 != NULL; m0 = m0->m_next)
 		pktlen += m0->m_len;
 	return pktlen;
-}
-
-static __inline void
-m_hdr_init(struct mbuf *m, short type, struct mbuf *next, char *data, int len)
-{
-
-	KASSERT(m != NULL);
-
-	mowner_init(m, type);
-	m->m_ext_ref = m; /* default */
-	m->m_type = type;
-	m->m_len = len;
-	m->m_next = next;
-	m->m_nextpkt = NULL; /* default */
-	m->m_data = data;
-	m->m_flags = 0; /* default */
 }
 
 static __inline void
@@ -985,26 +947,6 @@ m_copy_rcvif(struct mbuf *m, const struct mbuf *n)
 {
 
 	m->m_pkthdr.rcvif_index = n->m_pkthdr.rcvif_index;
-}
-
-static __inline void
-m_pkthdr_init(struct mbuf *m)
-{
-
-	KASSERT(m != NULL);
-
-	m->m_data = m->m_pktdat;
-	m->m_flags = M_PKTHDR;
-
-	m_reset_rcvif(m);
-	m->m_pkthdr.len = 0;
-	m->m_pkthdr.csum_flags = 0;
-	m->m_pkthdr.csum_data = 0;
-	SLIST_INIT(&m->m_pkthdr.tags);
-
-	m->m_pkthdr.pattr_class = NULL;
-	m->m_pkthdr.pattr_af = AF_UNSPEC;
-	m->m_pkthdr.pattr_hdr = NULL;
 }
 
 void m_print(const struct mbuf *, const char *, void (*)(const char *, ...)

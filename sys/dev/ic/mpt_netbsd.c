@@ -1,4 +1,4 @@
-/*	$NetBSD: mpt_netbsd.c,v 1.33 2016/05/02 19:18:29 christos Exp $	*/
+/*	$NetBSD: mpt_netbsd.c,v 1.35 2018/02/05 22:14:26 mrg Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpt_netbsd.c,v 1.33 2016/05/02 19:18:29 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpt_netbsd.c,v 1.35 2018/02/05 22:14:26 mrg Exp $");
 
 #include "bio.h"
 
@@ -1093,11 +1093,11 @@ mpt_run_xfer(mpt_softc_t *mpt, struct scsipi_xfer *xs)
 	if (mpt->verbose > 1)
 		mpt_print_scsi_io_request(mpt_req);
 
-		if (xs->timeout == 0) {
-			mpt_prt(mpt, "mpt_run_xfer: no timeout specified for request: 0x%x\n",
+	if (xs->timeout == 0) {
+		mpt_prt(mpt, "mpt_run_xfer: no timeout specified for request: 0x%x\n",
 			req->index);
-			xs->timeout = 500;
-		}
+		xs->timeout = 500;
+	}
 
 	s = splbio();
 	if (__predict_true((xs->xs_control & XS_CTL_POLL) == 0))
@@ -1121,18 +1121,18 @@ mpt_set_xfer_mode(mpt_softc_t *mpt, struct scsipi_xfer_mode *xm)
 {
 	fCONFIG_PAGE_SCSI_DEVICE_1 tmp;
 
-	/*
-	 * Always allow disconnect; we don't have a way to disable
-	 * it right now, in any case.
-	 */
-	mpt->mpt_disc_enable |= (1 << xm->xm_target);
-
 	if (xm->xm_mode & PERIPH_CAP_TQING)
 		mpt->mpt_tag_enable |= (1 << xm->xm_target);
 	else
 		mpt->mpt_tag_enable &= ~(1 << xm->xm_target);
 
 	if (mpt->is_scsi) {
+		/*
+		 * Always allow disconnect; we don't have a way to disable
+		 * it right now, in any case.
+		 */
+		mpt->mpt_disc_enable |= (1 << xm->xm_target);
+
 		/*
 		 * SCSI transport settings only make any sense for
 		 * SCSI

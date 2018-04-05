@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.279 2018/01/20 08:45:28 maxv Exp $	*/
+/*	$NetBSD: pmap.c,v 1.289 2018/03/04 23:25:35 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017 The NetBSD Foundation, Inc.
@@ -170,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.279 2018/01/20 08:45:28 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.289 2018/03/04 23:25:35 jdolecek Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -559,7 +559,7 @@ static void pmap_init_pcpu(void);
 #ifdef __HAVE_DIRECT_MAP
 static void pmap_init_directmap(struct pmap *);
 #endif
-#if !defined(XEN) && !defined(SVS)
+#if !defined(XEN)
 static void pmap_remap_global(void);
 #endif
 #ifndef XEN
@@ -581,7 +581,7 @@ static void pmap_remove_ptes(struct pmap *, struct vm_page *, vaddr_t, vaddr_t,
 static paddr_t pmap_get_physpage(void);
 static void pmap_alloc_level(struct pmap *, vaddr_t, long *);
 
-static bool pmap_reactivate(struct pmap *);
+static void pmap_reactivate(struct pmap *);
 
 /*
  * p m a p   h e l p e r   f u n c t i o n s
@@ -757,11 +757,7 @@ pmap_map_ptes(struct pmap *pmap, struct pmap **pmap2,
 		 * often the case during exit(), when we have switched
 		 * to the kernel pmap in order to destroy a user pmap.
 		 */
-		if (!pmap_reactivate(pmap)) {
-			u_int gen = uvm_emap_gen_return();
-			tlbflush();
-			uvm_emap_update(gen);
-		}
+		pmap_reactivate(pmap);
 	} else {
 		/*
 		 * Toss current pmap from CPU, but keep a reference to it.
@@ -1289,7 +1285,7 @@ pmap_bootstrap(vaddr_t kva_start)
 	 * operation of the system.
 	 */
 
-#if !defined(XEN) && !defined(SVS)
+#if !defined(XEN)
 	/*
 	 * Begin to enable global TLB entries if they are supported.
 	 * The G bit has no effect until the CR4_PGE bit is set in CR4,
@@ -1655,7 +1651,7 @@ pmap_init_directmap(struct pmap *kpm)
 }
 #endif /* __HAVE_DIRECT_MAP */
 
-#if !defined(XEN) && !defined(SVS)
+#if !defined(XEN)
 /*
  * Remap all of the virtual pages created so far with the PG_G bit.
  */
@@ -1672,7 +1668,7 @@ pmap_remap_global(void)
 	for ( ; kva < kva_end; kva += PAGE_SIZE) {
 		p1i = pl1_i(kva);
 		if (pmap_valid_entry(PTE_BASE[p1i]))
-			PTE_BASE[p1i] |= PG_G;
+			PTE_BASE[p1i] |= pmap_pg_g;
 	}
 
 	/* kernel segments */
@@ -1685,7 +1681,7 @@ pmap_remap_global(void)
 		for ( ; kva < kva_end; kva += PAGE_SIZE) {
 			p1i = pl1_i(kva);
 			if (pmap_valid_entry(PTE_BASE[p1i]))
-				PTE_BASE[p1i] |= PG_G;
+				PTE_BASE[p1i] |= pmap_pg_g;
 		}
 	}
 
@@ -1695,7 +1691,7 @@ pmap_remap_global(void)
 	for ( ; kva < kva_end; kva += PAGE_SIZE) {
 		p1i = pl1_i(kva);
 		if (pmap_valid_entry(PTE_BASE[p1i]))
-			PTE_BASE[p1i] |= PG_G;
+			PTE_BASE[p1i] |= pmap_pg_g;
 	}
 }
 #endif
@@ -2130,7 +2126,7 @@ pmap_free_ptp(struct pmap *pmap, struct vm_page *ptp, vaddr_t va,
 			xen_kpm_sync(pmap, index);
 		}
 #elif defined(SVS)
-		if (level == PTP_LEVELS - 1) {
+		if (svs_enabled && level == PTP_LEVELS - 1) {
 			svs_pmap_sync(pmap, index);
 		}
 #endif
@@ -2235,7 +2231,7 @@ pmap_get_ptp(struct pmap *pmap, vaddr_t va, pd_entry_t * const *pdes, int flags)
 			xen_kpm_sync(pmap, index);
 		}
 #elif defined(SVS)
-		if (i == PTP_LEVELS) {
+		if (svs_enabled && i == PTP_LEVELS) {
 			svs_pmap_sync(pmap, index);
 		}
 #endif
@@ -2548,6 +2544,36 @@ pmap_check_ptps(struct pmap *pmap)
 	}
 }
 
+static inline void
+pmap_check_inuse(struct pmap *pmap)
+{
+#ifdef DIAGNOSTIC
+	CPU_INFO_ITERATOR cii;
+	struct cpu_info *ci;
+
+	for (CPU_INFO_FOREACH(cii, ci)) {
+		if (ci->ci_pmap == pmap)
+			panic("destroying pmap being used");
+#if defined(XEN) && defined(__x86_64__)
+		for (int i = 0; i < PDIR_SLOT_PTE; i++) {
+			if (pmap->pm_pdir[i] != 0 &&
+			    ci->ci_kpm_pdir[i] == pmap->pm_pdir[i]) {
+				printf("pmap_destroy(%p) pmap_kernel %p "
+				    "curcpu %d cpu %d ci_pmap %p "
+				    "ci->ci_kpm_pdir[%d]=%" PRIx64
+				    " pmap->pm_pdir[%d]=%" PRIx64 "\n",
+				    pmap, pmap_kernel(), curcpu()->ci_index,
+				    ci->ci_index, ci->ci_pmap,
+				    i, ci->ci_kpm_pdir[i],
+				    i, pmap->pm_pdir[i]);
+				panic("%s: used pmap", __func__);
+			}
+		}
+#endif
+	}
+#endif /* DIAGNOSTIC */
+}
+
 /*
  * pmap_destroy: drop reference count on pmap.   free pmap if
  *	reference count goes to zero.
@@ -2586,31 +2612,7 @@ pmap_destroy(struct pmap *pmap)
 		return;
 	}
 
-#ifdef DIAGNOSTIC
-	CPU_INFO_ITERATOR cii;
-	struct cpu_info *ci;
-
-	for (CPU_INFO_FOREACH(cii, ci)) {
-		if (ci->ci_pmap == pmap)
-			panic("destroying pmap being used");
-#if defined(XEN) && defined(__x86_64__)
-		for (i = 0; i < PDIR_SLOT_PTE; i++) {
-			if (pmap->pm_pdir[i] != 0 &&
-			    ci->ci_kpm_pdir[i] == pmap->pm_pdir[i]) {
-				printf("pmap_destroy(%p) pmap_kernel %p "
-				    "curcpu %d cpu %d ci_pmap %p "
-				    "ci->ci_kpm_pdir[%d]=%" PRIx64
-				    " pmap->pm_pdir[%d]=%" PRIx64 "\n",
-				    pmap, pmap_kernel(), curcpu()->ci_index,
-				    ci->ci_index, ci->ci_pmap,
-				    i, ci->ci_kpm_pdir[i],
-				    i, pmap->pm_pdir[i]);
-				panic("%s: used pmap", __func__);
-			}
-		}
-#endif
-	}
-#endif /* DIAGNOSTIC */
+	pmap_check_inuse(pmap);
 
 	/*
 	 * Reference count is zero, free pmap resources and then free pmap.
@@ -2853,23 +2855,38 @@ pmap_activate(struct lwp *l)
 
 	ci = curcpu();
 
-	if (l == ci->ci_curlwp) {
-		KASSERT(ci->ci_want_pmapload == 0);
-		KASSERT(ci->ci_tlbstate != TLBSTATE_VALID);
+	if (l != ci->ci_curlwp)
+		return;
 
-		/*
-		 * no need to switch to kernel vmspace because
-		 * it's a subset of any vmspace.
-		 */
+	KASSERT(ci->ci_want_pmapload == 0);
+	KASSERT(ci->ci_tlbstate != TLBSTATE_VALID);
 
-		if (pmap == pmap_kernel()) {
-			ci->ci_want_pmapload = 0;
-			return;
-		}
+	/*
+	 * no need to switch to kernel vmspace because
+	 * it's a subset of any vmspace.
+	 */
 
-		ci->ci_want_pmapload = 1;
+	if (pmap == pmap_kernel()) {
+		ci->ci_want_pmapload = 0;
+		return;
 	}
+
+	ci->ci_want_pmapload = 1;
 }
+
+#if defined(XEN) && defined(__x86_64__)
+#define	KASSERT_PDIRPA(pmap) \
+	KASSERT(pmap_pdirpa(pmap, 0) == ci->ci_xen_current_user_pgd || \
+	    pmap == pmap_kernel())
+#elif defined(PAE)
+#define	KASSERT_PDIRPA(pmap) \
+	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(ci->ci_pae_l3_pdir[0]))
+#elif !defined(XEN)
+#define	KASSERT_PDIRPA(pmap) \
+	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(rcr3()))
+#else
+#define	KASSERT_PDIRPA(pmap) 	KASSERT(true)	/* nothing to do */
+#endif
 
 /*
  * pmap_reactivate: try to regain reference to the pmap.
@@ -2877,21 +2894,14 @@ pmap_activate(struct lwp *l)
  * => Must be called with kernel preemption disabled.
  */
 
-static bool
+static void
 pmap_reactivate(struct pmap *pmap)
 {
 	struct cpu_info * const ci = curcpu();
 	const cpuid_t cid = cpu_index(ci);
-	bool result;
 
 	KASSERT(kpreempt_disabled());
-#if defined(XEN) && defined(__x86_64__)
-	KASSERT(pmap_pdirpa(pmap, 0) == ci->ci_xen_current_user_pgd);
-#elif defined(PAE)
-	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(ci->ci_pae_l3_pdir[0]));
-#elif !defined(XEN)
-	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(rcr3()));
-#endif
+	KASSERT_PDIRPA(pmap);
 
 	/*
 	 * If we still have a lazy reference to this pmap, we can assume
@@ -2908,13 +2918,17 @@ pmap_reactivate(struct pmap *pmap)
 
 	if (kcpuset_isset(pmap->pm_cpus, cid)) {
 		/* We have the reference, state is valid. */
-		result = true;
 	} else {
-		/* Must reload the TLB. */
+		/*
+		 * Must reload the TLB, pmap has been changed during
+		 * deactivated.
+		 */
 		kcpuset_atomic_set(pmap->pm_cpus, cid);
-		result = false;
+
+		u_int gen = uvm_emap_gen_return();
+		tlbflush();
+		uvm_emap_update(gen);
 	}
-	return result;
 }
 
 /*
@@ -2964,18 +2978,7 @@ pmap_load(void)
 	pcb = lwp_getpcb(l);
 
 	if (pmap == oldpmap) {
-		if (!pmap_reactivate(pmap)) {
-			u_int gen = uvm_emap_gen_return();
-
-			/*
-			 * pmap has been changed during deactivated.
-			 * our tlb may be stale.
-			 */
-
-			tlbflush();
-			uvm_emap_update(gen);
-		}
-
+		pmap_reactivate(pmap);
 		ci->ci_want_pmapload = 0;
 		kpreempt_enable();
 		return;
@@ -2991,14 +2994,7 @@ pmap_load(void)
 	kcpuset_atomic_clear(oldpmap->pm_cpus, cid);
 	kcpuset_atomic_clear(oldpmap->pm_kernel_cpus, cid);
 
-#if defined(XEN) && defined(__x86_64__)
-	KASSERT(pmap_pdirpa(oldpmap, 0) == ci->ci_xen_current_user_pgd ||
-	    oldpmap == pmap_kernel());
-#elif defined(PAE)
-	KASSERT(pmap_pdirpa(oldpmap, 0) == pmap_pte2pa(ci->ci_pae_l3_pdir[0]));
-#elif !defined(XEN)
-	KASSERT(pmap_pdirpa(oldpmap, 0) == pmap_pte2pa(rcr3()));
-#endif
+	KASSERT_PDIRPA(oldpmap);
 	KASSERT(!kcpuset_isset(pmap->pm_cpus, cid));
 	KASSERT(!kcpuset_isset(pmap->pm_kernel_cpus, cid));
 
@@ -3103,13 +3099,7 @@ pmap_deactivate(struct lwp *l)
 		return;
 	}
 
-#if defined(XEN) && defined(__x86_64__)
-	KASSERT(pmap_pdirpa(pmap, 0) == ci->ci_xen_current_user_pgd);
-#elif defined(PAE)
-	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(ci->ci_pae_l3_pdir[0]));
-#elif !defined(XEN)
-	KASSERT(pmap_pdirpa(pmap, 0) == pmap_pte2pa(rcr3()));
-#endif
+	KASSERT_PDIRPA(pmap);
 	KASSERT(ci->ci_pmap == pmap);
 
 	/*
@@ -3388,7 +3378,8 @@ pmap_copy_page(paddr_t srcpa, paddr_t dstpa)
 	pmap_pte_set(srcpte, pmap_pa2pte(srcpa) | pteflags);
 	pmap_pte_set(dstpte, pmap_pa2pte(dstpa) | pteflags | PG_M);
 	pmap_pte_flush();
-	pmap_update_2pg(srcva, dstva);
+	pmap_update_pg(srcva);
+	pmap_update_pg(dstva);
 
 	memcpy((void *)dstva, (void *)srcva, PAGE_SIZE);
 

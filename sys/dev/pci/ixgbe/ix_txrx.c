@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.30 2017/12/04 09:29:42 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.37 2018/03/30 03:58:20 knakahara Exp $ */
 
 /******************************************************************************
 
@@ -238,8 +238,26 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 	if (IXGBE_TX_TRYLOCK(txr)) {
 		ixgbe_mq_start_locked(ifp, txr);
 		IXGBE_TX_UNLOCK(txr);
-	} else
-		softint_schedule(txr->txr_si);
+	} else {
+		if (adapter->txrx_use_workqueue) {
+			/*
+			 * This function itself is not called in interrupt
+			 * context, however it can be called in fast softint
+			 * context right after receiving forwarding packets.
+			 * So, it is required to protect workqueue from twice
+			 * enqueuing when the machine uses both spontaneous
+			 * packets and forwarding packets.
+			 */
+			u_int *enqueued = percpu_getref(adapter->txr_wq_enqueued);
+			if (*enqueued == 0) {
+				*enqueued = 1;
+				percpu_putref(adapter->txr_wq_enqueued);
+				workqueue_enqueue(adapter->txr_wq, &txr->wq_cookie, curcpu());
+			} else
+				percpu_putref(adapter->txr_wq_enqueued);
+		} else
+			softint_schedule(txr->txr_si);
+	}
 
 	return (0);
 } /* ixgbe_mq_start */
@@ -291,7 +309,8 @@ ixgbe_mq_start_locked(struct ifnet *ifp, struct tx_ring *txr)
 /************************************************************************
  * ixgbe_deferred_mq_start
  *
- *   Called from a taskqueue to drain queued transmit packets.
+ *   Called from a softint and workqueue (indirectly) to drain queued
+ *   transmit packets.
  ************************************************************************/
 void
 ixgbe_deferred_mq_start(void *arg)
@@ -305,6 +324,24 @@ ixgbe_deferred_mq_start(void *arg)
 		ixgbe_mq_start_locked(ifp, txr);
 	IXGBE_TX_UNLOCK(txr);
 } /* ixgbe_deferred_mq_start */
+
+/************************************************************************
+ * ixgbe_deferred_mq_start_work
+ *
+ *   Called from a workqueue to drain queued transmit packets.
+ ************************************************************************/
+void
+ixgbe_deferred_mq_start_work(struct work *wk, void *arg)
+{
+	struct tx_ring *txr = container_of(wk, struct tx_ring, wq_cookie);
+	struct adapter *adapter = txr->adapter;
+	u_int *enqueued = percpu_getref(adapter->txr_wq_enqueued);
+	*enqueued = 0;
+	percpu_putref(adapter->txr_wq_enqueued);
+
+	ixgbe_deferred_mq_start(txr);
+} /* ixgbe_deferred_mq_start */
+
 
 /************************************************************************
  * ixgbe_xmit
@@ -355,10 +392,10 @@ retry:
 
 		switch (error) {
 		case EAGAIN:
-			adapter->eagain_tx_dma_setup.ev_count++;
+			txr->q_eagain_tx_dma_setup++;
 			return EAGAIN;
 		case ENOMEM:
-			adapter->enomem_tx_dma_setup.ev_count++;
+			txr->q_enomem_tx_dma_setup++;
 			return EAGAIN;
 		case EFBIG:
 			/* Try it again? - one try */
@@ -368,23 +405,23 @@ retry:
 				 * XXX: m_defrag will choke on
 				 * non-MCLBYTES-sized clusters
 				 */
-				adapter->efbig_tx_dma_setup.ev_count++;
+				txr->q_efbig_tx_dma_setup++;
 				m = m_defrag(m_head, M_NOWAIT);
 				if (m == NULL) {
-					adapter->mbuf_defrag_failed.ev_count++;
+					txr->q_mbuf_defrag_failed++;
 					return ENOBUFS;
 				}
 				m_head = m;
 				goto retry;
 			} else {
-				adapter->efbig2_tx_dma_setup.ev_count++;
+				txr->q_efbig2_tx_dma_setup++;
 				return error;
 			}
 		case EINVAL:
-			adapter->einval_tx_dma_setup.ev_count++;
+			txr->q_einval_tx_dma_setup++;
 			return error;
 		default:
-			adapter->other_tx_dma_setup.ev_count++;
+			txr->q_other_tx_dma_setup++;
 			return error;
 		}
 	}
@@ -828,23 +865,23 @@ ixgbe_tx_ctx_setup(struct tx_ring *txr, struct mbuf *mp,
 
 	/* No support for offloads for non-L4 next headers */
  	switch (ipproto) {
- 		case IPPROTO_TCP:
-			if (mp->m_pkthdr.csum_flags &
-			    (M_CSUM_TCPv4 | M_CSUM_TCPv6))
-				type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_TCP;
-			else
-				offload = false;
-			break;
-		case IPPROTO_UDP:
-			if (mp->m_pkthdr.csum_flags &
-			    (M_CSUM_UDPv4 | M_CSUM_UDPv6))
-				type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_UDP;
-			else
-				offload = false;
-			break;
-		default:
+	case IPPROTO_TCP:
+		if (mp->m_pkthdr.csum_flags &
+		    (M_CSUM_TCPv4 | M_CSUM_TCPv6))
+			type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_TCP;
+		else
 			offload = false;
-			break;
+		break;
+	case IPPROTO_UDP:
+		if (mp->m_pkthdr.csum_flags &
+		    (M_CSUM_UDPv4 | M_CSUM_UDPv6))
+			type_tucmd_mlhl |= IXGBE_ADVTXD_TUCMD_L4T_UDP;
+		else
+			offload = false;
+		break;
+	default:
+		offload = false;
+		break;
 	}
 
 	if (offload) /* Insert L4 checksum into data descriptors */
@@ -993,7 +1030,7 @@ ixgbe_tso_setup(struct tx_ring *txr, struct mbuf *mp, u32 *cmd_type_len,
  *   processing the packet then free associated resources. The
  *   tx_buffer is put back on the free queue.
  ************************************************************************/
-void
+bool
 ixgbe_txeof(struct tx_ring *txr)
 {
 	struct adapter		*adapter = txr->adapter;
@@ -1032,13 +1069,13 @@ ixgbe_txeof(struct tx_ring *txr)
 		     txd[kring->nr_kflags].wb.status & IXGBE_TXD_STAT_DD)) {
 			netmap_tx_irq(ifp, txr->me);
 		}
-		return;
+		return false;
 	}
 #endif /* DEV_NETMAP */
 
 	if (txr->tx_avail == txr->num_desc) {
 		txr->busy = 0;
-		return;
+		return false;
 	}
 
 	/* Get work starting point */
@@ -1139,7 +1176,7 @@ ixgbe_txeof(struct tx_ring *txr)
 	if (txr->tx_avail == txr->num_desc)
 		txr->busy = 0;
 
-	return;
+	return ((limit > 0) ? false : true);
 } /* ixgbe_txeof */
 
 /************************************************************************
@@ -1855,6 +1892,7 @@ ixgbe_rxeof(struct ix_queue *que)
 			mp->m_next = nbuf->buf;
 		} else { /* Sending this frame */
 			m_set_rcvif(sendmp, ifp);
+			++rxr->packets;
 			rxr->rx_packets.ev_count++;
 			/* capture data for AIM */
 			rxr->bytes += sendmp->m_pkthdr.len;
@@ -2259,6 +2297,9 @@ ixgbe_allocate_queues(struct adapter *adapter)
 		que->me = i;
 		que->txr = &adapter->tx_rings[i];
 		que->rxr = &adapter->rx_rings[i];
+
+		mutex_init(&que->dc_mtx, MUTEX_DEFAULT, IPL_NET);
+		que->disabled_count = 0;
 	}
 
 	return (0);

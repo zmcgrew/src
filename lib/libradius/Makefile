@@ -1,4 +1,4 @@
-# $NetBSD: Makefile,v 1.12 2017/05/21 15:28:41 riastradh Exp $
+# $NetBSD: Makefile,v 1.15 2018/02/07 22:51:31 christos Exp $
 
 USE_FORT?= yes	# network protocol library
 
@@ -10,9 +10,10 @@ LINTFLAGS+= -Sw
 
 LIB=	radius
 CPPFLAGS+=	-I.
+CPPFLAGS+=	-DOPENSSL_API_COMPAT=0x10100000L
 
 CPPFLAGS+=	-DWITH_SSL
-LIBDPLIBS+=crypto ${.CURDIR}/../../crypto/external/bsd/openssl/lib/libcrypto
+LIBDPLIBS+=crypto ${.CURDIR}/../../crypto/external/bsd/${EXTERNAL_OPENSSL_SUBDIR}/lib/libcrypto
 
 SRCS=	radlib.c
 INCS=	radlib.h radlib_vs.h

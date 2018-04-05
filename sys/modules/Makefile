@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.199 2018/01/25 23:40:06 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.202 2018/02/26 07:29:24 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -191,6 +191,7 @@ SUBDIR+=	hdaudio
 SUBDIR+=	hdaudio_pci
 SUBDIR+=	hdaudioverbose
 SUBDIR+=	hpet
+SUBDIR+=	ichsmb
 SUBDIR+=	odcm
 SUBDIR+=	powernow
 SUBDIR+=	tco
@@ -376,6 +377,12 @@ SUBDIR+=	auvitek
 SUBDIR+=	coram
 SUBDIR+=	cxdtv
 SUBDIR+=	emdtv
+
+# Intel Integrated Memory Controller and associated SMBus
+# (Experimental)
+SUBDIR+=	imc
+SUBDIR+=	imcsmb
+
 .endif
 
 .if (${MKISCSI} != "no")

@@ -1,4 +1,4 @@
-.\"     $NetBSD: ukfs.3,v 1.14 2014/02/14 07:27:37 wiz Exp $
+.\"     $NetBSD: ukfs.3,v 1.16 2018/03/12 11:56:34 pgoyette Exp $
 .\"
 .\" Copyright (c) 2008 Antti Kantee.  All rights reserved.
 .\"
@@ -23,7 +23,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd February 13, 2014
+.Dd March 12, 2018
 .Dt UKFS 3
 .Os
 .Sh NAME
@@ -57,7 +57,7 @@ If a lower level interface it desired,
 .Xr rump 3
 kernels should be used directly.
 However, much like system calls, the interfaces of
-.Nm ,
+.Nm
 are self-contained and require no tracking and release of resources.
 The only exception is the file system handle
 .Ft struct ukfs
@@ -84,7 +84,7 @@ which should be released after use.
 .El
 .Pp
 .Fn ukfs_init
-intializes the library and must be called once per process using
+initializes the library and must be called once per process using
 .Nm .
 .Pp
 .Fn ukfs_modload
@@ -140,7 +140,7 @@ If there is not enough room in the caller's buffer for all file system
 types, as many as fit will be returned.
 .Pp
 .Fn ukfs_mount
-intializes a file system image.
+initializes a file system image.
 The handle resulting from the operation is passed to all other routines
 and identifies the instance of the mount analoguous to what a pathname
 specifies in a normally mounted file system.

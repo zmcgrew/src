@@ -1,4 +1,4 @@
-#	$NetBSD: bsd.own.mk,v 1.1029 2018/01/27 23:59:17 christos Exp $
+#	$NetBSD: bsd.own.mk,v 1.1053 2018/04/01 04:35:02 ryo Exp $
 
 # This needs to be before bsd.init.mk
 .if defined(BSD_MK_COMPAT_FILE)
@@ -64,10 +64,16 @@ MKGCC?=		no
 #
 # What GCC is used?
 #
-.if ${MACHINE_CPU} == "aarch64"
+.if \
+    ${MACHINE_CPU} == "aarch64"
 HAVE_GCC?=	0
+.elif \
+    ${MACHINE_CPU} == "m68000" || \
+    ${MACHINE_CPU} == "m68k" || \
+    ${MACHINE_CPU} == "vax"
+HAVE_GCC?=	5
 .else
-HAVE_GCC?=	53
+HAVE_GCC?=	6
 .endif
 
 #
@@ -80,13 +86,28 @@ MKGCCCMDS?=	no
 # We import the old gcc as "gcc.old" when upgrading.  EXTERNAL_GCC_SUBDIR is
 # set to the relevant subdirectory in src/external/gpl3 for his HAVE_GCC.
 #
-.if ${HAVE_GCC} == 53
+.if ${HAVE_GCC} == 6
+EXTERNAL_GCC_SUBDIR?=	gcc
+.elif ${HAVE_GCC} == 5
 EXTERNAL_GCC_SUBDIR?=	gcc.old
 .else
 EXTERNAL_GCC_SUBDIR=?	/does/not/exist
 .endif
 .else
 MKGCCCMDS?=	no
+.endif
+
+#
+# What OpenSSL is used?
+# 
+HAVE_OPENSSL?=  11
+
+.if ${HAVE_OPENSSL} == 11
+EXTERNAL_OPENSSL_SUBDIR=openssl
+.elif ${HAVE_OPENSSL} == 10
+EXTERNAL_OPENSSL_SUBDIR=openssl.old
+.else
+EXTERNAL_OPENSSL_SUBDIR=/does/not/exist
 .endif
 
 .if !empty(MACHINE_ARCH:Mearm*)
@@ -579,7 +600,7 @@ FC=		${TOOL_FC.${ACTIVE_FC}}
 OBJC=		${TOOL_OBJC.${ACTIVE_OBJC}}
 
 # For each ${MACHINE_CPU}, list the ports that use it.
-MACHINES.aarch64=	evbarm64
+MACHINES.aarch64=	evbarm
 MACHINES.alpha=		alpha
 MACHINES.arm=		acorn32 cats epoc32 evbarm hpcarm \
 			iyonix netwinder shark zaurus
@@ -1180,8 +1201,8 @@ MKXORG_SERVER=yes
 MKRADEONFIRMWARE=		yes
 .endif
 
-# Only install the tegra firmware on evbarm and evbarm64.
-.if ${MACHINE} == "evbarm" || ${MACHINE} == "evbarm64"
+# Only install the tegra firmware on evbarm.
+.if ${MACHINE} == "evbarm"
 MKTEGRAFIRMWARE=		yes
 .endif
 
@@ -1318,7 +1339,7 @@ ${var}?= yes
 # USE_* options which default to "no".
 #
 # For now, disable pigz as compressor by default
-.for var in USE_PIGZGZIP USE_LIBTRE
+.for var in USE_PIGZGZIP
 ${var}?= no
 .endfor
 
@@ -1364,16 +1385,13 @@ X11SRCDIRMIT?=		${X11SRCDIR}/external/mit
 	FS ICE SM X11 XScrnSaver XTrap Xau Xcomposite Xcursor Xdamage \
 	Xdmcp Xevie Xext Xfixes Xfont Xfont2 Xft Xi Xinerama Xmu Xpresent Xpm \
 	Xrandr Xrender Xres Xt Xtst Xv XvMC Xxf86dga Xxf86misc Xxf86vm drm \
-	epoxy fontenc xkbfile xkbui Xaw Xfontcache pciaccess xcb xshmfence \
+	epoxy fontenc xkbfile xkbui Xaw pciaccess xcb xshmfence \
 	pthread-stubs
 X11SRCDIR.${_lib}?=		${X11SRCDIRMIT}/lib${_lib}/dist
 .endfor
 
 .for _proto in \
-	xcmisc xext xf86bigfont bigreqs input kb x fonts fixes scrnsaver \
-	xinerama dri2 dri3 render resource record video xf86dga xf86misc \
-	xf86vidmode composite damage trap gl randr fontcache xf86dri \
-	present xcb-
+	xcb- xorg
 X11SRCDIR.${_proto}proto?=		${X11SRCDIRMIT}/${_proto}proto/dist
 .endfor
 
@@ -1576,7 +1594,8 @@ TARGETS+=	lintmanpages
 TESTSBASE=	/usr/tests${MLIBDIR:D/${MLIBDIR}}
 
 # Override with tools versions if needed
-.if ${MKCTF:Uno} != "no" && !defined(NOCTF)
+.if ${MKCTF:Uno} != "no" && !defined(NOCTF) && \
+    (exists(${TOOL_CTFCONVERT}) || exists(/usr/bin/${TOOL_CTFCONVERT}))
 CTFCONVERT=	${TOOL_CTFCONVERT}
 CTFMERGE=	${TOOL_CTFMERGE}
 .endif

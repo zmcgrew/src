@@ -1,4 +1,4 @@
-/*	$NetBSD: t_unix.c,v 1.11 2013/11/13 21:41:23 christos Exp $	*/
+/*	$NetBSD: t_unix.c,v 1.17 2018/02/17 20:16:18 christos Exp $	*/
 
 /*-
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 
 #include <sys/cdefs.h>
 #ifdef __RCSID
-__RCSID("$Id: t_unix.c,v 1.11 2013/11/13 21:41:23 christos Exp $");
+__RCSID("$Id: t_unix.c,v 1.17 2018/02/17 20:16:18 christos Exp $");
 #else
 #define getprogname() argv[0]
 #endif
@@ -51,6 +51,7 @@ __RCSID("$Id: t_unix.c,v 1.11 2013/11/13 21:41:23 christos Exp $");
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <err.h>
 #include <errno.h>
@@ -60,18 +61,7 @@ __RCSID("$Id: t_unix.c,v 1.11 2013/11/13 21:41:23 christos Exp $");
 #include <unistd.h>
 #include <stdbool.h>
 
-#ifdef TEST
-#define FAIL(msg, ...)	err(EXIT_FAILURE, msg, ## __VA_ARGS__)
-#else
-
-#include <atf-c.h>
-#define FAIL(msg, ...)	\
-	do { \
-		ATF_CHECK_MSG(0, msg, ## __VA_ARGS__); \
-		goto fail; \
-	} while (/*CONSTCOND*/0)
-
-#endif
+#include "test.h"
 
 #define OF offsetof(struct sockaddr_un, sun_path)
 
@@ -137,14 +127,38 @@ fail:
 }
 
 static int
-test(bool closeit, size_t len)
+peercred(int s, uid_t *euid, gid_t *egid, pid_t *pid)
+{
+#ifdef LOCAL_PEEREID
+	struct unpcbid cred;
+	socklen_t crl;
+	crl = sizeof(cred);
+	if (getsockopt(s, 0, LOCAL_PEEREID, &cred, &crl) == -1)
+		return -1;
+	*euid = cred.unp_euid;
+	*egid = cred.unp_egid;
+	*pid = cred.unp_pid;
+	return 0;
+#else
+	return getpeereid(s, euid, egid);
+#endif
+}
+
+static int
+test(bool forkit, bool closeit, size_t len)
 {
 	size_t slen;
 	socklen_t sl;
 	int srvr = -1, clnt = -1, acpt = -1;
+	uid_t euid;
+	gid_t egid;
+	pid_t srvrpid, clntpid;
 	struct sockaddr_un *sock_addr = NULL, *sun = NULL;
 	socklen_t sock_addrlen;
+	socklen_t peer_addrlen;
+	struct sockaddr_un peer_addr;
 
+	srvrpid = clntpid = getpid();
 	srvr = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (srvr == -1)
 		FAIL("socket(srvrer)");
@@ -179,67 +193,103 @@ test(bool closeit, size_t len)
 	if (listen(srvr, SOMAXCONN) == -1)
 		FAIL("listen");
 
-	clnt = socket(AF_UNIX, SOCK_STREAM, 0);
-	if (clnt == -1)
-		FAIL("socket(client)");
-
-	if (connect(clnt, (const struct sockaddr *)sun, sl) == -1)
-		FAIL("connect");
-
-	if (closeit) {
-		if (close(clnt) == -1)
-			FAIL("close");
-		clnt = -1;
+	if (forkit) {
+		switch (clntpid = fork()) {
+		case 0:	/* child */
+			srvrpid = getppid();
+			clntpid = getpid();
+			break;
+		case -1:
+			FAIL("fork");
+		default:
+			break;
+		}
 	}
 
-	acpt = acc(srvr);
-#if 0
-	/*
-	 * Both linux and NetBSD return ENOTCONN, why?
-	 */
-	if (!closeit) {
-		socklen_t peer_addrlen;
-		sockaddr_un peer_addr;
+	if (clntpid == getpid()) {
+		pid_t pid = srvrpid;
+		clnt = socket(AF_UNIX, SOCK_STREAM, 0);
+		if (clnt == -1)
+			FAIL("socket(client)");
+
+		if (connect(clnt, (const struct sockaddr *)sun, sl) == -1)
+			FAIL("connect");
+
+		if (peercred(clnt, &euid, &egid, &pid) == -1)
+			FAIL("peercred (client)");
+		printf("peercred(client) euid=%jd egid=%jd pid=%jd\n",
+			(intmax_t)euid, (intmax_t)egid, (intmax_t)pid);
+		CHECK_EQUAL(euid, geteuid(), "client");
+		CHECK_EQUAL(egid, getegid(), "client");
+		CHECK_EQUAL(pid, srvrpid, "client");
+	}
+
+	if (srvrpid == getpid()) {
+		acpt = acc(srvr);
 
 		peer_addrlen = sizeof(peer_addr);
 		memset(&peer_addr, 0, sizeof(peer_addr));
-		if (getpeername(srvr, (struct sockaddr *)&peer_addr,
+		if (getpeername(acpt, (struct sockaddr *)&peer_addr,
 		    &peer_addrlen) == -1)
 			FAIL("getpeername");
 		print("peer", &peer_addr, peer_addrlen);
 	}
-#endif
 
-	if ((sock_addr = calloc(1, slen)) == NULL)
-		FAIL("calloc");
-	sock_addrlen = slen;
-	if (getsockname(srvr, (struct sockaddr *)sock_addr, &sock_addrlen)
-	    == -1)
-		FAIL("getsockname");
-	print("sock", sock_addr, sock_addrlen);
+	if (clntpid == getpid()) {
+		if (closeit) {
+			if (close(clnt) == -1)
+				FAIL("close");
+			clnt = -1;
+		}
+	}
 
-	if (sock_addr->sun_family != AF_UNIX)
-		FAIL("sock_addr->sun_family %d != AF_UNIX",
-		    sock_addr->sun_family);
+	if (srvrpid == getpid()) {
+		pid_t pid = clntpid;
+		if (peercred(acpt, &euid, &egid, &pid) == -1)
+			FAIL("peercred (server)");
+		printf("peercred(server) euid=%jd egid=%jd pid=%jd\n",
+			(intmax_t)euid, (intmax_t)egid, (intmax_t)pid);
+		CHECK_EQUAL(euid, geteuid(), "server");
+		CHECK_EQUAL(egid, getegid(), "server");
+		CHECK_EQUAL(pid, clntpid, "server");
 
-	len += OF;
-	if (sock_addrlen LX != len)
-		FAIL("sock_addr_len %zu != %zu", (size_t)sock_addrlen, len);
+		if ((sock_addr = calloc(1, slen)) == NULL)
+			FAIL("calloc");
+		sock_addrlen = slen;
+		if (getsockname(srvr, (struct sockaddr *)sock_addr,
+		    &sock_addrlen) == -1)
+			FAIL("getsockname");
+		print("sock", sock_addr, sock_addrlen);
+
+		if (sock_addr->sun_family != AF_UNIX)
+			FAIL("sock_addr->sun_family %d != AF_UNIX",
+			    sock_addr->sun_family);
+
+		len += OF;
+		if (sock_addrlen LX != len)
+			FAIL("sock_addr_len %zu != %zu", (size_t)sock_addrlen,
+			    len);
 #ifdef BSD4_4
-	if (sock_addr->sun_len != sl)
-		FAIL("sock_addr.sun_len %d != %zu", sock_addr->sun_len,
-		    (size_t)sl);
+		if (sock_addr->sun_len != sl)
+			FAIL("sock_addr.sun_len %d != %zu", sock_addr->sun_len,
+			    (size_t)sl);
 #endif
-	for (size_t i = 0; i < slen - OF; i++)
-		if (sock_addr->sun_path[i] != sun->sun_path[i])
-			FAIL("sock_addr.sun_path[%zu] %d != "
-			    "sun->sun_path[%zu] %d\n", i, 
-			    sock_addr->sun_path[i], i, sun->sun_path[i]);
+		for (size_t i = 0; i < slen - OF; i++)
+			if (sock_addr->sun_path[i] != sun->sun_path[i])
+				FAIL("sock_addr.sun_path[%zu] %d != "
+				    "sun->sun_path[%zu] %d\n", i, 
+				    sock_addr->sun_path[i], i,
+				    sun->sun_path[i]);
 
-	if (acpt != -1)
-		(void)close(acpt);
-	if (srvr != -1)
-		(void)close(srvr);
+		if (acpt != -1)
+			(void)close(acpt);
+		if (srvr != -1)
+			(void)close(srvr);
+		free(sock_addr);
+		sock_addr = NULL;
+		if (forkit && waitpid(clntpid, NULL, 0) == -1)
+			FAIL("waitpid");
+	}
 	if (clnt != -1 && !closeit)
 		(void)close(clnt);
 
@@ -247,12 +297,16 @@ test(bool closeit, size_t len)
 	free(sun);
 	return 0;
 fail:
-	if (acpt != -1)
-		(void)close(acpt);
-	if (srvr != -1)
-		(void)close(srvr);
-	if (clnt != -1 && !closeit)
-		(void)close(clnt);
+	if (srvrpid == getpid()) {
+		if (acpt != -1)
+			(void)close(acpt);
+		if (srvr != -1)
+			(void)close(srvr);
+	}
+	if (clntpid == getpid()) {
+		if (clnt != -1 && !closeit)
+			(void)close(clnt);
+	}
 	free(sock_addr);
 	free(sun);
 	return -1;
@@ -271,8 +325,8 @@ ATF_TC_HEAD(sockaddr_un_len_exceed, tc)
 
 ATF_TC_BODY(sockaddr_un_len_exceed, tc)
 {
-	ATF_REQUIRE_MSG(test(false, 254) == -1, "test(false, 254): %s",
-	    strerror(errno));
+	ATF_REQUIRE_MSG(test(false, false, 254) == -1,
+	    "test(false, false, 254): %s", strerror(errno));
 }
 
 ATF_TC(sockaddr_un_len_max);
@@ -286,8 +340,8 @@ ATF_TC_HEAD(sockaddr_un_len_max, tc)
 
 ATF_TC_BODY(sockaddr_un_len_max, tc)
 {
-	ATF_REQUIRE_MSG(test(false, 253) == 0, "test(false, 253): %s",
-	    strerror(errno));
+	ATF_REQUIRE_MSG(test(false, false, 253) == 0,
+	    "test(false, false, 253): %s", strerror(errno));
 }
 
 ATF_TC(sockaddr_un_closed);
@@ -300,8 +354,22 @@ ATF_TC_HEAD(sockaddr_un_closed, tc)
 
 ATF_TC_BODY(sockaddr_un_closed, tc)
 {
-	ATF_REQUIRE_MSG(test(true, 100) == 0, "test(true, 100): %s",
-	    strerror(errno));
+	ATF_REQUIRE_MSG(test(false, true, 100) == 0,
+	    "test(false, true, 100): %s", strerror(errno));
+}
+
+ATF_TC(sockaddr_un_local_peereid);
+ATF_TC_HEAD(sockaddr_un_local_peereid, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Check that we get the right information"
+	    " from LOCAL_PEEREID");
+}
+
+ATF_TC_BODY(sockaddr_un_local_peereid, tc)
+{
+	ATF_REQUIRE_MSG(test(true, true, 100) == 0,
+	    "test(true, true, 100): %s", strerror(errno));
 }
 
 ATF_TP_ADD_TCS(tp)
@@ -310,6 +378,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, sockaddr_un_len_exceed);
 	ATF_TP_ADD_TC(tp, sockaddr_un_len_max);
 	ATF_TP_ADD_TC(tp, sockaddr_un_closed);
+	ATF_TP_ADD_TC(tp, sockaddr_un_local_peereid);
 	return atf_no_error();
 }
 #else
@@ -322,7 +391,9 @@ main(int argc, char *argv[])
 		fprintf(stderr, "Usage: %s <len>\n", getprogname());
 		return EXIT_FAILURE;
 	}
-	test(false, atoi(argv[1]));
-	test(true, atoi(argv[1]));
+	test(false, false, atoi(argv[1]));
+	test(false, true, atoi(argv[1]));
+	test(true, false, atoi(argv[1]));
+	test(true, true, atoi(argv[1]));
 }
 #endif

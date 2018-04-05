@@ -1,13 +1,15 @@
-# $NetBSD: md.sparc64,v 1.197 2017/01/05 13:45:51 wiz Exp $
+# $NetBSD: md.sparc64,v 1.200 2018/03/29 13:23:39 joerg Exp $
 ./usr/include/g++/bits/sparc			comp-c-include		compat
 ./usr/include/g++/bits/sparc/c++config.h	comp-c-include		gcc,compat
 ./usr/include/g++/bits/sparc64			comp-c-include		compat
 ./usr/include/g++/bits/sparc64/c++config.h	comp-c-include		gcc,compat
 ./usr/include/gcc-4.5/tgmath.h			comp-obsolete		obsolete
-./usr/include/gcc-4.8/tgmath.h			comp-c-include		gcccmds,gcc=48
-./usr/include/gcc-4.8/visintrin.h		comp-c-include		gcccmds,gcc=48
-./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=53
-./usr/include/gcc-5/visintrin.h			comp-c-include		gcccmds,gcc=53
+./usr/include/gcc-4.8/tgmath.h			comp-c-include		obsolete
+./usr/include/gcc-4.8/visintrin.h		comp-c-include		obsolete
+./usr/include/gcc-5/tgmath.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-5/visintrin.h			comp-c-include		gcccmds,gcc=5
+./usr/include/gcc-6/tgmath.h			comp-c-include		gcccmds,gcc=6
+./usr/include/gcc-6/visintrin.h			comp-c-include		gcccmds,gcc=6
 ./usr/include/ieeefp.h				comp-c-include
 ./usr/include/sparc				comp-c-include
 ./usr/include/sparc/_G_config.h			comp-obsolete		obsolete
@@ -26,6 +28,7 @@
 ./usr/include/sparc/disklabel.h			comp-c-include
 ./usr/include/sparc/eeprom.h			comp-c-include
 ./usr/include/sparc/elf_machdep.h		comp-c-include
+./usr/include/sparc/elf_support.h		comp-c-include
 ./usr/include/sparc/endian.h			comp-c-include
 ./usr/include/sparc/endian_machdep.h		comp-c-include
 ./usr/include/sparc/fbio.h			comp-obsolete		obsolete
@@ -93,6 +96,7 @@
 ./usr/include/sparc64/disklabel.h		comp-c-include
 ./usr/include/sparc64/eeprom.h			comp-c-include
 ./usr/include/sparc64/elf_machdep.h		comp-c-include
+./usr/include/sparc64/elf_support.h		comp-c-include
 ./usr/include/sparc64/endian.h			comp-c-include
 ./usr/include/sparc64/endian_machdep.h		comp-c-include
 ./usr/include/sparc64/fbio.h			comp-obsolete		obsolete

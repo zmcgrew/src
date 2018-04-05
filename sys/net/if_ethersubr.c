@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ethersubr.c,v 1.257 2018/01/19 12:31:27 nakayama Exp $	*/
+/*	$NetBSD: if_ethersubr.c,v 1.260 2018/02/13 15:21:59 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.257 2018/01/19 12:31:27 nakayama Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ethersubr.c,v 1.260 2018/02/13 15:21:59 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -198,10 +198,10 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 	struct ifnet *ifp = ifp0;
 #ifdef INET
 	struct arphdr *ah;
-#endif /* INET */
+#endif
 #ifdef NETATALK
 	struct at_ifaddr *aa;
-#endif /* NETATALK */
+#endif
 
 #ifdef MBUFTRACE
 	m_claimm(m, ifp->if_mowner);
@@ -229,7 +229,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		    (IFF_UP | IFF_RUNNING))
 			senderr(ENETDOWN);
 	}
-#endif /* NCARP > 0 */
+#endif
 
 	if ((ifp->if_flags & (IFF_UP | IFF_RUNNING)) != (IFF_UP | IFF_RUNNING))
 		senderr(ENETDOWN);
@@ -242,9 +242,10 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 			memcpy(edst, etherbroadcastaddr, sizeof(edst));
 		else if (m->m_flags & M_MCAST)
 			ETHER_MAP_IP_MULTICAST(&satocsin(dst)->sin_addr, edst);
-		else if ((error = arpresolve(ifp, rt, m, dst, edst,
-		    sizeof(edst))) != 0) {
-			return error == EWOULDBLOCK ? 0 : error;
+		else {
+			error = arpresolve(ifp, rt, m, dst, edst, sizeof(edst));
+			if (error)
+				return (error == EWOULDBLOCK) ? 0 : error;
 		}
 		/* If broadcasting on a simplex interface, loopback a copy */
 		if ((m->m_flags & M_BCAST) && (ifp->if_flags & IFF_SIMPLEX))
@@ -260,7 +261,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 			void *tha = ar_tha(ah);
 
 			if (tha == NULL) {
-				/* fake with ARPHDR_IEEE1394 */
+				/* fake with ARPHRD_IEEE1394 */
 				m_freem(m);
 				return 0;
 			}
@@ -309,7 +310,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 
 		if (!aarpresolve(ifp, m, (const struct sockaddr_at *)dst, edst)) {
 #ifdef NETATALKDEBUG
-			printf("aarpresolv failed\n");
+			printf("aarpresolve failed\n");
 #endif
 			KERNEL_UNLOCK_ONE(NULL);
 			return (0);
@@ -323,8 +324,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 		if (ifa == NULL) {
 			pserialize_read_exit(s);
 			KERNEL_UNLOCK_ONE(NULL);
-			/* XXX error? */
-			goto bad;
+			senderr(EADDRNOTAVAIL);
 		}
 		aa = (struct at_ifaddr *)ifa;
 
@@ -339,6 +339,7 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 
 			M_PREPEND(m, sizeof(struct llc), M_DONTWAIT);
 			if (m == NULL) {
+				pserialize_read_exit(s);
 				KERNEL_UNLOCK_ONE(NULL);
 				senderr(ENOBUFS);
 			}
@@ -380,7 +381,6 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 	}
 
 #ifdef MPLS
-	KERNEL_LOCK(1, NULL);
 	{
 		struct m_tag *mtag;
 		mtag = m_tag_find(m, PACKET_TAG_MPLS, NULL);
@@ -390,7 +390,6 @@ ether_output(struct ifnet * const ifp0, struct mbuf * const m0,
 			m_tag_delete(m, mtag);
 		}
 	}
-	KERNEL_UNLOCK_ONE(NULL);
 #endif
 
 	if (mcopy)
@@ -606,7 +605,8 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	}
 
 	/*
-	 * Determine if the packet is within its size limits.
+	 * Determine if the packet is within its size limits. For MPLS the
+	 * header length is variable, so we skip the check.
 	 */
 	if (etype != ETHERTYPE_MPLS && m->m_pkthdr.len >
 	    ETHER_MAX_FRAME(ifp, etype, m->m_flags & M_HASFCS)) {

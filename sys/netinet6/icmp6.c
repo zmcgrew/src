@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.219 2018/01/23 10:55:38 maxv Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.224 2018/03/21 14:23:54 roy Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.219 2018/01/23 10:55:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.224 2018/03/21 14:23:54 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -105,11 +105,9 @@ __KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.219 2018/01/23 10:55:38 maxv Exp $");
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #include <netipsec/ipsec_var.h>
-#include <netipsec/ipsec_private.h>
 #include <netipsec/ipsec6.h>
 #include <netipsec/key.h>
 #endif
-
 
 #include "faith.h"
 #if defined(NFAITH) && 0 < NFAITH
@@ -1486,7 +1484,7 @@ ni6_input(struct mbuf *m, int off)
 		nni6->ni_flags = htons(0x0000);	/* raw bitmap */
 		/* supports NOOP, SUPTYPES, FQDN, and NODEADDR */
 		v = (u_int32_t)htonl(0x0000000f);
-		bcopy(&v, nni6 + 1, sizeof(u_int32_t));
+		memcpy(nni6 + 1, &v, sizeof(u_int32_t));
 		break;
 	}
 	case NI_QTYPE_FQDN:
@@ -1580,7 +1578,7 @@ ni6_nametodns(const char *name, int namelen, int old)
 	if (old) {
 		m->m_len = len;
 		*mtod(m, char *) = namelen;
-		bcopy(name, mtod(m, char *) + 1, namelen);
+		memcpy(mtod(m, char *) + 1, name, namelen);
 		return m;
 	} else {
 		m->m_len = 0;
@@ -1927,7 +1925,7 @@ again:
 				ltime = 0x7fffffff;
 			ltime = htonl(ltime);
 
-			bcopy(&ltime, cp, sizeof(u_int32_t));
+			memcpy(cp, &ltime, sizeof(u_int32_t));
 			cp += sizeof(u_int32_t);
 
 			/* copy the address itself */
@@ -2007,8 +2005,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 			/*
 			 * Check AH/ESP integrity
 			 */
-			if (!ipsec_used ||
-			    (ipsec_used && !ipsec6_in_reject(m, last)))
+			if (!ipsec_used || !ipsec_in_reject(m, last))
 #endif
 			if ((n = m_copy(m, 0, (int)M_COPYALL)) != NULL) {
 				if (last->in6p_flags & IN6P_CONTROLOPTS)
@@ -2017,7 +2014,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 				m_adj(n, off);
 				if (sbappendaddr(&last->in6p_socket->so_rcv,
 				    sin6tosa(&rip6src), n, opts) == 0) {
-					/* should notify about lost packet */
+					soroverflow(last->in6p_socket);
 					m_freem(n);
 					if (opts)
 						m_freem(opts);
@@ -2030,7 +2027,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 	}
 
 #ifdef IPSEC
-	if (ipsec_used && last && ipsec6_in_reject(m, last)) {
+	if (ipsec_used && last && ipsec_in_reject(m, last)) {
 		m_freem(m);
 		IP6_STATDEC(IP6_STAT_DELIVERED);
 		/* do not inject data into pcb */
@@ -2043,6 +2040,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 		m_adj(m, off);
 		if (sbappendaddr(&last->in6p_socket->so_rcv,
 		    sin6tosa(&rip6src), m, opts) == 0) {
+			soroverflow(last->in6p_socket);
 			m_freem(m);
 			if (opts)
 				m_freem(opts);
@@ -2109,7 +2107,7 @@ icmp6_reflect(struct mbuf *m, size_t off)
 			if ((m = m_pullup(m, l)) == NULL)
 				return;
 		}
-		bcopy((void *)&nip6, mtod(m, void *), sizeof(nip6));
+		memcpy(mtod(m, void *), (void *)&nip6, sizeof(nip6));
 	} else {
 		size_t l = sizeof(struct ip6_hdr) + sizeof(struct icmp6_hdr);
 		if (m->m_len < l) {

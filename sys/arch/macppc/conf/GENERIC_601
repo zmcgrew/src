@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC_601,v 1.16 2018/01/23 14:47:55 sevan Exp $
+# $NetBSD: GENERIC_601,v 1.20 2018/02/26 23:09:32 sevan Exp $
 #
 # GENERIC machine description file
 # 
@@ -28,7 +28,7 @@ include 	"arch/macppc/conf/std.macppc.601"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-ident 		"GENERIC-$Revision: 1.16 $"
+ident 		"GENERIC-$Revision: 1.20 $"
 
 maxusers	32
 
@@ -53,7 +53,7 @@ options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 # Alternate buffer queue strategies for better responsiveness under high
 # disk I/O load.
 #options 	BUFQ_READPRIO
-#options 	BUFQ_PRIOCSCAN
+options 	BUFQ_PRIOCSCAN
 
 # Diagnostic/debugging support options
 #options 	DIAGNOSTIC	# cheap kernel consistency checks
@@ -63,7 +63,7 @@ options 	DDB		# in-kernel debugger
 #options 	DDB_ONPANIC=0	# don't go into ddb on panic.
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	TRAP_PANICWAIT
-options		DDB_COMMANDONENTER="bt"
+#options 	DDB_COMMANDONENTER="bt"
 
 #makeoptions 	DEBUG="-g"	# compile full symbol table
 
@@ -239,8 +239,6 @@ genfb*		at pci? function ?
 wsdisplay0	at wsemuldisplaydev? console 1
 wsdisplay*	at wsemuldisplaydev?
 
-#macofcons0 at pci? dev ? function ?	# OpenFirmware console (for debugging)
-
 obio*	at pci? dev ? function ?
 
 mc*	at obio?			# MACE ethernet
@@ -264,10 +262,6 @@ iic0	at cuda0		# CUDA's IIC bus
 zsc*	at obio?
 zstty*	at zsc? channel ?
 
-# awacs is disabled because on most systems (7300 - 9600 PowerMacs,
-# many kinds of G4s), very heavy load can cause the machine to lock
-# up. ONLY enable this if your machine is never under heavy load, or
-# you'd rather have audio than worry about occasional lockups.
 awacs*	at obio?			# Apple audio device
 
 # Cryptographic Devices

@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.205 2018/01/23 07:20:10 ozaki-r Exp $	*/
+/*	$NetBSD: route.c,v 1.207 2018/03/23 04:09:41 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.205 2018/01/23 07:20:10 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.207 2018/03/23 04:09:41 ozaki-r Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -256,6 +256,7 @@ static struct {
 	struct work		wk;
 	kmutex_t		lock;
 	SLIST_HEAD(, rtentry)	queue;
+	bool			enqueued;
 } rt_free_global __cacheline_aligned;
 
 /* psref for rtentry */
@@ -459,6 +460,7 @@ rt_init(void)
 
 	mutex_init(&rt_free_global.lock, MUTEX_DEFAULT, IPL_SOFTNET);
 	SLIST_INIT(&rt_free_global.queue);
+	rt_free_global.enqueued = false;
 
 	rt_psref_class = psref_class_create("rtentry", IPL_SOFTNET);
 
@@ -693,6 +695,7 @@ rt_free_work(struct work *wk, void *arg)
 		struct rtentry *rt;
 
 		mutex_enter(&rt_free_global.lock);
+		rt_free_global.enqueued = false;
 		if ((rt = SLIST_FIRST(&rt_free_global.queue)) == NULL) {
 			mutex_exit(&rt_free_global.lock);
 			return;
@@ -718,8 +721,11 @@ rt_free(struct rtentry *rt)
 	mutex_enter(&rt_free_global.lock);
 	rt_ref(rt);
 	SLIST_INSERT_HEAD(&rt_free_global.queue, rt, rt_free);
+	if (!rt_free_global.enqueued) {
+		workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
+		rt_free_global.enqueued = true;
+	}
 	mutex_exit(&rt_free_global.lock);
-	workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
 }
 
 #ifdef NET_MPSAFE
@@ -2141,13 +2147,21 @@ rt_delete_matched_entries(sa_family_t family, int (*f)(struct rtentry *, void *)
 	}
 }
 
+static int
+rt_walktree_locked(sa_family_t family, int (*f)(struct rtentry *, void *),
+    void *v)
+{
+
+	return rtbl_walktree(family, f, v);
+}
+
 int
 rt_walktree(sa_family_t family, int (*f)(struct rtentry *, void *), void *v)
 {
 	int error;
 
 	RT_RLOCK();
-	error = rtbl_walktree(family, f, v);
+	error = rt_walktree_locked(family, f, v);
 	RT_UNLOCK();
 
 	return error;
@@ -2240,6 +2254,8 @@ void
 db_show_routes(db_expr_t addr, bool have_addr,
     db_expr_t count, const char *modif)
 {
-	rt_walktree(AF_INET, db_show_rtentry, NULL);
+
+	/* Taking RT_LOCK will fail if LOCKDEBUG is enabled. */
+	rt_walktree_locked(AF_INET, db_show_rtentry, NULL);
 }
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.178 2017/12/28 07:06:36 ozaki-r Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.180 2018/03/30 13:29:19 mlelstv Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.178 2017/12/28 07:06:36 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.180 2018/03/30 13:29:19 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -2274,6 +2274,7 @@ sppp_lcp_down(struct sppp *sp)
 			    "%s: Down event (carrier loss)\n",
 			    ifp->if_xname);
 	}
+	sp->fail_counter[IDX_LCP] = 0;
 	sp->pp_flags &= ~PP_CALLIN;
 	if (sp->state[IDX_LCP] != STATE_INITIAL)
 		lcp.Close(sp);
@@ -2969,7 +2970,7 @@ sppp_ipcp_init(struct sppp *sp)
 	sp->pp_rseq[IDX_IPCP] = 0;
 	callout_init(&sp->ch[IDX_IPCP], CALLOUT_MPSAFE);
 
-	error = workqueue_create(&sp->ipcp.update_addrs_wq, "ipcp_update_addrs",
+	error = workqueue_create(&sp->ipcp.update_addrs_wq, "ipcp_addr",
 	    sppp_update_ip_addrs_work, sp, PRI_SOFTNET, IPL_NET, 0);
 	if (error)
 		panic("%s: update_addrs workqueue_create failed (%d)\n",

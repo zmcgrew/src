@@ -1,4 +1,4 @@
-/*	$NetBSD: specialreg.h,v 1.111 2018/01/15 08:17:20 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.120 2018/03/30 19:49:49 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1991 The Regents of the University of California.
@@ -250,7 +250,7 @@
 
 /* CPUID Fn00000001 %ebx */
 #define	CPUID_BRAND_INDEX	__BITS(7,0)
-#define	CPUID_CLFUSH_SIZE	__BITS(15,8)
+#define	CPUID_CLFLUSH_SIZE	__BITS(15,8)
 #define	CPUID_HTT_CORES		__BITS(23,16)
 #define	CPUID_LOCAL_APIC_ID	__BITS(31,24)
 
@@ -300,12 +300,19 @@
 #define CPUID_DSPM_HWP_PLR __BIT(11)	/* HWP Package Level Request */
 #define CPUID_DSPM_HDC	__BIT(13)	/* Hardware Duty Cycling */
 #define CPUID_DSPM_TBMT3 __BIT(14)	/* Turbo Boost Max Technology 3.0 */
+#define CPUID_DSPM_HWP_CAP    __BIT(15)	/* HWP Capabilities */
+#define CPUID_DSPM_HWP_PECI   __BIT(16)	/* HWP PECI override */
+#define CPUID_DSPM_HWP_FLEX   __BIT(17)	/* Flexible HWP */
+#define CPUID_DSPM_HWP_FAST   __BIT(18)	/* Fast access for IA32_HWP_REQUEST */
+#define CPUID_DSPM_HWP_IGNIDL __BIT(20)	/* Ignore Idle Logical Processor HWP */
 
 #define CPUID_DSPM_FLAGS	"\20" \
 	"\1" "DTS"	"\2" "IDA"	"\3" "ARAT" 			\
 	"\5" "PLN"	"\6" "ECMD"	"\7" "PTM"	"\10" "HWP"	\
 	"\11" "HWP_NOTIFY" "\12" "HWP_ACTWIN" "\13" "HWP_EPP" "\14" "HWP_PLR" \
-			"\16" "HDC"	"\17" "TBM3"
+			"\16" "HDC"	"\17" "TBM3"	"\20" "HWP_CAP" \
+	"\21" "HWP_PECI" "\22" "HWP_FLEX" "\23" "HWP_FAST"		\
+	"25" "HWP_IGNIDL"
 
 /*
  * Intel Digital Thermal Sensor and
@@ -381,7 +388,7 @@
 #define CPUID_SEF_AVX512_VNNI	__BIT(11) /* Vector neural Network Instruction */
 #define CPUID_SEF_AVX512_BITALG	__BIT(12)
 #define CPUID_SEF_AVX512_VPOPCNTDQ __BIT(14)
-#define CPUID_SEF_RDPID		__BIT(22) /* ReaD Processor ID */
+#define CPUID_SEF_RDPID		__BIT(22) /* RDPID and IA32_TSC_AUX */
 #define CPUID_SEF_SGXLC		__BIT(30) /* SGX Launch Configuration */
 
 #define CPUID_SEF_FLAGS1	"\20" \
@@ -435,6 +442,35 @@
 #define CPUID_PES1_FLAGS	"\20" \
 	"\1" "XSAVEOPT"	"\2" "XSAVEC"	"\3" "XGETBV"	"\4" "XSAVES"
 
+/*
+ * Intel Deterministic Address Translation Parameter Leaf
+ * Fn0000_0018
+ */
+
+/* %ecx=0 %eax __BITS(31, 0): the maximum input value of supported sub-leaf */
+
+/* %ebx */
+#define CPUID_DATP_PGSIZE	__BITS(3, 0)	/* page size */
+#define CPUID_DATP_PGSIZE_4KB	__BIT(0)	/* 4KB page support */
+#define CPUID_DATP_PGSIZE_2MB	__BIT(1)	/* 2MB page support */
+#define CPUID_DATP_PGSIZE_4MB	__BIT(2)	/* 4MB page support */
+#define CPUID_DATP_PGSIZE_1GB	__BIT(3)	/* 1GB page support */
+#define CPUID_DATP_PARTITIONING	__BITS(10, 8)	/* Partitioning */
+#define CPUID_DATP_WAYS		__BITS(31, 16)	/* Ways of associativity */
+
+/* Number of sets: %ecx */
+
+/* %edx */
+#define CPUID_DATP_TCTYPE	__BITS(4, 0)	/* Translation Cache type */
+#define CPUID_DATP_TCTYPE_N	0		/*   NULL (not valid) */
+#define CPUID_DATP_TCTYPE_D	1		/*   Data TLB */
+#define CPUID_DATP_TCTYPE_I	2		/*   Instruction TLB */
+#define CPUID_DATP_TCTYPE_U	3		/*   Unified TLB */
+#define CPUID_DATP_TCLEVEL	__BITS(7, 5)	/* TLB level (start at 1) */
+#define CPUID_DATP_FULLASSOC	__BIT(8)	/* Full associative */
+#define CPUID_DATP_SHAREING	__BITS(25, 14)	/* shareing */
+
+
 /* Intel Fn80000001 extended features - %edx */
 #define CPUID_SYSCALL	0x00000800	/* SYSCALL/SYSRET */
 #define CPUID_XD	0x00100000	/* Execute Disable (like CPUID_NOX) */
@@ -456,11 +492,14 @@
 			"\06" "LZCNT"				\
 	"\11" "PREFETCHW"
 
+
 /* AMD/VIA Fn80000001 extended features - %edx */
 /*	CPUID_SYSCALL			   SYSCALL/SYSRET */
 #define CPUID_MPC	0x00080000	/* Multiprocessing Capable */
 #define CPUID_NOX	0x00100000	/* No Execute Page Protection */
 #define CPUID_MMXX	0x00400000	/* AMD MMX Extensions */
+/*	CPUID_MMX			   MMX supported */
+/*	CPUID_FXSR			   fast FP/MMX save/restore */
 #define CPUID_FFXSR	0x02000000	/* FXSAVE/FXSTOR Extensions */
 /*	CPUID_P1GB			   1GB Large Page Support */
 /*	CPUID_RDTSCP			   Read TSC Pair Instruction */
@@ -469,9 +508,11 @@
 #define CPUID_3DNOW	0x80000000	/* 3DNow! Instructions */
 
 #define CPUID_EXT_FLAGS	"\20" \
-	"\14" "SYSCALL/SYSRET"		"\24" "MPC"	"\25" "NOX" \
-	"\27" "MMXX"	"\32" "FFXSR"	"\33" "P1GB"	"\34" "RDTSCP" \
-	"\36" "LONG"	"\37" "3DNOW2"	"\40" "3DNOW"
+						"\14" "SYSCALL/SYSRET"	\
+							"\24" "MPC"	\
+	"\25" "NOX"			"\27" "MMXX"	"\30" "MMX"	\
+	"\31" "FXSR"	"\32" "FFXSR"	"\33" "P1GB"	"\34" "RDTSCP"	\
+			"\36" "LONG"	"\37" "3DNOW2"	"\40" "3DNOW"
 
 /* AMD Fn80000001 extended features - %ecx */
 /* 	CPUID_LAHF			   LAHF/SAHF instruction */
@@ -600,7 +641,10 @@
 #define MSR_EBC_FREQUENCY_ID	0x02c	/* PIV only */
 #define MSR_TEST_CTL		0x033
 #define MSR_IA32_SPEC_CTRL	0x048
+#define 	IA32_SPEC_CTRL_IBRS	0x01
+#define 	IA32_SPEC_CTRL_STIBP	0x02
 #define MSR_IA32_PRED_CMD	0x049
+#define 	IA32_PRED_CMD_IBPB	0x01
 #define MSR_BIOS_UPDT_TRIG	0x079
 #define MSR_BBL_CR_D0		0x088	/* PII+ only */
 #define MSR_BBL_CR_D1		0x089	/* PII+ only */
@@ -614,6 +658,8 @@
 #define MSR_IA32_EXT_CONFIG	0x0ee	/* Undocumented. Core Solo/Duo only */
 #define MSR_MTRRcap		0x0fe
 #define MSR_IA32_ARCH_CAPABILITIES 0x10a
+#define 	IA32_ARCH_RDCL_NO	0x01
+#define 	IA32_ARCH_IBRS_ALL	0x02
 #define MSR_BBL_CR_ADDR		0x116	/* PII+ only */
 #define MSR_BBL_CR_DECC		0x118	/* PII+ only */
 #define MSR_BBL_CR_CTL		0x119	/* PII+ only */
@@ -812,6 +858,7 @@
 
 #define MSR_IC_CFG	0xc0011021
 #define 	IC_CFG_DIS_SEQ_PREFETCH	0x00000800
+#define 	IC_CFG_DIS_IND		0x00004000
 
 #define MSR_DC_CFG	0xc0011022
 #define 	DC_CFG_DIS_CNV_WC_SSO	0x00000008

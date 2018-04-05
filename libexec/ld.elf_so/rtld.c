@@ -1,4 +1,4 @@
-/*	$NetBSD: rtld.c,v 1.188 2017/11/06 21:16:04 joerg Exp $	 */
+/*	$NetBSD: rtld.c,v 1.191 2018/03/09 20:19:11 joerg Exp $	 */
 
 /*
  * Copyright 1996 John D. Polstra.
@@ -40,7 +40,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: rtld.c,v 1.188 2017/11/06 21:16:04 joerg Exp $");
+__RCSID("$NetBSD: rtld.c,v 1.191 2018/03/09 20:19:11 joerg Exp $");
 #endif /* not lint */
 
 #include <sys/param.h>
@@ -263,7 +263,7 @@ static bool
 _rtld_call_ifunc_functions(sigset_t *mask, Obj_Entry *obj, u_int cur_objgen)
 {
 	if (obj->ifunc_remaining
-#ifdef __sparc__
+#if defined(__sparc__) || defined(__powerpc__)
 	    || obj->ifunc_remaining_nonplt
 #endif
 	) {
@@ -1109,7 +1109,14 @@ _rtld_objmain_sym(const char *name)
 static __noinline void *
 hackish_return_address(void)
 {
+#if __GNUC_PREREQ__(6,0)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wframe-address"
+#endif
 	return __builtin_return_address(1);
+#if __GNUC_PREREQ__(6,0)
+#pragma GCC diagnostic pop
+#endif
 }
 #endif
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: in6_pcb.c,v 1.163 2017/12/22 09:53:06 ozaki-r Exp $	*/
+/*	$NetBSD: in6_pcb.c,v 1.165 2018/02/27 14:44:10 maxv Exp $	*/
 /*	$KAME: in6_pcb.c,v 1.84 2001/02/08 18:02:08 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.163 2017/12/22 09:53:06 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6_pcb.c,v 1.165 2018/02/27 14:44:10 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -205,7 +205,7 @@ in6_pcbbind_addr(struct in6pcb *in6p, struct sockaddr_in6 *sin6, struct lwp *l)
 
 	/*
 	 * We should check the family, but old programs
-	 * incorrectly fail to intialize it.
+	 * incorrectly fail to initialize it.
 	 */
 	if (sin6->sin6_family != AF_INET6)
 		return (EAFNOSUPPORT);
@@ -628,7 +628,7 @@ in6_pcbdetach(struct in6pcb *in6p)
 
 #if defined(IPSEC)
 	if (ipsec_enabled)
-		ipsec6_delete_pcbpolicy(in6p);
+		ipsec_delete_pcbpolicy(in6p);
 #endif
 	so->so_pcb = NULL;
 

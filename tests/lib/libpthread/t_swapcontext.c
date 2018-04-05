@@ -1,4 +1,4 @@
-/* $NetBSD: t_swapcontext.c,v 1.3 2017/01/16 16:27:06 christos Exp $ */
+/* $NetBSD: t_swapcontext.c,v 1.9 2018/02/28 21:36:50 uwe Exp $ */
 
 /*
  * Copyright (c) 2012 Emmanuel Dreyfus. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD");
+__RCSID("$NetBSD: t_swapcontext.c,v 1.9 2018/02/28 21:36:50 uwe Exp $");
 
 #include <sys/types.h>
 #include <errno.h>
@@ -49,24 +49,18 @@ void *oself;
 void *nself;
 int val1, val2;
 
-/* ARGSUSED0 */
 static void
-swapfunc(void *arg)
+swapfunc(void)
 {
 	/*
-	 * If the test fails, we are very likely to crash 
+	 * If the test fails, we are very likely to crash
 	 * without the opportunity to report
-	 */ 
+	 */
 	nself = (void *)pthread_self();
 	printf("after swapcontext self = %p\n", nself);
 
 	ATF_REQUIRE_EQ(oself, nself);
 	printf("Test succeeded\n");
-	/* Go back in main */
-	ATF_REQUIRE(swapcontext(&nctx, &octx));
-
-	/* NOTREACHED */
-	return;
 }
 
 /* ARGSUSED0 */
@@ -75,15 +69,15 @@ threadfunc(void *arg)
 {
 	nctx.uc_stack.ss_sp = stack;
 	nctx.uc_stack.ss_size = sizeof(stack);
-       
-	makecontext(&nctx, (void *)*swapfunc, 0);
-       
+	nctx.uc_link = &octx;
+
+	makecontext(&nctx, swapfunc, 0);
+
 	oself = (void *)pthread_self();
 	printf("before swapcontext self = %p\n", oself);
 	ATF_REQUIRE_MSG(swapcontext(&octx, &nctx) != -1, "swapcontext failed: %s",
 	    strerror(errno));
 
-	/* NOTREACHED */
 	return NULL;
 }
 

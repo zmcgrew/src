@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_mmc.c,v 1.19 2018/01/08 14:40:18 jakllsch Exp $ */
+/* $NetBSD: sunxi_mmc.c,v 1.21 2018/03/19 08:57:57 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_sunximmc.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.19 2018/01/08 14:40:18 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_mmc.c,v 1.21 2018/03/19 08:57:57 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -87,7 +87,7 @@ static const struct sunxi_mmc_delay sun9i_mmc_delays[] = {
 	[SUNXI_MMC_TIMING_50M_DDR_8BIT]	= {  72,	 72 },
 };
 
-#define SUNXI_MMC_NDESC		16
+#define SUNXI_MMC_NDESC		64
 
 struct sunxi_mmc_softc;
 
@@ -252,6 +252,22 @@ static const struct sunxi_mmc_config sun50i_a64_emmc_config = {
 	.flags = SUNXI_MMC_FLAG_CALIB_REG,
 };
 
+static const struct sunxi_mmc_config sun50i_h6_mmc_config = {
+	.idma_xferlen = 0x10000,
+	.dma_ftrglevel = 0x20070008,
+	.delays = NULL,
+	.flags = SUNXI_MMC_FLAG_CALIB_REG |
+		 SUNXI_MMC_FLAG_NEW_TIMINGS |
+		 SUNXI_MMC_FLAG_MASK_DATA0,
+};
+
+static const struct sunxi_mmc_config sun50i_h6_emmc_config = {
+	.idma_xferlen = 0x2000,
+	.dma_ftrglevel = 0x20070008,
+	.delays = NULL,
+	.flags = SUNXI_MMC_FLAG_CALIB_REG,
+};
+
 static const struct of_compat_data compat_data[] = {
 	{ "allwinner,sun4i-a10-mmc",	(uintptr_t)&sun4i_a10_mmc_config },
 	{ "allwinner,sun5i-a13-mmc",	(uintptr_t)&sun5i_a13_mmc_config },
@@ -260,6 +276,8 @@ static const struct of_compat_data compat_data[] = {
 	{ "allwinner,sun9i-a80-mmc",	(uintptr_t)&sun9i_a80_mmc_config },
 	{ "allwinner,sun50i-a64-mmc",	(uintptr_t)&sun50i_a64_mmc_config },
 	{ "allwinner,sun50i-a64-emmc",	(uintptr_t)&sun50i_a64_emmc_config },
+	{ "allwinner,sun50i-h6-mmc",	(uintptr_t)&sun50i_h6_mmc_config },
+	{ "allwinner,sun50i-h6-emmc",	(uintptr_t)&sun50i_h6_emmc_config },
 	{ NULL }
 };
 
@@ -936,8 +954,9 @@ sunxi_mmc_dma_prepare(struct sunxi_mmc_softc *sc, struct sdmmc_command *cmd)
 	}
 	if (desc == sc->sc_idma_ndesc) {
 		aprint_error_dev(sc->sc_dev,
-		    "not enough descriptors for %d byte transfer!\n",
-		    cmd->c_datalen);
+		    "not enough descriptors for %d byte transfer! "
+		    "there are %u segments with a max xfer length of %u\n",
+		    cmd->c_datalen, map->dm_nsegs, sc->sc_config->idma_xferlen);
 		return EIO;
 	}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_rwlock.c,v 1.48 2017/12/25 09:13:40 ozaki-r Exp $	*/
+/*	$NetBSD: kern_rwlock.c,v 1.50 2018/02/05 04:25:04 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_rwlock.c,v 1.48 2017/12/25 09:13:40 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_rwlock.c,v 1.50 2018/02/05 04:25:04 ozaki-r Exp $");
 
 #define	__RWLOCK_PRIVATE
 
@@ -154,11 +154,11 @@ lockops_t rwlock_lockops = {
 };
 
 syncobj_t rw_syncobj = {
-	SOBJ_SLEEPQ_SORTED,
-	turnstile_unsleep,
-	turnstile_changepri,
-	sleepq_lendpri,
-	rw_owner,
+	.sobj_flag	= SOBJ_SLEEPQ_SORTED,
+	.sobj_unsleep	= turnstile_unsleep,
+	.sobj_changepri	= turnstile_changepri,
+	.sobj_lendpri	= sleepq_lendpri,
+	.sobj_owner	= rw_owner,
 };
 
 /*
@@ -197,16 +197,23 @@ rw_abort(const char *func, size_t line, krwlock_t *rw, const char *msg)
  *
  *	Initialize a rwlock for use.
  */
+void _rw_init(krwlock_t *, uintptr_t);
 void
-rw_init(krwlock_t *rw)
+_rw_init(krwlock_t *rw, uintptr_t return_address)
 {
 	bool dodebug;
 
 	memset(rw, 0, sizeof(*rw));
 
-	dodebug = LOCKDEBUG_ALLOC(rw, &rwlock_lockops,
-	    (uintptr_t)__builtin_return_address(0));
+	dodebug = LOCKDEBUG_ALLOC(rw, &rwlock_lockops, return_address);
 	RW_SETDEBUG(rw, dodebug);
+}
+
+void
+rw_init(krwlock_t *rw)
+{
+
+	_rw_init(rw, (uintptr_t)__builtin_return_address(0));
 }
 
 /*

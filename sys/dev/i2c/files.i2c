@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.81 2018/01/05 03:07:15 uwe Exp $
+#	$NetBSD: files.i2c,v 1.87 2018/03/16 22:11:53 macallan Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -130,7 +130,6 @@ attach	xrtc at iic
 file	dev/i2c/x1226.c				xrtc
 
 # Analog Devices dBCool family of thermal monitors / fan controllers
-define dbcool {}
 device dbcool: sysmon_envsys
 attach dbcool at iic
 file dev/i2c/dbcool.c			dbcool
@@ -295,10 +294,25 @@ device	sy8106a
 attach	sy8106a at iic
 file	dev/i2c/sy8106a.c			sy8106a
 
+# Maxim DS1631 High-Precision Digital Thermometer and Thermostat
+device	dstemp: sysmon_envsys
+attach	dstemp at iic
+file	dev/i2c/dstemp.c			dstemp
+
 # EM3027 Real Time Clock and Temperature Sensor
 device	em3027rtc: sysmon_envsys
 attach	em3027rtc at iic
 file	dev/i2c/em3027.c			em3027rtc
+
+# Apple Fan Control Unit found in some G5
+device	fcu: sysmon_envsys
+attach	fcu at iic
+file	dev/i2c/fcu.c				fcu	needs-flag
+
+# Analog Devices AD7417 thermometer and ADC
+device	adadc: sysmon_envsys
+attach	adadc at iic
+file	dev/i2c/adadc.c				adadc
 
 # HID over i2c
 # HID "bus"

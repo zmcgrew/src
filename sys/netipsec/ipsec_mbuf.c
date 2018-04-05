@@ -1,5 +1,6 @@
-/*	$NetBSD: ipsec_mbuf.c,v 1.16 2017/05/19 04:34:09 ozaki-r Exp $	*/
-/*-
+/*	$NetBSD: ipsec_mbuf.c,v 1.22 2018/03/10 17:52:50 maxv Exp $	*/
+
+/*
  * Copyright (c) 2002, 2003 Sam Leffler, Errno Consulting
  * All rights reserved.
  *
@@ -28,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec_mbuf.c,v 1.16 2017/05/19 04:34:09 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec_mbuf.c,v 1.22 2018/03/10 17:52:50 maxv Exp $");
 
 /*
  * IPsec-specific mbuf routines.
@@ -45,8 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: ipsec_mbuf.c,v 1.16 2017/05/19 04:34:09 ozaki-r Exp 
 #include <netipsec/ipsec.h>
 #include <netipsec/ipsec_var.h>
 #include <netipsec/ipsec_private.h>
-
-#include <net/net_osdep.h>
 
 /*
  * Create a writable copy of the mbuf chain.  While doing this
@@ -215,6 +214,7 @@ m_makespace(struct mbuf *m0, int skip, int hlen, int *off)
 	unsigned remain;
 
 	KASSERT(m0 != NULL);
+	KASSERT(m0->m_flags & M_PKTHDR);
 	KASSERTMSG(hlen < MHLEN, "hlen too big: %u", hlen);
 
 	for (m = m0; m && skip > m->m_len; m = m->m_next)
@@ -225,7 +225,7 @@ m_makespace(struct mbuf *m0, int skip, int hlen, int *off)
 	 * At this point skip is the offset into the mbuf m
 	 * where the new header should be placed.  Figure out
 	 * if there's space to insert the new header.  If so,
-	 * and copying the remainder makese sense then do so.
+	 * and copying the remainder makes sense then do so.
 	 * Otherwise insert a new mbuf in the chain, splitting
 	 * the contents of m as needed.
 	 */
@@ -243,8 +243,7 @@ m_makespace(struct mbuf *m0, int skip, int hlen, int *off)
 			if (todo > MHLEN) {
 				n = m_getcl(M_DONTWAIT, m->m_type, 0);
 				len = MCLBYTES;
-			}
-			else {
+			} else {
 				n = m_get(M_DONTWAIT, m->m_type);
 				len = MHLEN;
 			}
@@ -269,8 +268,7 @@ m_makespace(struct mbuf *m0, int skip, int hlen, int *off)
 				*np = m->m_next;
 				m->m_next = n0;
 			}
-		}
-		else {
+		} else {
 			n = m_get(M_DONTWAIT, m->m_type);
 			if (n == NULL) {
 				m_freem(n0);
@@ -299,8 +297,8 @@ m_makespace(struct mbuf *m0, int skip, int hlen, int *off)
 		 * so there's space to write the new header.
 		 */
 		/* XXX can this be memcpy? does it handle overlap? */
-		ovbcopy(mtod(m, char *) + skip,
-			mtod(m, char *) + skip + hlen, remain);
+		memmove(mtod(m, char *) + skip + hlen,
+			mtod(m, char *) + skip, remain);
 		m->m_len += hlen;
 		*off = skip;
 	}
@@ -320,11 +318,10 @@ m_pad(struct mbuf *m, int n)
 	register int len, pad;
 	void *retval;
 
-	if (n <= 0) {  /* No stupid arguments. */
-		IPSECLOG(LOG_DEBUG, "pad length invalid (%d)\n", n);
-		m_freem(m);
-		return NULL;
+	if (__predict_false(n > MLEN)) {
+		panic("%s: %d > MLEN", __func__, n);
 	}
+	KASSERT(m->m_flags & M_PKTHDR);
 
 	len = m->m_pkthdr.len;
 	pad = n;
@@ -332,7 +329,7 @@ m_pad(struct mbuf *m, int n)
 
 	while (m0->m_len < len) {
 		KASSERTMSG(m0->m_next != NULL,
-		    "m0 null, len %u m_len %u", len, m0->m_len);/*XXX*/
+		    "m0 null, len %u m_len %u", len, m0->m_len);
 		len -= m0->m_len;
 		m0 = m0->m_next;
 	}
@@ -341,7 +338,6 @@ m_pad(struct mbuf *m, int n)
 		IPSECLOG(LOG_DEBUG,
 		    "length mismatch (should be %d instead of %d)\n",
 		    m->m_pkthdr.len, m->m_pkthdr.len + m0->m_len - len);
-
 		m_freem(m);
 		return NULL;
 	}
@@ -353,7 +349,6 @@ m_pad(struct mbuf *m, int n)
 			    "length mismatch (should be %d instead of %d)\n",
 			    m->m_pkthdr.len,
 			    m->m_pkthdr.len + m1->m_next->m_len);
-
 			m_freem(m);
 			return NULL;
 		}
@@ -364,8 +359,8 @@ m_pad(struct mbuf *m, int n)
 	if (pad > M_TRAILINGSPACE(m0)) {
 		/* Add an mbuf to the chain. */
 		MGET(m1, M_DONTWAIT, MT_DATA);
-		if (m1 == 0) {
-			m_freem(m0);
+		if (m1 == NULL) {
+			m_freem(m);
 			IPSECLOG(LOG_DEBUG, "unable to get extra mbuf\n");
 			return NULL;
 		}
@@ -392,6 +387,8 @@ m_striphdr(struct mbuf *m, int skip, int hlen)
 {
 	struct mbuf *m1;
 	int roff;
+
+	KASSERT(m->m_flags & M_PKTHDR);
 
 	/* Find beginning of header */
 	m1 = m_getptr(m, skip, &roff);
@@ -439,49 +436,11 @@ m_striphdr(struct mbuf *m, int skip, int hlen)
 		 * the remainder of the mbuf down over the header.
 		 */
 		IPSEC_STATINC(IPSEC_STAT_INPUT_MIDDLE);
-		ovbcopy(mtod(m1, u_char *) + roff + hlen,
-		      mtod(m1, u_char *) + roff,
+		memmove(mtod(m1, u_char *) + roff,
+		      mtod(m1, u_char *) + roff + hlen,
 		      m1->m_len - (roff + hlen));
 		m1->m_len -= hlen;
 		m->m_pkthdr.len -= hlen;
 	}
 	return (0);
-}
-
-/*
- * Diagnostic routine to check mbuf alignment as required by the
- * crypto device drivers (that use DMA).
- */
-void
-m_checkalignment(const char* where, struct mbuf *m0, int off, int len)
-{
-	int roff;
-	struct mbuf *m = m_getptr(m0, off, &roff);
-	void *addr;
-
-	if (m == NULL)
-		return;
-	printf("%s (off %u len %u): ", where, off, len);
-	addr = mtod(m, char *) + roff;
-	do {
-		int mlen;
-
-		if (((uintptr_t) addr) & 3) {
-			printf("addr misaligned %p,", addr);
-			break;
-		}
-		mlen = m->m_len;
-		if (mlen > len)
-			mlen = len;
-		len -= mlen;
-		if (len && (mlen & 3)) {
-			printf("len mismatch %u,", mlen);
-			break;
-		}
-		m = m->m_next;
-		addr = m ? mtod(m, void *) : NULL;
-	} while (m && len > 0);
-	for (m = m0; m; m = m->m_next)
-		printf(" [%p:%u]", mtod(m, void *), m->m_len);
-	printf("\n");
 }

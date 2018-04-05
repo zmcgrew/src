@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.h,v 1.88 2018/01/10 10:56:30 knakahara Exp $	*/
+/*	$NetBSD: in6.h,v 1.90 2018/02/09 18:31:52 maxv Exp $	*/
 /*	$KAME: in6.h,v 1.83 2001/03/29 02:55:07 jinmei Exp $	*/
 
 /*
@@ -546,16 +546,14 @@ struct ip6_mtuinfo {
 #define IPV6CTL_FORWARDING	1	/* act as router */
 #define IPV6CTL_SENDREDIRECTS	2	/* may send redirects when forwarding*/
 #define IPV6CTL_DEFHLIM		3	/* default Hop-Limit */
-#ifdef notyet
-#define IPV6CTL_DEFMTU		4	/* default MTU */
-#endif
+/* IPV6CTL_DEFMTU=4, never implemented */
 #define IPV6CTL_FORWSRCRT	5	/* forward source-routed dgrams */
 #define IPV6CTL_STATS		6	/* stats */
 #define IPV6CTL_MRTSTATS	7	/* multicast forwarding stats */
 #define IPV6CTL_MRTPROTO	8	/* multicast routing protocol */
 #define IPV6CTL_MAXFRAGPACKETS	9	/* max packets reassembly queue */
 #define IPV6CTL_SOURCECHECK	10	/* verify source route and intf */
-#define IPV6CTL_SOURCECHECK_LOGINT 11	/* minimume logging interval */
+#define IPV6CTL_SOURCECHECK_LOGINT 11	/* minimum logging interval */
 #define IPV6CTL_ACCEPT_RTADV	12
 #define IPV6CTL_KEEPFAITH	13
 #define IPV6CTL_LOG_INTERVAL	14

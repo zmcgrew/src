@@ -1,5 +1,5 @@
 #
-#	$NetBSD: SUNXI,v 1.57 2017/12/18 19:00:42 jmcneill Exp $
+#	$NetBSD: SUNXI,v 1.60 2018/03/07 20:55:31 bouyer Exp $
 #
 #	Allwinner sunxi family
 #
@@ -214,8 +214,7 @@ sunxigpio*	at fdt? pass 3		# GPIO
 gpio*		at gpiobus?
 
 # Ethernet
-sun4iemac*	at fdt?			# Allwinner Fast Ethernet (EMAC)
-sunxiemac*	at fdt?			# Allwinner Gigabit Ethernet (EMAC)
+emac*		at fdt?		# Allwinner Fast or Gigabit Ethernet (EMAC)
 awge*		at fdt?			# Allwinner Gigabit Ethernet (GMAC)
 rgephy*		at mii? phy ?
 rlphy*		at mii? phy ?
@@ -236,6 +235,15 @@ axp22x*		at iic?			# AXP221 Power Management IC
 sy8106a*	at iic?			# Silergy SY81061 regulator
 pcf8563rtc*	at iic?			# PCF8563 RTC
 seeprom*	at iic?			# AT24Cxx Serial EEPROM
+
+# SPI
+sun6ispi*	at fdt?
+spi*		at spibus?
+
+# CAN bus
+options         CAN             # Controller Area Network protocol
+pseudo-device   canloop         # CAN loopback interface
+sunxican*	at fdt?		# A10/A20 CAN controller
 
 # RTC
 sunxirtc*	at fdt?			# RTC
@@ -291,6 +299,9 @@ options 	WSDISPLAY_MULTICONS
 # Touch Screen controller
 sunxits*	at fdt?			# Touch Screen controller
 wsmouse*	at sunxits? mux 0
+
+# Low res ADC
+sunxilradc*	at fdt?
 
 # wscons pseudo-devices
 pseudo-device	wsfont

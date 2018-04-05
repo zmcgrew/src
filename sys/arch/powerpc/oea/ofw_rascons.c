@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_rascons.c,v 1.9 2013/04/11 18:04:20 macallan Exp $	*/
+/*	$NetBSD: ofw_rascons.c,v 1.12 2018/03/02 14:45:23 macallan Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996 Carnegie-Mellon University.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_rascons.c,v 1.9 2013/04/11 18:04:20 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_rascons.c,v 1.12 2018/03/02 14:45:23 macallan Exp $");
 
 #include "wsdisplay.h"
 
@@ -53,25 +53,17 @@ __KERNEL_RCSID(0, "$NetBSD: ofw_rascons.c,v 1.9 2013/04/11 18:04:20 macallan Exp
 #include <dev/wsfont/wsfont.h>
 
 #include <powerpc/oea/bat.h>
+#include <powerpc/oea/cpufeat.h>
 #include <powerpc/oea/ofw_rasconsvar.h>
 
 /* we need a wsdisplay to do anything halfway useful */
 #if NWSDISPLAY > 0
 
-#if defined(PPC_OEA64) || defined (PPC_OEA64_BRIDGE)
-int rascons_enable_cache = 0;
-#else
-#ifdef OFB_ENABLE_CACHE
-int rascons_enable_cache = 1;
-#else
-int rascons_enable_cache = 0;
-#endif
-#endif /* PPC_OEA64 */
-
 static int copy_rom_font(void);
 static struct wsdisplay_font openfirm6x11;
 static vaddr_t fbaddr;
 static int romfont_loaded = 0;
+static int needs_finalize = 0;
 
 struct vcons_screen rascons_console_screen;
 
@@ -125,15 +117,40 @@ rascons_cnattach(void)
 	rascons_stdscreen.textops = &ri->ri_ops;
 	rascons_stdscreen.capabilities = ri->ri_caps;
 
-	ri->ri_ops.allocattr(ri, 0, 0, 0, &defattr);
-	wsdisplay_preattach(&rascons_stdscreen, ri, 0, max(0,
-	    min(crow, ri->ri_rows - 1)), defattr);
-
+	/*
+	 * XXX
+	 * On some G5 models ( so far, 970FX but not 970MP ) we can't seem to
+	 * access video memory in real mode, but a lot of code relies on rasops
+	 * data structures being set up early so we can't just push the whole
+	 * thing further down. Instead set things up but don't actually attach
+	 * the console until later.
+	 * This needs a better trigger but for now I can't reliably tell which
+	 * exact models / CPUs / other hardware actually need it.
+	 */
+	if ((oeacpufeat & OEACPU_64_BRIDGE) != 0) {
+		needs_finalize = 1;
+	} else {
+		ri->ri_ops.allocattr(ri, 0, 0, 0, &defattr);
+		wsdisplay_preattach(&rascons_stdscreen, ri, 0, max(0,
+		    min(crow, ri->ri_rows - 1)), defattr);
+	}
 #if notyet
 	rascons_init_cmap(NULL);
 #endif
 
 	return 0;
+}
+
+void
+rascons_finalize(void)
+{
+	struct rasops_info *ri = &rascons_console_screen.scr_ri;
+	long defattr;
+
+	if (needs_finalize == 0) return;
+	
+	ri->ri_ops.allocattr(ri, 0, 0, 0, &defattr);
+	wsdisplay_preattach(&rascons_stdscreen, ri, 0, 0, defattr);
 }
 
 static int
@@ -195,39 +212,6 @@ rascons_init_rasops(int node, struct rasops_info *ri)
 
 	if (width == -1 || height == -1 || fbaddr == 0 || fbaddr == -1)
 		return false;
-
-	/* Enable write-through cache. */
-#if defined (PPC_OEA) && !defined (PPC_OEA64) && !defined (PPC_OEA64_BRIDGE)
-	if (rascons_enable_cache) {
-		vaddr_t va;
-		/*
-		 * Let's try to find an empty 256M BAT to use
-		 */
-		for (va = SEGMENT_LENGTH; va < (USER_SR << ADDR_SR_SHFT);
-		     va += SEGMENT_LENGTH) {
-			const u_int i = BAT_VA2IDX(va);
-			const u_int n = BAT_VA2IDX(SEGMENT_LENGTH);
-			u_int j;
-			for (j = 0; j < n; j++) {
-				if (battable[i+j].batu != 0) {
-					break;
-				}
-			}
-			if (j == n) {
-				register_t batl = BATL(fbaddr & 0xf0000000,
-				    BAT_G | BAT_W | BAT_M, BAT_PP_RW);
-				register_t batu = BATL(va, BAT_BL_256M, BAT_Vs);
-				for (j = 0; j < n; j++) {
-					battable[i+j].batl = batl;
-					battable[i+j].batu = batu;
-				}
-				fbaddr &= SEGMENT_MASK;
-				fbaddr |= va;
-				break;
-			}
-		}
-	}
-#endif /* PPC_OEA64 */
 
 	/* initialize rasops */
 	ri->ri_width = width;

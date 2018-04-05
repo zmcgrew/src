@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip6.c,v 1.159 2018/01/23 09:21:59 maxv Exp $	*/
+/*	$NetBSD: raw_ip6.c,v 1.166 2018/03/21 14:23:54 roy Exp $	*/
 /*	$KAME: raw_ip6.c,v 1.82 2001/07/23 18:57:56 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.159 2018/01/23 09:21:59 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.166 2018/03/21 14:23:54 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -100,7 +100,6 @@ __KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.159 2018/01/23 09:21:59 maxv Exp $");
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #include <netipsec/ipsec_var.h>
-#include <netipsec/ipsec_private.h>
 #include <netipsec/ipsec6.h>
 #endif
 
@@ -162,14 +161,6 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 	}
 #endif
 
-	/* Be proactive about malicious use of IPv4 mapped address */
-	if (IN6_IS_ADDR_V4MAPPED(&ip6->ip6_src) ||
-	    IN6_IS_ADDR_V4MAPPED(&ip6->ip6_dst)) {
-		/* XXX stat */
-		m_freem(m);
-		return IPPROTO_DONE;
-	}
-
 	sockaddr_in6_init(&rip6src, &ip6->ip6_src, 0, 0, 0);
 	if (sa6_recoverscope(&rip6src) != 0) {
 		/* XXX: should be impossible. */
@@ -205,8 +196,7 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 			/*
 			 * Check AH/ESP integrity
 			 */
-			if (!ipsec_used ||
-			    (ipsec_used && !ipsec6_in_reject(m, last)))
+			if (!ipsec_used || !ipsec_in_reject(m, last))
 #endif
 			if ((n = m_copy(m, 0, (int)M_COPYALL)) != NULL) {
 				if (last->in6p_flags & IN6P_CONTROLOPTS)
@@ -215,7 +205,7 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 				m_adj(n, *offp);
 				if (sbappendaddr(&last->in6p_socket->so_rcv,
 				    sin6tosa(&rip6src), n, opts) == 0) {
-					/* should notify about lost packet */
+					soroverflow(last->in6p_socket);
 					m_freem(n);
 					if (opts)
 						m_freem(opts);
@@ -229,7 +219,7 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 	}
 
 #ifdef IPSEC
-	if (ipsec_used && last && ipsec6_in_reject(m, last)) {
+	if (ipsec_used && last && ipsec_in_reject(m, last)) {
 		m_freem(m);
 		IP6_STATDEC(IP6_STAT_DELIVERED);
 		/* do not inject data into pcb */
@@ -242,6 +232,7 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 		m_adj(m, *offp);
 		if (sbappendaddr(&last->in6p_socket->so_rcv,
 		    sin6tosa(&rip6src), m, opts) == 0) {
+			soroverflow(last->in6p_socket);
 			m_freem(m);
 			if (opts)
 				m_freem(opts);
@@ -257,12 +248,12 @@ rip6_input(struct mbuf **mp, int *offp, int proto)
 		else {
 			int s;
 			struct ifnet *rcvif = m_get_rcvif(m, &s);
-			u_int8_t *prvnxtp = ip6_get_prevhdr(m, *offp); /* XXX */
+			const int prvnxt = ip6_get_prevhdr(m, *offp);
 			in6_ifstat_inc(rcvif, ifs6_in_protounknown);
 			m_put_rcvif(rcvif, &s);
 			icmp6_error(m, ICMP6_PARAM_PROB,
 			    ICMP6_PARAMPROB_NEXTHEADER,
-			    prvnxtp - mtod(m, u_int8_t *));
+			    prvnxt);
 		}
 		IP6_STATDEC(IP6_STAT_DELIVERED);
 	}
@@ -475,6 +466,7 @@ rip6_output(struct mbuf *m, struct socket * const so,
 
 	if (so->so_proto->pr_protocol == IPPROTO_ICMPV6 ||
 	    in6p->in6p_cksum != -1) {
+		const uint8_t nxt = ip6->ip6_nxt;
 		int off;
 		u_int16_t sum;
 
@@ -496,7 +488,7 @@ rip6_output(struct mbuf *m, struct socket * const so,
 			error = ENOBUFS;
 			goto bad;
 		}
-		sum = in6_cksum(m, ip6->ip6_nxt, sizeof(*ip6), plen);
+		sum = in6_cksum(m, nxt, sizeof(*ip6), plen);
 		m = m_copyback_cow(m, off, sizeof(sum), (void *)&sum,
 		    M_DONTWAIT);
 		if (m == NULL) {

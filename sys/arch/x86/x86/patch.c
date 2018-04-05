@@ -1,4 +1,4 @@
-/*	$NetBSD: patch.c,v 1.31 2018/01/27 09:33:25 maxv Exp $	*/
+/*	$NetBSD: patch.c,v 1.34 2018/03/13 16:52:42 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.31 2018/01/27 09:33:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.34 2018/03/13 16:52:42 maxv Exp $");
 
 #include "opt_lockdebug.h"
 #ifdef i386
@@ -143,7 +143,7 @@ patchbytes(void *addr, const uint8_t *bytes, size_t size)
 	}
 }
 
-static void
+void
 x86_hotpatch(uint32_t name, const uint8_t *bytes, size_t size)
 {
 	extern char __rodata_hotpatch_start;
@@ -165,6 +165,32 @@ x86_hotpatch(uint32_t name, const uint8_t *bytes, size_t size)
 }
 
 void
+x86_patch_window_open(u_long *psl, u_long *cr0)
+{
+	/* Disable interrupts. */
+	*psl = x86_read_psl();
+	x86_disable_intr();
+
+	/* Disable write protection in supervisor mode. */
+	*cr0 = rcr0();
+	lcr0(*cr0 & ~CR0_WP);
+}
+
+void
+x86_patch_window_close(u_long psl, u_long cr0)
+{
+	/* Write back and invalidate cache, flush pipelines. */
+	wbinvd();
+	x86_flush();
+
+	/* Re-enable write protection. */
+	lcr0(cr0);
+
+	/* Restore the PSL, potentially re-enabling interrupts. */
+	x86_write_psl(psl);
+}
+
+void
 x86_patch(bool early)
 {
 	static bool first, second;
@@ -181,13 +207,7 @@ x86_patch(bool early)
 		second = true;
 	}
 
-	/* Disable interrupts. */
-	psl = x86_read_psl();
-	x86_disable_intr();
-
-	/* Disable write protection in supervisor mode. */
-	cr0 = rcr0();
-	lcr0(cr0 & ~CR0_WP);
+	x86_patch_window_open(&psl, &cr0);
 
 #if !defined(GPROF)
 	if (!early && ncpu == 1) {
@@ -298,11 +318,5 @@ x86_patch(bool early)
 		x86_hotpatch(HP_NAME_STAC, stac_bytes, sizeof(stac_bytes));
 	}
 
-	/* Write back and invalidate cache, flush pipelines. */
-	wbinvd();
-	x86_flush();
-	x86_write_psl(psl);
-
-	/* Re-enable write protection. */
-	lcr0(cr0);
+	x86_patch_window_close(psl, cr0);
 }

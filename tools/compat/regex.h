@@ -1,3 +1,3 @@
-/*	$NetBSD: regex.h,v 1.3 2016/03/06 10:22:59 aymeric Exp $ */
+/*	$NetBSD: regex.h,v 1.5 2018/03/11 18:32:43 christos Exp $ */
 
 #include "../../include/regex.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: npf_inet.c,v 1.37 2017/02/19 20:27:22 christos Exp $	*/
+/*	$NetBSD: npf_inet.c,v 1.47 2018/03/23 08:28:54 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2009-2014 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
 
 #ifdef _KERNEL
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: npf_inet.c,v 1.37 2017/02/19 20:27:22 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: npf_inet.c,v 1.47 2018/03/23 08:28:54 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -215,7 +215,8 @@ npf_tcpsaw(const npf_cache_t *npc, tcp_seq *seq, tcp_seq *ack, uint32_t *win)
 		return ntohs(ip->ip_len) - npc->npc_hlen - thlen;
 	} else if (npf_iscached(npc, NPC_IP6)) {
 		const struct ip6_hdr *ip6 = npc->npc_ip.v6;
-		return ntohs(ip6->ip6_plen) - thlen;
+		return ntohs(ip6->ip6_plen) -
+		    (npc->npc_hlen - sizeof(*ip6)) - thlen;
 	}
 	return 0;
 }
@@ -229,7 +230,7 @@ npf_fetch_tcpopts(npf_cache_t *npc, uint16_t *mss, int *wscale)
 	nbuf_t *nbuf = npc->npc_nbuf;
 	const struct tcphdr *th = npc->npc_l4.tcp;
 	int topts_len, step;
-	void *nptr;
+	uint8_t *nptr;
 	uint8_t val;
 	bool ok;
 
@@ -252,7 +253,7 @@ next:
 		ok = false;
 		goto done;
 	}
-	val = *(uint8_t *)nptr;
+	val = *nptr;
 
 	switch (val) {
 	case TCPOPT_EOL:
@@ -264,43 +265,43 @@ next:
 		step = 1;
 		break;
 	case TCPOPT_MAXSEG:
-		if ((nptr = nbuf_advance(nbuf, 2, 2)) == NULL) {
+		if ((nptr = nbuf_ensure_contig(nbuf, TCPOLEN_MAXSEG)) == NULL) {
 			ok = false;
 			goto done;
 		}
 		if (mss) {
 			if (*mss) {
-				memcpy(nptr, mss, sizeof(uint16_t));
+				memcpy(nptr + 2, mss, sizeof(uint16_t));
 			} else {
-				memcpy(mss, nptr, sizeof(uint16_t));
+				memcpy(mss, nptr + 2, sizeof(uint16_t));
 			}
 		}
 		topts_len -= TCPOLEN_MAXSEG;
-		step = 2;
+		step = TCPOLEN_MAXSEG;
 		break;
 	case TCPOPT_WINDOW:
 		/* TCP Window Scaling (RFC 1323). */
-		if ((nptr = nbuf_advance(nbuf, 2, 1)) == NULL) {
+		if ((nptr = nbuf_ensure_contig(nbuf, TCPOLEN_WINDOW)) == NULL) {
 			ok = false;
 			goto done;
 		}
-		val = *(uint8_t *)nptr;
+		val = *(nptr + 2);
 		*wscale = (val > TCP_MAX_WINSHIFT) ? TCP_MAX_WINSHIFT : val;
 		topts_len -= TCPOLEN_WINDOW;
-		step = 1;
+		step = TCPOLEN_WINDOW;
 		break;
 	default:
-		if ((nptr = nbuf_advance(nbuf, 1, 1)) == NULL) {
+		if ((nptr = nbuf_ensure_contig(nbuf, 2)) == NULL) {
 			ok = false;
 			goto done;
 		}
-		val = *(uint8_t *)nptr;
+		val = *(nptr + 1);
 		if (val < 2 || val > topts_len) {
 			ok = false;
 			goto done;
 		}
 		topts_len -= val;
-		step = val - 1;
+		step = val;
 	}
 
 	/* Any options left? */
@@ -322,19 +323,28 @@ npf_cache_ip(npf_cache_t *npc, nbuf_t *nbuf)
 	const uint8_t ver = *(const uint8_t *)nptr;
 	int flags = 0;
 
+	/*
+	 * We intentionally don't read the L4 payload after IPPROTO_AH.
+	 */
+
 	switch (ver >> 4) {
 	case IPVERSION: {
 		struct ip *ip;
 
 		ip = nbuf_ensure_contig(nbuf, sizeof(struct ip));
 		if (ip == NULL) {
-			return 0;
+			return NPC_FMTERR;
 		}
 
-		/* Check header length and fragment offset. */
+		/* Retrieve the complete header. */
 		if ((u_int)(ip->ip_hl << 2) < sizeof(struct ip)) {
-			return 0;
+			return NPC_FMTERR;
 		}
+		ip = nbuf_ensure_contig(nbuf, (u_int)(ip->ip_hl << 2));
+		if (ip == NULL) {
+			return NPC_FMTERR;
+		}
+
 		if (ip->ip_off & ~htons(IP_DF | IP_RF)) {
 			/* Note fragmentation. */
 			flags |= NPC_IPFRAG;
@@ -357,27 +367,29 @@ npf_cache_ip(npf_cache_t *npc, nbuf_t *nbuf)
 		struct ip6_ext *ip6e;
 		struct ip6_frag *ip6f;
 		size_t off, hlen;
+		int frag_present;
 
 		ip6 = nbuf_ensure_contig(nbuf, sizeof(struct ip6_hdr));
 		if (ip6 == NULL) {
-			return 0;
+			return NPC_FMTERR;
 		}
+
+		/*
+		 * XXX: We don't handle IPv6 Jumbograms.
+		 */
 
 		/* Set initial next-protocol value. */
 		hlen = sizeof(struct ip6_hdr);
 		npc->npc_proto = ip6->ip6_nxt;
 		npc->npc_hlen = hlen;
 
+		frag_present = 0;
+
 		/*
 		 * Advance by the length of the current header.
 		 */
 		off = nbuf_offset(nbuf);
-		while (nbuf_advance(nbuf, hlen, 0) != NULL) {
-			ip6e = nbuf_ensure_contig(nbuf, sizeof(*ip6e));
-			if (ip6e == NULL) {
-				return 0;
-			}
-
+		while ((ip6e = nbuf_advance(nbuf, hlen, sizeof(*ip6e))) != NULL) {
 			/*
 			 * Determine whether we are going to continue.
 			 */
@@ -388,24 +400,22 @@ npf_cache_ip(npf_cache_t *npc, nbuf_t *nbuf)
 				hlen = (ip6e->ip6e_len + 1) << 3;
 				break;
 			case IPPROTO_FRAGMENT:
+				if (frag_present++)
+					return NPC_FMTERR;
 				ip6f = nbuf_ensure_contig(nbuf, sizeof(*ip6f));
 				if (ip6f == NULL)
-					return 0;
-				/*
-				 * We treat the first fragment as a regular
-				 * packet and then we pass the rest of the
-				 * fragments unconditionally. This way if
-				 * the first packet passes the rest will
-				 * be able to reassembled, if not they will
-				 * be ignored. We can do better later.
-				 */
-				if (ntohs(ip6f->ip6f_offlg & IP6F_OFF_MASK) != 0)
-					flags |= NPC_IPFRAG;
+					return NPC_FMTERR;
 
-				hlen = sizeof(struct ip6_frag);
-				break;
-			case IPPROTO_AH:
-				hlen = (ip6e->ip6e_len + 2) << 2;
+				/* RFC6946: Skip dummy fragments. */
+				if (!ntohs(ip6f->ip6f_offlg & IP6F_OFF_MASK) &&
+				    !(ip6f->ip6f_offlg & IP6F_MORE_FRAG)) {
+					hlen = sizeof(struct ip6_frag);
+					break;
+				}
+
+				hlen = 0;
+				flags |= NPC_IPFRAG;
+
 				break;
 			default:
 				hlen = 0;
@@ -417,6 +427,10 @@ npf_cache_ip(npf_cache_t *npc, nbuf_t *nbuf)
 			}
 			npc->npc_proto = ip6e->ip6e_nxt;
 			npc->npc_hlen += hlen;
+		}
+
+		if (ip6e == NULL) {
+			return NPC_FMTERR;
 		}
 
 		/*
@@ -432,7 +446,7 @@ npf_cache_ip(npf_cache_t *npc, nbuf_t *nbuf)
 		/* Cache: layer 3 - IPv6. */
 		npc->npc_alen = sizeof(struct in6_addr);
 		npc->npc_ips[NPF_SRC] = (npf_addr_t *)&ip6->ip6_src;
-		npc->npc_ips[NPF_DST]= (npf_addr_t *)&ip6->ip6_dst;
+		npc->npc_ips[NPF_DST] = (npf_addr_t *)&ip6->ip6_dst;
 
 		npc->npc_ip.v6 = ip6;
 		flags |= NPC_IP6;
@@ -469,13 +483,17 @@ again:
 	 * fragmented, then we cannot look into L4.
 	 */
 	flags = npf_cache_ip(npc, nbuf);
-	if ((flags & NPC_IP46) == 0 || (flags & NPC_IPFRAG) != 0) {
-		nbuf_unset_flag(nbuf, NBUF_DATAREF_RESET);
-		npc->npc_info |= flags;
-		return flags;
+	if ((flags & NPC_IP46) == 0 || (flags & NPC_IPFRAG) != 0 ||
+	    (flags & NPC_FMTERR) != 0) {
+		goto out;
 	}
 	hlen = npc->npc_hlen;
 
+	/*
+	 * Note: we guarantee that the potential "Query Id" field of the
+	 * ICMPv4/ICMPv6 packets is in the nbuf. This field is used in the
+	 * ICMP ALG.
+	 */
 	switch (npc->npc_proto) {
 	case IPPROTO_TCP:
 		/* Cache: layer 4 - TCP. */
@@ -492,13 +510,13 @@ again:
 	case IPPROTO_ICMP:
 		/* Cache: layer 4 - ICMPv4. */
 		npc->npc_l4.icmp = nbuf_advance(nbuf, hlen,
-		    offsetof(struct icmp, icmp_void));
+		    ICMP_MINLEN);
 		l4flags = NPC_LAYER4 | NPC_ICMP;
 		break;
 	case IPPROTO_ICMPV6:
 		/* Cache: layer 4 - ICMPv6. */
 		npc->npc_l4.icmp6 = nbuf_advance(nbuf, hlen,
-		    offsetof(struct icmp6_hdr, icmp6_data32));
+		    sizeof(struct icmp6_hdr));
 		l4flags = NPC_LAYER4 | NPC_ICMP;
 		break;
 	default:
@@ -506,14 +524,23 @@ again:
 		break;
 	}
 
+	/* Error out if nbuf_advance failed. */
+	if (l4flags && npc->npc_l4.hdr == NULL) {
+		goto err;
+	}
+
 	if (nbuf_flag_p(nbuf, NBUF_DATAREF_RESET)) {
 		goto again;
 	}
 
-	/* Add the L4 flags if nbuf_advance() succeeded. */
-	if (l4flags && npc->npc_l4.hdr) {
-		flags |= l4flags;
-	}
+	flags |= l4flags;
+	npc->npc_info |= flags;
+	return flags;
+
+err:
+	flags = NPC_FMTERR;
+out:
+	nbuf_unset_flag(nbuf, NBUF_DATAREF_RESET);
 	npc->npc_info |= flags;
 	return flags;
 }

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.12 2015/07/17 17:57:11 mrg Exp $
+#	$NetBSD: Makefile,v 1.14 2018/03/11 10:17:10 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -19,8 +19,6 @@ SRCS+=	access.c config.c connection.c daemon.c error.c io.c osglue.c \
 
 CPPFLAGS+=		-I${XFSDIR}/include \
 			-I${DESTDIR}${X11INCDIR}/X11/FS \
-			-I${X11SRCDIR.libXfont}/include \
-			-I${X11SRCDIR.libXfont}/bitmap \
 			-I${XFSDIR}/../include \
 			-DHAVE_DAEMON
 
@@ -59,8 +57,8 @@ FILESNAME=	config
 FILESDIR=	${XFSCONFIGDIR}
 
 
-LDADD+=	-lXfont -lfontenc -lXfontcache -lXext -lX11 -lfreetype -lm -lz
-DPADD+=	${LIBXFONT} ${LIBFONTENC} ${LIBXFONTCACHE} ${LIBXEXT} ${LIBX11} \
+LDADD+=	-lXfont2 -lfontenc -lXext -lX11 -lfreetype -lm -lz
+DPADD+=	${LIBXFONT} ${LIBFONTENC} ${LIBXEXT} ${LIBX11} \
 	${LIBFREETYPE} ${LIBM} ${LIBZ}
 
 .PATH:	${XFSDIR}
