@@ -282,4 +282,11 @@ pte_pde_cas(pd_entry_t *pdep, pd_entry_t opde, pt_entry_t npde)
 	return 0;
 #endif
 }
+
+
+static inline uint32_t
+pte_value(pt_entry_t pte)
+{
+        return pte;
+}
 #endif /* _RISCV_PTE_H_ */
