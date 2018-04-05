@@ -64,7 +64,7 @@
 
 #define KERNEL_PID	0
 
-#define PMAP_HWPAGEWALKER		1
+//#define PMAP_HWPAGEWALKER		1
 #define PMAP_TLB_NUM_PIDS		256
 #define PMAP_TLB_MAX			1
 #ifdef _LP64
