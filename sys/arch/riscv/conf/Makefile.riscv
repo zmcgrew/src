@@ -69,8 +69,9 @@ locore.o: ${RISCV}/riscv/locore.S assym.h
 ## (5) link settings
 ##
 .if ${MACHINE_ARCH} == "riscv64" && ${LP64:Uyes} == "yes"
-TEXTADDR?=		0xFFFFFFC000000000
-.else
+#TEXTADDR?=              0xFFFFFFFF80002000
+TEXTADDR?=		0x100b0
+.else   
 TEXTADDR?=		0xC0001000
 .endif
 KERNLDSCRIPT?=		${RISCV}/conf/kern.ldscript
@@ -99,7 +100,7 @@ RAMDISKDIR!=    cd ${NETBSDSRCDIR}/distrib/riscv/ramdisk && ${PRINTOBJDIR}
 
 .if defined(NEED_MDSETIMAGE) && ${NEED_MDSETIMAGE} != "no" \
     && defined(RAMDISKDIR) && exists(${RAMDISKDIR}/ramdisk.fs)
-SYSTEM_DEP+=    ${RAMDISKDIR}/ramdisk.fs
+SYSTEM_DEP+=    ${RAMDISKDIR}/ramdisk.fs 
 SYSTEM_LD_TAIL_EXTRA+=; \
 	echo ${TOOL_MDSETIMAGE} -s $@ ${RAMDISKDIR}/ramdisk.fs; \
 	${TOOL_MDSETIMAGE} -s $@ ${RAMDISKDIR}/ramdisk.fs
