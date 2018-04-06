@@ -264,7 +264,6 @@ bool	pmap_pageidlezero(paddr_t);
  * be direct mapped.
  */
 vaddr_t	pmap_direct_mapped_phys(paddr_t, bool *, vaddr_t);
-#endif
 
 /*
  * used by dumpsys to record the PA of the L1 table
@@ -1042,7 +1041,6 @@ do {									\
 	(pg)->mdpage.urw_mappings = 0;					\
 	(pg)->mdpage.k_mappings = 0;					\
 } while (/*CONSTCOND*/0)
-#endif
 
 #ifdef ARM_MMU_EXTENDED
 #include <arm/arm32/pmap_v6n.h>
@@ -1090,8 +1088,6 @@ pte_to_paddr(pt_entry_t pte)
 {
 	return l2pte_pa(pte);
 }
-
-#if defined(_KERNEL)
 
 static inline bool
 pte_valid_p(pt_entry_t pte)
