@@ -38,18 +38,25 @@ ENTRY_NP(start)
 	// We get loaded and starting running at or near 0, not where we
 	// should be. We need to construct an initial PDETAB
 
+  li t0, SR_SUM
+  csrs sstatus, t0
+
+  /* a0 is hartid, a1 is dtb_output (pointer?) */
+
+/*
 #ifdef _LP64
-	li	t0, SR_U64|SR_S64
-	li	t1, SR_IM|SR_VM|SR_EI
-	csrs	sstatus, t0
+  li	t0, SR_U64|SR_S64
+  li	t1, SR_IM|SR_VM|SR_EI
+  csrs	sstatus, t0
 #else
-	li	t1, SR_IM|SR_VM|SR_U64|SR_S64|R_EI
+  li	t1, SR_IM|SR_VM|SR_U64|SR_S64|R_EI
 #endif
-	csrc	sstatus, t1
+ 	csrc	sstatus, t1
 
 	li	s11, VM_MAX_KERNEL_ADDRESS
 	li	s10, PAGE_SIZE
 	li	s9, USPACE
+  */
 
 #if 0
 	// The kernel doesn't use gp/_gp since we'd have to reload it on
@@ -122,7 +129,7 @@ ENTRY_NP(start)
 	bgtz	a6, .Lfill		// loop if more
 
 	csrw	sptbr, s1		// set the page table base
-	li	t0, SR_VM
+//	li	t0, SR_VM
 	csrs	sstatus, t0		// Enable VM
 
 	// We should have a VM so let's start using our real addresses
@@ -178,8 +185,8 @@ ENTRY_NP(cpu_switchto)
 	REG_S	t4, TF_SR(sp)		// save it
 
 	REG_S	sp, L_MD_KTF(a0)	// record trapframe pointer
-
-	csrrci	t0, sstatus, SR_EI	// # disable interrupts
+.Lswitchto_newlwp:
+	csrrci	t0, sstatus, SR_SIE	// # disable interrupts
 
 	move	tp, a1			// # put the new lwp in thread pointer
 
@@ -269,7 +276,7 @@ ENTRY_NP(cpu_fast_switchto)
 	move	s1, sp			// remember kernel stack
 
 #if 0
-	csrrci	t0, sstatus, SR_EI	// disable interrupts
+	csrrci	t0, sstatus, SR_SIE	// disable interrupts
 #endif
 	PTR_L	t1, L_CPU(tp)		// get curcpu()
 
@@ -282,7 +289,7 @@ ENTRY_NP(cpu_fast_switchto)
 #endif
 	call	_C_LABEL(softint_dispatch)
 #if 0
-	csrrci	t0, sstatus, SR_EI	// disable interrupts
+	csrrci	t0, sstatus, SR_SIE	// disable interrupts
 #endif
 	PTR_L	t1, L_CPU(tp)		// get curcpu() again
 	move	tp, s0			// return to pinned lwp
@@ -384,7 +391,7 @@ exception_kernexit:
 	// trap or interrupt).  Simply return the volatile registers and the
 	// exception PC and status, load the saved SP from the trapframe, and
 	// return from the exception
-	csrrci	zero, sstatus, SR_EI	// disable interrupts
+	csrrci	zero, sstatus, SR_SIE	// disable interrupts
 
 	REG_L	ra, TF_RA(sp)		// restore return address
 	REG_L	gp, TF_GP(sp)		// restore gp
@@ -427,7 +434,7 @@ trap_user:
 	REG_S	s10, TF_S10(sp)		// only save from userland
 	REG_S	s11, TF_S11(sp)		// only save from userland
 
-	csrsi	sstatus, SR_EI		// reenable interrupts
+	csrsi	sstatus, SR_SIE		// reenable interrupts
 
 	li	t0, CAUSE_SYSCALL	// let's see if this was a syscall
 	beq	a3, t0, trap_syscall	//   yes it was
@@ -436,7 +443,7 @@ trap_user:
 _C_LABEL(exception_userexit):
 	INT_L	t0, L_MD_ASTPENDING(tp)	// ast pending?
 	bnez	t0, trap_doast		//   yes, handle it.
-	csrrci	zero, sstatus, SR_EI	// disable interrupts
+	csrrci	zero, sstatus, SR_SIE	// disable interrupts
 	csrw	sscratch, tp		// show we are coming from userland
 	REG_L	tp, TF_TP(sp)		// only restore from userland
 	REG_L	s0, TF_S0(sp)		// only restore from userland
