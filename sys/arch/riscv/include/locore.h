@@ -39,9 +39,9 @@
 
 struct trapframe {
 	struct reg tf_regs;
-	register_t tf_badaddr;	
-	uint32_t tf_cause;		// 32-bit register
-	uint32_t tf_sr;			// 32-bit register
+	register_t tf_badaddr;
+	register_t tf_cause;
+	register_t tf_sr;
 #define tf_reg		tf_regs.r_reg
 #define tf_pc		tf_regs.r_pc
 #define tf_ra		tf_reg[_X_RA]
@@ -80,7 +80,7 @@ struct trapframe {
 // For COMPAT_NETBDS32 coredumps
 struct trapframe32 {
 	struct reg32 tf_regs;
-	register32_t tf_badaddr;	
+	register32_t tf_badaddr;
 	uint32_t tf_cause;		// 32-bit register
 	uint32_t tf_sr;			// 32-bit register
 };
