@@ -80,7 +80,7 @@ delay(unsigned long us)
 
 #ifdef MODULAR
 /*
- * Push any modules loaded by the boot loader. 
+ * Push any modules loaded by the boot loader.
  */
 void
 module_init_md(void)
@@ -104,11 +104,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	memset(tf, 0, sizeof(struct trapframe));
 	tf->tf_sp = (intptr_t)stack_align(stack);
 	tf->tf_pc = (intptr_t)pack->ep_entry & ~1;
-#ifdef _LP64
-	tf->tf_sr = (p->p_flag & PK_32) ? SR_USER32 : SR_USER;
-#else
 	tf->tf_sr = SR_USER;
-#endif
 	// Set up arguments for _start(obj, cleanup, ps_strings)
 	tf->tf_a0 = 0;			// obj
 	tf->tf_a1 = 0;			// cleanup
@@ -123,7 +119,7 @@ child_return(void *arg)
 
 	tf->tf_a0 = 0;
 	tf->tf_a1 = 1;
-	tf->tf_sr &= ~SR_EF;		/* Disable FP as we can't be them. */
+	/* tf->tf_sr &= ~SR_EF;		/\* Disable FP as we can't be them. *\/ */
 	ktrsysret(SYS_fork, 0, 0);
 }
 
@@ -133,7 +129,7 @@ cpu_spawn_return(struct lwp *l)
 	userret(l);
 }
 
-/* 
+/*
  * Start a new LWP
  */
 void
@@ -299,7 +295,7 @@ cpu_need_resched(struct cpu_info *ci, int flags)
 #ifdef MULTIPROCESSOR
 	if (ci != cur_ci && (flags & RESCHED_IMMED)) {
 		cpu_send_ipi(ci, IPI_AST);
-	} 
+	}
 #endif
 }
 
@@ -350,7 +346,8 @@ void
 cpu_startup(void)
 {
 	vaddr_t minaddr, maxaddr;
-	char pbuf[9];	/* "99999 MB" */
+	char pbuf[10];	/* "999999 MB" -- But Sv39 is max 512GB */
+
 
 	/*
 	 * Good {morning,afternoon,evening,night}.

@@ -100,26 +100,60 @@ riscvreg_fcsr_write_frm(uint32_t __new)
 	return __SHIFTOUT(__old, FCSR_FRM);
 }
 
-// Status Register
-#define SR_IP		__BITS(31,24)	// Pending interrupts
-#define SR_IM		__BITS(23,16)	// Interrupt Mask
-#define SR_VM		__BIT(7)	// MMU On
-#define SR_S64		__BIT(6)	// RV64 supervisor mode
-#define SR_U64		__BIT(5)	// RV64 user mode
-#define SR_EF		__BIT(4)	// Enable Floating Point
-#define SR_PEI		__BIT(3)	// Previous EI setting
-#define SR_EI		__BIT(2)	// Enable interrupts
-#define SR_PS		__BIT(1)	// Previous (S) supervisor setting
-#define SR_S		__BIT(0)	// Supervisor
+/* Old values from previous spec -- Not sure which one! */
+/* #define SR_IP		__BITS(31,24)	// Pending interrupts */
+/* #define SR_IM		__BITS(23,16)	// Interrupt Mask */
+/* #define SR_VM		__BIT(7)	// MMU On */
+/* #define SR_S64		__BIT(6)	// RV64 supervisor mode */
+/* #define SR_U64		__BIT(5)	// RV64 user mode */
+/* #define SR_EF		__BIT(4)	// Enable Floating Point */
+/* #define SR_PEI		__BIT(3)	// Previous EI setting */
+/* #define SR_EI		__BIT(2)	// Enable interrupts */
+/* #define SR_PS		__BIT(1)	// Previous (S) supervisor setting */
+/* #define SR_S		__BIT(0)	// Supervisor */
+
+/* #ifdef _LP64 */
+/* #define	SR_USER		(SR_EI|SR_U64|SR_S64|SR_VM|SR_IM) */
+/* #define	SR_USER32	(SR_USER & ~SR_U64) */
+/* #define	SR_KERNEL	(SR_S|SR_EI|SR_U64|SR_S64|SR_VM) */
+/* #else */
+/* #define	SR_USER		(SR_EI|SR_VM|SR_IM) */
+/* #define	SR_KERNEL	(SR_S|SR_EI|SR_VM) */
+/* #endif */
+
+/* Supervisor Status Register */
+#ifndef _LP64
+#define SR_WPRI __BITS(30,20) | __BIT(17) | __BITS(12,9) | \
+                 __BITS(7,6) | __BITS(3,2)
+#define SR_SD __BIT(31)
+/* Bits 30-20 are WPRI*/
+#endif /* !_LP64 */
 
 #ifdef _LP64
-#define	SR_USER		(SR_EI|SR_U64|SR_S64|SR_VM|SR_IM)
-#define	SR_USER32	(SR_USER & ~SR_U64)
-#define	SR_KERNEL	(SR_S|SR_EI|SR_U64|SR_S64|SR_VM)
-#else
-#define	SR_USER		(SR_EI|SR_VM|SR_IM)
-#define	SR_KERNEL	(SR_S|SR_EI|SR_VM)
-#endif
+#define SR_WPRI __BITS(62, 34) | __BITS(31,20) | __BIT(17) | \
+                 __BITS(12,9) | __BITS(7,6) | __BITS(3,2)
+#define SR_SD	__BIT(63)
+/* Bits 62-34 are WPRI */
+#define SR_UXL __BITS(33,32)
+/* Bits 31-20 are WPRI*/
+#endif /* _LP64 */
+
+/* Both RV32 and RV64 have the bottom 20 bits shared */
+#define SR_MXR __BIT(19)
+#define SR_SUM __BIT(18)
+/* Bit 17 is WPRI */
+#define SR_XS __BITS(16,15)
+#define SR_FS __BITS(14,13)
+/* Bits 12-9 are WPRI */
+#define SR_SPP __BIT(8)
+/* Bits 7-6 are WPRI */
+#define SR_SPIE __BIT(5)
+#define SR_UPIE __BIT(4)
+/* Bits 3-2 are WPRI */
+#define SR_SIE __BIT(1)
+#define SR_UIE __BIT(0)
+
+#define SR_USER SR_SIE
 
 static inline uint32_t
 riscvreg_status_read(void)
@@ -154,18 +188,21 @@ riscvreg_status_set(uint32_t __mask)
 }
 
 // Cause register
-#define CAUSE_MISALIGNED_FETCH		0
-#define CAUSE_FAULT_FETCH		1
-#define CAUSE_ILLEGAL_INSTRUCTION	2
-#define CAUSE_PRIVILEGED_INSTRUCTION	3
-#define CAUSE_MISALIGNED_LOAD		4
-#define CAUSE_FAULT_LOAD		5
-#define CAUSE_MISALIGNED_STORE		6
-#define CAUSE_FAULT_STORE		7
-#define CAUSE_SYSCALL			8
-#define CAUSE_BREAKPOINT		9
-#define CAUSE_FP_DISABLED		10
-#define CAUSE_ACCELERATOR_DISABLED	12
+#define CAUSE_INST_MISALIGNED 0
+#define CAUSE_INST_ACCESS_FAULT 1
+#define CAUSE_INST_ILLEGAL 2
+#define CAUSE_BREAKPOINT 3
+/* 4 is Reserved */
+#define CAUSE_LOAD_ACCESS_FAULT 5
+#define CAUSE_STORE_MISALIGNED 6
+#define CAUSE_STORE_ACCESS_FAULT 7
+#define CAUSE_SYSCALL 8
+/* 9-11 is Reserved */
+#define CAUSE_INST_PAGE_FAULT 12
+#define CAUSE_LOAD_PAGE_FAULT 13
+/* 14 is Reserved */
+#define CAUSE_STORE_PAGE_FAULT 15
+/* >= 16 is reserved */
 
 static inline uint64_t
 riscvreg_cycle_read(void)
@@ -178,7 +215,7 @@ riscvreg_cycle_read(void)
 	uint32_t __hi0, __hi1, __lo0;
 	do {
 		__asm __volatile(
-			"csrr\t%[__hi0], cycleh" 
+			"csrr\t%[__hi0], cycleh"
 		"\n\t"	"csrr\t%[__lo0], cycle"
 		"\n\t"	"csrr\t%[__hi1], cycleh"
 		   :	[__hi0] "=r"(__hi0),

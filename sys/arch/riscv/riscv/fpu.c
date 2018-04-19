@@ -65,13 +65,13 @@ fpu_state_save(lwp_t *l)
 	KASSERT(l->l_pcu_cpu[PCU_FPU] == curcpu());
 
 	// Don't do anything if the FPU is already off.
-	if ((tf->tf_sr & SR_EF) == 0)
-		return;
+	/* if ((tf->tf_sr & SR_EF) == 0) */
+	/* 	return; */
 
 	curcpu()->ci_ev_fpu_saves.ev_count++;
 
 	// Enable FPU to save FP state
-	(void) riscvreg_status_set(SR_EF);
+	/* (void) riscvreg_status_set(SR_EF); */
 
 	// Save FCSR
 	fp->r_fcsr = riscvreg_fcsr_read();
@@ -113,7 +113,7 @@ fpu_state_save(lwp_t *l)
 		"i"(sizeof(fp->r_fpreg[0])));
 
 	// Disable the FPU
-	riscvreg_status_clear(SR_EF);
+	/* riscvreg_status_clear(SR_EF); */
 }
 
 void
@@ -131,7 +131,7 @@ fpu_state_load(lwp_t *l, u_int flags)
 	}
 
 	// Enable the FP when this lwp return to userspace.
-	tf->tf_sr |= SR_EF;
+	/* tf->tf_sr |= SR_EF; */
 
 	// If this is a simple reeanble, set the FPU enable flag and return
 	if (flags & PCU_REENABLE) {
@@ -143,7 +143,7 @@ fpu_state_load(lwp_t *l, u_int flags)
 
 
 	// Enabling to load FP state.  Interrupts will remain on.
-	(void) riscvreg_status_set(SR_EF);
+	/* (void) riscvreg_status_set(SR_EF); */
 
 	// load FP registers and establish processes' FP context.
 	__asm(	"fld	f0, (0*%1)(%0)"
@@ -183,11 +183,11 @@ fpu_state_load(lwp_t *l, u_int flags)
 
 	// load FPCSR and disable FPU again
 	riscvreg_fcsr_write(fp->r_fcsr);
-	riscvreg_status_clear(SR_EF);
+	/* riscvreg_status_clear(SR_EF); */
 }
 
 void
 fpu_state_release(lwp_t *l)
 {
-	l->l_md.md_utf->tf_sr &= ~SR_EF;
+	/* l->l_md.md_utf->tf_sr &= ~SR_EF; */
 }
