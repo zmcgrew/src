@@ -36,10 +36,10 @@
 
 struct trapframe {
 	struct reg tf_regs __aligned(8);
-	register_t tf_badvaddr;	
+	register_t tf_badvaddr;
 	register_t tf_pc;
-	uint32_t tf_cause;		// 32-bit register
-	uint32_t tf_sr;			// 32-bit register
+	register_t tf_cause;
+	register_t tf_sr;
 #define tf_reg		tf_regs.r_reg
 #define tf_a0		tf_reg[_X_A0]
 #define tf_t0		tf_reg[_X_T0]
