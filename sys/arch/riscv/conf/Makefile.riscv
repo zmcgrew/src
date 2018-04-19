@@ -72,8 +72,7 @@ locore.o: ${RISCV}/riscv/locore.S assym.h
 ## (5) link settings
 ##
 .if ${MACHINE_ARCH} == "riscv64" && ${LP64:Uyes} == "yes"
-#TEXTADDR?=              0xFFFFFFFF80002000
-TEXTADDR?=		0x100b0
+TEXTADDR?=		0xFFFFFFFF80000000
 .else   
 TEXTADDR?=		0xC0001000
 .endif
