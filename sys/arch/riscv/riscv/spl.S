@@ -43,10 +43,10 @@ _C_LABEL(ipl_sr_map):
 	.word	0			/* IPL_SOFTBIO */
 	.word	0			/* IPL_SOFTNET */
 	.word	0			/* IPL_SOFTSERIAL */
-	.word	SR_IM			/* IPL_VM */
-	.word	SR_IM			/* IPL_SCHED */
-	.word	SR_IM			/* IPL_DDB */
-	.word	SR_IM			/* IPL_HIGH */
+	.word	0			/* IPL_VM */
+	.word	0			/* IPL_SCHED */
+	.word	0			/* IPL_DDB */
+	.word	0			/* IPL_HIGH */
 
 ENTRY_NP(splx)
 	// a0 = new lower IPL
@@ -59,7 +59,7 @@ ENTRY_NP(splx)
 	slli	a1, a0, 2		// make integer index
 	add	t0, t0, a1		// index into table
 	INT_L	t0, (t0)		// get new mask bits to clear
-	li	t2, SR_IM		// get mask bits
+//	li	t2, SR_IM		// get mask bits
 	xor	t0, t0, t2		// invert mask bits
 	csrc	sstatus, t2		// block everything
 	INT_S	a0, CI_CPL(a3)		// change IPL
@@ -81,8 +81,8 @@ END(splx)
 #endif
 ENTRY_NP(spl0)
 	PTR_L	a3, L_CPU(tp)		// get curcpu()
-	li	t0, SR_IM|SR_EI		// load SR_IM|EI
-	csrci	sstatus, SR_EI		// disable interrupts
+//	li	t0, SR_IM|SR_EI		// load SR_IM|EI
+	csrci	sstatus, SR_SIE		// disable interrupts
 	INT_S	zero, CI_CPL(a3)	// set current IPL to IPL_NONE
 	csrs	sstatus, t0		// unmask all & enable interrupts
 	// spl0() is only called rarely so the overhead of always calling
@@ -93,8 +93,8 @@ END(spl0)
 ENTRY_NP(splhigh)
 	PTR_L	a3, L_CPU(tp)		// get curcpu()
 	INT_L	a0, CI_CPL(a3)		// get current IPL
-	li	t1, SR_IM		// load SR_IM
-	li	t0, IPL_HIGH		// 
+//	li	t1, SR_IM		// load SR_IM
+	li	t0, IPL_HIGH		//
 	csrc	sstatus, t1		// mask all interrupts
 	INT_S	t0, CI_CPL(a3)		// set it to IPL_HIGH
 	ret
