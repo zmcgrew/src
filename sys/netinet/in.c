@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.223 2018/03/06 07:27:55 ozaki-r Exp $	*/
+/*	$NetBSD: in.c,v 1.230 2018/04/24 01:32:30 knakahara Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.223 2018/03/06 07:27:55 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.230 2018/04/24 01:32:30 knakahara Exp $");
 
 #include "arp.h"
 
@@ -479,9 +479,14 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		} else if (in_hosteq(ia->ia_addr.sin_addr,
 		           ifra->ifra_addr.sin_addr))
 			hostIsNew = 0;
+		if (ifra->ifra_addr.sin_family != AF_INET) {
+			error = EAFNOSUPPORT;
+			goto out;
+		}
 		/* FALLTHROUGH */
 	case SIOCSIFDSTADDR:
-		if (ifra->ifra_addr.sin_family != AF_INET) {
+		if (cmd == SIOCSIFDSTADDR &&
+		    ifreq_getaddr(cmd, ifr)->sa_family != AF_INET) {
 			error = EAFNOSUPPORT;
 			goto out;
 		}
@@ -1150,7 +1155,11 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 	if (ifp->if_link_state == LINK_STATE_DOWN) {
 		ia->ia4_flags |= IN_IFF_DETACHED;
 		ia->ia4_flags &= ~IN_IFF_TENTATIVE;
-	} else if (hostIsNew && if_do_dad(ifp))
+	} else if (hostIsNew && if_do_dad(ifp)
+#if NARP > 0
+	    && ip_dad_count > 0
+#endif
+	)
 		ia->ia4_flags |= IN_IFF_TRYTENTATIVE;
 
 	/*

@@ -1,5 +1,5 @@
-/* $NetBSD: ipsec.c,v 1.153 2018/04/03 09:03:59 maxv Exp $ */
-/* $FreeBSD: src/sys/netipsec/ipsec.c,v 1.2.2.2 2003/07/01 01:38:13 sam Exp $ */
+/* $NetBSD: ipsec.c,v 1.161 2018/04/29 11:51:08 maxv Exp $ */
+/* $FreeBSD: ipsec.c,v 1.2.2.2 2003/07/01 01:38:13 sam Exp $ */
 /* $KAME: ipsec.c,v 1.103 2001/05/24 07:14:18 sakane Exp $ */
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec.c,v 1.153 2018/04/03 09:03:59 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec.c,v 1.161 2018/04/29 11:51:08 maxv Exp $");
 
 /*
  * IPsec controller part.
@@ -548,9 +548,11 @@ ipsec_getpolicybyaddr(struct mbuf *m, u_int dir, int flag, int *error)
 	if (key_havesp(dir)) {
 		sp = KEY_LOOKUP_SP_BYSPIDX(&spidx, dir);
 	}
-
-	if (sp == NULL)			/* no SP found, use system default */
+	if (sp == NULL) {
+		/* no SP found, use system default */
 		sp = KEY_GET_DEFAULT_SP(spidx.dst.sa.sa_family);
+	}
+
 	KASSERT(sp != NULL);
 	return sp;
 }
@@ -726,15 +728,18 @@ ipsec4_input(struct mbuf *m, int flags)
 	return 0;
 }
 
+/*
+ * If the packet is routed over IPsec tunnel, tell the originator the
+ * tunnel MTU.
+ *     tunnel MTU = if MTU - sizeof(IP) - ESP/AH hdrsiz
+ *
+ * XXX: Quick hack!!!
+ *
+ * XXX: And what if the MTU goes negative?
+ */
 int
 ipsec4_forward(struct mbuf *m, int *destmtu)
 {
-	/*
-	 * If the packet is routed over IPsec tunnel, tell the
-	 * originator the tunnel MTU.
-	 *	tunnel MTU = if MTU - sizeof(IP) - ESP/AH hdrsiz
-	 * XXX quickhack!!!
-	 */
 	struct secpolicy *sp;
 	size_t ipsechdr;
 	int error;
@@ -819,7 +824,9 @@ ipsec_setspidx(struct mbuf *m, struct secpolicyindex *spidx, int needport)
 	/*
 	 * validate m->m_pkthdr.len.  we see incorrect length if we
 	 * mistakenly call this function with inconsistent mbuf chain
-	 * (like 4.4BSD tcp/udp processing).  XXX should we panic here?
+	 * (like 4.4BSD tcp/udp processing).
+	 *
+	 * XXX XXX XXX: We should remove this.
 	 */
 	len = 0;
 	for (n = m; n; n = n->m_next)
@@ -1057,9 +1064,9 @@ ipsec6_setspidx_ipaddr(struct mbuf *m, struct secpolicyindex *spidx)
 	struct ip6_hdr ip6buf;
 	struct sockaddr_in6 *sin6;
 
-	if (m->m_len >= sizeof(*ip6))
+	if (m->m_len >= sizeof(*ip6)) {
 		ip6 = mtod(m, struct ip6_hdr *);
-	else {
+	} else {
 		m_copydata(m, 0, sizeof(ip6buf), &ip6buf);
 		ip6 = &ip6buf;
 	}
@@ -1097,9 +1104,8 @@ ipsec_delpcbpolicy(struct inpcbpolicy *p)
 	kmem_intr_free(p, sizeof(*p));
 }
 
-/* initialize policy in PCB */
 int
-ipsec_init_policy(struct socket *so, struct inpcbpolicy **policy)
+ipsec_init_pcbpolicy(struct socket *so, struct inpcbpolicy **policy)
 {
 	struct inpcbpolicy *new;
 
@@ -1132,9 +1138,9 @@ static void
 ipsec_destroy_policy(struct secpolicy *sp)
 {
 
-	if (sp == &ipsec_dummy_sp)
+	if (sp == &ipsec_dummy_sp) {
 		; /* It's dummy. No need to free it. */
-	else {
+	} else {
 		/*
 		 * We cannot destroy here because it can be called in
 		 * softint. So mark the SP as DEAD and let the timer
@@ -1145,7 +1151,7 @@ ipsec_destroy_policy(struct secpolicy *sp)
 }
 
 int
-ipsec_set_policy(void *inp, int optname, const void *request, size_t len,
+ipsec_set_policy(void *inp, const void *request, size_t len,
     kauth_cred_t cred)
 {
 	struct inpcb_hdr *inph = (struct inpcb_hdr *)inp;
@@ -1262,7 +1268,6 @@ ipsec_get_policy(void *inp, const void *request, size_t len,
 		return ENOBUFS;
 	}
 
-	(*mp)->m_type = MT_DATA;
 	if (KEYDEBUG_ON(KEYDEBUG_IPSEC_DUMP)) {
 		kdebug_mbuf(__func__, *mp);
 	}
@@ -1337,7 +1342,7 @@ ipsec_get_reqlevel(const struct ipsecrequest *isr)
 		ah_trans_deflev = IPSEC_CHECK_DEFAULT(ip6_ah_trans_deflev);
 		ah_net_deflev = IPSEC_CHECK_DEFAULT(ip6_ah_net_deflev);
 		break;
-#endif /* INET6 */
+#endif
 	default:
 		panic("%s: unknown af %u", __func__,
 		    isr->sp->spidx.src.sa.sa_family);
@@ -1605,8 +1610,6 @@ ipsec_chkreplay(u_int32_t seq, const struct secasvar *sav)
 	u_int32_t wsizeb;	/* constant: bits of window size */
 	int frlast;		/* constant: last frame */
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
-
 	KASSERT(sav != NULL);
 	KASSERT(sav->replay != NULL);
 
@@ -1662,8 +1665,6 @@ ipsec_updatereplay(u_int32_t seq, const struct secasvar *sav)
 	int fr;
 	u_int32_t wsizeb;	/* constant: bits of window size */
 	int frlast;		/* constant: last frame */
-
-	IPSEC_SPLASSERT_SOFTNET(__func__);
 
 	KASSERT(sav != NULL);
 	KASSERT(sav->replay != NULL);
@@ -1777,11 +1778,9 @@ const char *
 ipsec_address(const union sockaddr_union *sa, char *buf, size_t size)
 {
 	switch (sa->sa.sa_family) {
-#if INET
 	case AF_INET:
 		in_print(buf, size, &sa->sin.sin_addr);
 		return buf;
-#endif
 #if INET6
 	case AF_INET6:
 		in6_print(buf, size, &sa->sin6.sin6_addr);
@@ -1808,30 +1807,6 @@ ipsec_logsastr(const struct secasvar *sav, char *buf, size_t size)
 	    ipsec_address(&saidx->dst, dbuf, sizeof(dbuf)));
 
 	return buf;
-}
-
-void
-ipsec_dumpmbuf(struct mbuf *m)
-{
-	int totlen;
-	int i;
-	u_char *p;
-
-	totlen = 0;
-	printf("---\n");
-	while (m) {
-		p = mtod(m, u_char *);
-		for (i = 0; i < m->m_len; i++) {
-			printf("%02x ", p[i]);
-			totlen++;
-			if (totlen % 16 == 0)
-				printf("\n");
-		}
-		m = m->m_next;
-	}
-	if (totlen % 16 != 0)
-		printf("\n");
-	printf("---\n");
 }
 
 #ifdef INET6

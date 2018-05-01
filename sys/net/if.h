@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.258 2018/01/15 13:05:40 maxv Exp $	*/
+/*	$NetBSD: if.h,v 1.260 2018/04/19 21:20:43 christos Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -467,14 +467,14 @@ typedef struct ifnet {
  */
 
 #ifdef _KERNEL
-static inline bool
+static __inline bool
 if_is_mpsafe(struct ifnet *ifp)
 {
 
 	return ((ifp->if_extflags & IFEF_MPSAFE) != 0);
 }
 
-static inline int
+static __inline int
 if_output_lock(struct ifnet *cifp, struct ifnet *ifp, struct mbuf *m,
     const struct sockaddr *dst, const struct rtentry *rt)
 {
@@ -491,7 +491,7 @@ if_output_lock(struct ifnet *cifp, struct ifnet *ifp, struct mbuf *m,
 	}
 }
 
-static inline void
+static __inline void
 if_start_lock(struct ifnet *ifp)
 {
 
@@ -504,7 +504,7 @@ if_start_lock(struct ifnet *ifp)
 	}
 }
 
-static inline bool
+static __inline bool
 if_is_link_state_changeable(struct ifnet *ifp)
 {
 
@@ -833,7 +833,7 @@ struct	ifreq {
 #define	ifreq_getdstaddr	ifreq_getaddr
 #define	ifreq_getbroadaddr	ifreq_getaddr
 
-static inline const struct sockaddr *
+static __inline const struct sockaddr *
 /*ARGSUSED*/
 ifreq_getaddr(u_long cmd, const struct ifreq *ifr)
 {
@@ -1104,7 +1104,7 @@ void	if_acquire(struct ifnet *, struct psref *);
 
 int if_tunnel_check_nesting(struct ifnet *, struct mbuf *, int);
 
-static inline if_index_t
+static __inline if_index_t
 if_get_index(const struct ifnet *ifp)
 {
 
@@ -1146,8 +1146,6 @@ struct	ifaddr *ifa_ifwithnet(const struct sockaddr *);
 struct	ifaddr *ifa_ifwithnet_psref(const struct sockaddr *, struct psref *);
 struct	ifaddr *ifa_ifwithladdr(const struct sockaddr *);
 struct	ifaddr *ifa_ifwithladdr_psref(const struct sockaddr *, struct psref *);
-struct	ifaddr *ifa_ifwithroute_psref(int, const struct sockaddr *,
-	    const struct sockaddr *, struct psref *);
 struct	ifaddr *ifaof_ifpforaddr(const struct sockaddr *, struct ifnet *);
 struct	ifaddr *ifaof_ifpforaddr_psref(const struct sockaddr *, struct ifnet *,
 	    struct psref *);

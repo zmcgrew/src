@@ -1,5 +1,5 @@
-/*	$NetBSD: xform_esp.c,v 1.79 2018/02/16 09:24:55 maxv Exp $	*/
-/*	$FreeBSD: src/sys/netipsec/xform_esp.c,v 1.2.2.1 2003/01/24 05:11:36 sam Exp $	*/
+/*	$NetBSD: xform_esp.c,v 1.82 2018/04/28 15:45:16 maxv Exp $	*/
+/*	$FreeBSD: xform_esp.c,v 1.2.2.1 2003/01/24 05:11:36 sam Exp $	*/
 /*	$OpenBSD: ip_esp.c,v 1.69 2001/06/26 06:18:59 angelos Exp $ */
 
 /*
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xform_esp.c,v 1.79 2018/02/16 09:24:55 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xform_esp.c,v 1.82 2018/04/28 15:45:16 maxv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -303,8 +303,6 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	struct cryptodesc *crde;
 	struct cryptop *crp;
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
-
 	KASSERT(sav != NULL);
 	KASSERT(sav->tdb_encalgxform != NULL);
 	KASSERTMSG((skip&3) == 0 && (m->m_pkthdr.len&3) == 0,
@@ -355,9 +353,9 @@ esp_input(struct mbuf *m, struct secasvar *sav, int skip, int protoff)
 	if (esph && sav->replay && !ipsec_chkreplay(ntohl(esp->esp_seq), sav)) {
 		char logbuf[IPSEC_LOGSASTRLEN];
 		DPRINTF(("%s: packet replay check for %s\n", __func__,
-		    ipsec_logsastr(sav, logbuf, sizeof(logbuf))));	/*XXX*/
+		    ipsec_logsastr(sav, logbuf, sizeof(logbuf))));
 		stat = ESP_STAT_REPLAY;
-		error = ENOBUFS;		/*XXX*/
+		error = ENOBUFS; /* XXX */
 		goto out;
 	}
 
@@ -589,7 +587,8 @@ esp_input_cb(struct cryptop *crp)
 	/* Release the crypto descriptors */
 	pool_cache_put(esp_tdb_crypto_pool_cache, tc);
 	tc = NULL;
-	crypto_freereq(crp), crp = NULL;
+	crypto_freereq(crp);
+	crp = NULL;
 
 	/*
 	 * Packet is now decrypted.
@@ -704,8 +703,6 @@ esp_output(struct mbuf *m, const struct ipsecrequest *isr, struct secasvar *sav,
 
 	struct cryptodesc *crde = NULL, *crda = NULL;
 	struct cryptop *crp;
-
-	IPSEC_SPLASSERT_SOFTNET(__func__);
 
 	esph = sav->tdb_authalgxform;
 	KASSERT(sav->tdb_encalgxform != NULL);

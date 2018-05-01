@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.195 2018/03/21 14:23:54 roy Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.200 2018/04/26 19:22:17 maxv Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.195 2018/03/21 14:23:54 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.200 2018/04/26 19:22:17 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -138,6 +138,7 @@ percpu_t *ip6_forward_rt_percpu __cacheline_aligned;
 
 static void ip6_init2(void);
 static void ip6intr(void *);
+static bool ip6_badaddr(struct ip6_hdr *);
 static struct m_tag *ip6_setdstifaddr(struct mbuf *, const struct in6_ifaddr *);
 
 static int ip6_process_hopopts(struct mbuf *, u_int8_t *, int, u_int32_t *,
@@ -320,53 +321,11 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 		goto bad;
 	}
 
-	/*
-	 * Check against address spoofing/corruption.
-	 */
-	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_src) ||
-	    IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_dst)) {
-		/*
-		 * XXX: "badscope" is not very suitable for a multicast source.
-		 */
+	if (ip6_badaddr(ip6)) {
 		IP6_STATINC(IP6_STAT_BADSCOPE);
 		in6_ifstat_inc(rcvif, ifs6_in_addrerr);
 		goto bad;
 	}
-
-	/*
-	 * The following check is not documented in specs.  A malicious
-	 * party may be able to use IPv4 mapped addr to confuse tcp/udp stack
-	 * and bypass security checks (act as if it was from 127.0.0.1 by using
-	 * IPv6 src ::ffff:127.0.0.1).  Be cautious.
-	 *
-	 * This check chokes if we are in an SIIT cloud.  As none of BSDs
-	 * support IPv4-less kernel compilation, we cannot support SIIT
-	 * environment at all.  So, it makes more sense for us to reject any
-	 * malicious packets for non-SIIT environment, than try to do a
-	 * partial support for SIIT environment.
-	 */
-	if (IN6_IS_ADDR_V4MAPPED(&ip6->ip6_src) ||
-	    IN6_IS_ADDR_V4MAPPED(&ip6->ip6_dst)) {
-		IP6_STATINC(IP6_STAT_BADSCOPE);
-		in6_ifstat_inc(rcvif, ifs6_in_addrerr);
-		goto bad;
-	}
-
-#if 0
-	/*
-	 * Reject packets with IPv4 compatible addresses (auto tunnel).
-	 *
-	 * The code forbids auto tunnel relay case in RFC1933 (the check is
-	 * stronger than RFC1933).  We may want to re-enable it if mech-xx
-	 * is revised to forbid relaying case.
-	 */
-	if (IN6_IS_ADDR_V4COMPAT(&ip6->ip6_src) ||
-	    IN6_IS_ADDR_V4COMPAT(&ip6->ip6_dst)) {
-		IP6_STATINC(IP6_STAT_BADSCOPE);
-		in6_ifstat_inc(rcvif, ifs6_in_addrerr);
-		goto bad;
-	}
-#endif
 
 	/*
 	 * Assume that we can create a fast-forward IP flow entry
@@ -380,10 +339,9 @@ ip6_input(struct mbuf *m, struct ifnet *rcvif)
 	 * not fast-forwarded, they must clear the M_CANFASTFWD flag.
 	 * Note that filters must _never_ set this flag, as another filter
 	 * in the list may have previously cleared it.
-	 */
-	/*
-	 * let ipfilter look at packet on the wire,
-	 * not the decapsulated packet.
+	 *
+	 * Don't call hooks if the packet has already been processed by
+	 * IPsec (encapsulated, tunnel mode).
 	 */
 #if defined(IPSEC)
 	if (!ipsec_used || !ipsec_indone(m))
@@ -749,6 +707,8 @@ hbhcheck:
 			goto bad;
 		}
 
+		M_VERIFY_PACKET(m);
+
 		/*
 		 * protection against faulty packet - there should be
 		 * more sanity checks in header chain processing.
@@ -801,6 +761,43 @@ bad_unref:
 bad:
 	m_freem(m);
 	return;
+}
+
+static bool
+ip6_badaddr(struct ip6_hdr *ip6)
+{
+	/* Check against address spoofing/corruption. */
+	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_src) ||
+	    IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_dst)) {
+		return true;
+	}
+
+	/*
+	 * The following check is not documented in specs.  A malicious
+	 * party may be able to use IPv4 mapped addr to confuse tcp/udp stack
+	 * and bypass security checks (act as if it was from 127.0.0.1 by using
+	 * IPv6 src ::ffff:127.0.0.1).  Be cautious.
+	 *
+	 * This check chokes if we are in an SIIT cloud.  As none of BSDs
+	 * support IPv4-less kernel compilation, we cannot support SIIT
+	 * environment at all.  So, it makes more sense for us to reject any
+	 * malicious packets for non-SIIT environment, than try to do a
+	 * partial support for SIIT environment.
+	 */
+	if (IN6_IS_ADDR_V4MAPPED(&ip6->ip6_src) ||
+	    IN6_IS_ADDR_V4MAPPED(&ip6->ip6_dst)) {
+		return true;
+	}
+
+	/*
+	 * Reject packets with IPv4-compatible IPv6 addresses (RFC4291).
+	 */
+	if (IN6_IS_ADDR_V4COMPAT(&ip6->ip6_src) ||
+	    IN6_IS_ADDR_V4COMPAT(&ip6->ip6_dst)) {
+		return true;
+	}
+
+	return false;
 }
 
 /*
@@ -1077,7 +1074,7 @@ ip6_savecontrol(struct in6pcb *in6p, struct mbuf **mp,
 #endif
 
 	if (SOOPT_TIMESTAMP(so->so_options))
-		mp = sbsavetimestamp(so->so_options, m, mp);
+		mp = sbsavetimestamp(so->so_options, mp);
 
 	/* some OSes call this logic with IPv4 packet, for SO_TIMESTAMP */
 	if ((ip6->ip6_vfc & IPV6_VERSION_MASK) != IPV6_VERSION)
@@ -1316,18 +1313,6 @@ ip6_pullexthdr(struct mbuf *m, size_t off, int nxt)
 	struct ip6_ext ip6e;
 	size_t elen;
 	struct mbuf *n;
-
-#ifdef DIAGNOSTIC
-	switch (nxt) {
-	case IPPROTO_DSTOPTS:
-	case IPPROTO_ROUTING:
-	case IPPROTO_HOPOPTS:
-	case IPPROTO_AH: /* is it possible? */
-		break;
-	default:
-		printf("ip6_pullexthdr: invalid nxt=%d\n", nxt);
-	}
-#endif
 
 	m_copydata(m, off, sizeof(ip6e), (void *)&ip6e);
 	if (nxt == IPPROTO_AH)
