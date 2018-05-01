@@ -1,6 +1,8 @@
-/*	$NetBSD: devlist.c,v 1.3 2018/03/17 11:07:26 jdolecek Exp $	*/
+/*	$NetBSD: devlist.c,v 1.5 2018/04/18 10:11:44 nonaka Exp $	*/
 
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (C) 2012-2013 Intel Corporation
  * All rights reserved.
  *
@@ -28,9 +30,9 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__RCSID("$NetBSD: devlist.c,v 1.3 2018/03/17 11:07:26 jdolecek Exp $");
+__RCSID("$NetBSD: devlist.c,v 1.5 2018/04/18 10:11:44 nonaka Exp $");
 #if 0
-__FBSDID("$FreeBSD: head/sbin/nvmecontrol/devlist.c 260381 2014-01-06 23:48:47Z jimharris $");
+__FBSDID("$FreeBSD: head/sbin/nvmecontrol/devlist.c 329824 2018-02-22 13:32:31Z wma $");
 #endif
 #endif
 

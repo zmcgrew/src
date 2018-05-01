@@ -1,5 +1,5 @@
-/*	$NetBSD: ipsec.h,v 1.72 2018/04/03 09:03:59 maxv Exp $	*/
-/*	$FreeBSD: /usr/local/www/cvsroot/FreeBSD/src/sys/netipsec/ipsec.h,v 1.2.4.2 2004/02/14 22:23:23 bms Exp $	*/
+/*	$NetBSD: ipsec.h,v 1.79 2018/04/29 11:51:08 maxv Exp $	*/
+/*	$FreeBSD: ipsec.h,v 1.2.4.2 2004/02/14 22:23:23 bms Exp $	*/
 /*	$KAME: ipsec.h,v 1.53 2001/11/20 08:32:38 itojun Exp $	*/
 
 /*
@@ -29,10 +29,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- */
-
-/*
- * IPsec controller part.
  */
 
 #ifndef _NETIPSEC_IPSEC_H_
@@ -141,7 +137,7 @@ struct inpcbpolicy {
 
 extern u_int ipsec_spdgen;
 
-static inline bool
+static __inline bool
 ipsec_pcb_skip_ipsec(struct inpcbpolicy *pcbsp, int dir)
 {
 
@@ -227,16 +223,6 @@ struct secspacq {
 #define IPSEC_REPLAYWSIZE  32
 
 #ifdef _KERNEL
-struct ipsec_output_state {
-	struct mbuf *m;
-	struct route *ro;
-	struct sockaddr *dst;
-};
-
-struct ipsec_history {
-	int ih_proto;
-	u_int32_t ih_spi;
-};
 
 extern int ipsec_debug;
 #ifdef IPSEC_DEBUG
@@ -256,8 +242,7 @@ extern int ip4_ipsec_ecn;
 extern int crypto_support;
 
 #include <sys/syslog.h>
-#define ipseclog(x)	do { if (ipsec_debug) log x; } while (0)
-/* for openbsd compatibility */
+
 #define	DPRINTF(x)	do { if (ipsec_debug) printf x; } while (0)
 
 #define IPSECLOG(level, fmt, args...) 					\
@@ -265,6 +250,11 @@ extern int crypto_support;
 		if (ipsec_debug)					\
 			log(level, "%s: " fmt, __func__, ##args);	\
 	} while (0)
+
+#define ipsec_indone(m)	\
+	((m->m_flags & M_AUTHIPHDR) || (m->m_flags & M_DECRYPTED))
+#define ipsec_outdone(m) \
+	(m_tag_find((m), PACKET_TAG_IPSEC_OUT_DONE, NULL) != NULL)
 
 void ipsec_pcbconn(struct inpcbpolicy *);
 void ipsec_pcbdisconn(struct inpcbpolicy *);
@@ -274,17 +264,13 @@ struct inpcb;
 int ipsec4_output(struct mbuf *, struct inpcb *, int, u_long *, bool *, bool *);
 int ipsec4_input(struct mbuf *, int);
 int ipsec4_forward(struct mbuf *, int *);
-#ifdef INET6
-int ipsec6_input(struct mbuf *);
-#endif
 
 struct inpcb;
-#define	ipsec_init_pcbpolicy ipsec_init_policy
-int ipsec_init_policy(struct socket *so, struct inpcbpolicy **);
+int ipsec_init_pcbpolicy(struct socket *so, struct inpcbpolicy **);
 int ipsec_copy_policy(const struct inpcbpolicy *, struct inpcbpolicy *);
 u_int ipsec_get_reqlevel(const struct ipsecrequest *);
 
-int ipsec_set_policy(void *, int, const void *, size_t, kauth_cred_t);
+int ipsec_set_policy(void *, const void *, size_t, kauth_cred_t);
 int ipsec_get_policy(void *, const void *, size_t, struct mbuf **);
 int ipsec_delete_pcbpolicy(void *);
 int ipsec_in_reject(struct mbuf *, void *);
@@ -304,8 +290,6 @@ union sockaddr_union;
 const char *ipsec_address(const union sockaddr_union* sa, char *, size_t);
 const char *ipsec_logsastr(const struct secasvar *, char *, size_t);
 
-void ipsec_dumpmbuf(struct mbuf *);
-
 /* NetBSD protosw ctlin entrypoint */
 void *esp4_ctlinput(int, const struct sockaddr *, void *);
 void *ah4_ctlinput(int, const struct sockaddr *, void *);
@@ -318,19 +302,15 @@ int ipsec4_process_packet(struct mbuf *, const struct ipsecrequest *, u_long *);
 int ipsec_process_done(struct mbuf *, const struct ipsecrequest *,
     struct secasvar *);
 
-#define ipsec_indone(m)	\
-	((m->m_flags & M_AUTHIPHDR) || (m->m_flags & M_DECRYPTED))
-#define ipsec_outdone(m) \
-	(m_tag_find((m), PACKET_TAG_IPSEC_OUT_DONE, NULL) != NULL)
-
 struct mbuf *m_clone(struct mbuf *);
 struct mbuf *m_makespace(struct mbuf *, int, int, int *);
-void *m_pad(struct mbuf *, int );
+void *m_pad(struct mbuf *, int);
 int m_striphdr(struct mbuf *, int, int);
 
 void nat_t_ports_get(struct mbuf *, u_int16_t *, u_int16_t *);
 
-extern int ipsec_used __read_mostly, ipsec_enabled __read_mostly;
+extern int ipsec_used __read_mostly;
+extern int ipsec_enabled __read_mostly;
 
 #endif /* _KERNEL */
 
@@ -346,7 +326,6 @@ const char *ipsec_strerror(void);
 void ah_attach(void);
 void esp_attach(void);
 void ipcomp_attach(void);
-void ipe4_attach(void);
 void ipe4_attach(void);
 void tcpsignature_attach(void);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: devopen.h,v 1.2 2018/04/02 09:44:18 nonaka Exp $	*/
+/*	$NetBSD: devopen.h,v 1.3 2018/04/11 10:32:09 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -28,7 +28,17 @@
 
 extern int boot_biosdev;
 extern daddr_t boot_biossector;
+extern const int nfsys_disk;
+extern struct fs_ops file_system_disk[];
+extern struct fs_ops file_system_nfs;
+extern struct fs_ops file_system_tftp;
+extern struct fs_ops file_system_null;
 
 #define	MAXDEVNAME	16
 
 void bios2dev(int, daddr_t, char **, int *, int *);
+
+struct devdesc {
+	char	d_name[MAXDEVNAME];
+	char	d_unit;
+};

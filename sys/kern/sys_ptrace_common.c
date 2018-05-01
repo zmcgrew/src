@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.35 2018/03/05 11:24:34 kamil Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.38 2018/04/29 04:28:09 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.35 2018/03/05 11:24:34 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.38 2018/04/29 04:28:09 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -218,6 +218,9 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 {
 	struct proc *p;
 	int result;
+#ifdef PT_SETDBREGS
+	extern int user_set_dbregs;
+#endif
 
 	result = KAUTH_RESULT_DEFER;
 	p = arg0;
@@ -231,6 +234,13 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 		goto out;
 
 	switch ((u_long)arg1) {
+#ifdef PT_SETDBREGS
+	case_PT_SETDBREGS
+		if (kauth_cred_getuid(cred) != 0 && user_set_dbregs == 0) {
+			result = KAUTH_RESULT_DENY;
+			break;
+		}
+#endif
 	case PT_TRACE_ME:
 	case PT_ATTACH:
 	case PT_WRITE_I:
@@ -243,7 +253,6 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case_PT_GETFPREGS
 	case_PT_SETFPREGS
 	case_PT_GETDBREGS
-	case_PT_SETDBREGS
 	case PT_SET_EVENT_MASK:
 	case PT_GET_EVENT_MASK:
 	case PT_GET_PROCESS_STATE:
@@ -368,7 +377,19 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p)
 	/* Make sure we can operate on it. */
 	switch (req) {
 	case PT_TRACE_ME:
-		/* Saying that you're being traced is always legal. */
+		/*
+		 * You can't say to the parent of a process to start tracing if:
+		 *	(1) the parent is initproc,
+		 */
+		if (p->p_pptr == initproc)
+			return EPERM;
+
+		/*
+		 *	(2) the child is already traced.
+		 */
+		if (ISSET(p->p_slflag, PSL_TRACED))
+			return EBUSY;
+
 		return 0;
 
 	case PT_ATTACH:
@@ -380,7 +401,7 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p)
 			return EINVAL;
 
 		/*
-		 *  (2) it's a system process
+		 *	(2) it's a system process
 		 */
 		if (t->p_flag & PK_SYSTEM)
 			return EPERM;
@@ -1011,12 +1032,21 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		t->p_opptr = t->p_pptr;
 		break;
 
-	case PT_WRITE_I:		/* XXX no separate I and D spaces */
+	/*
+	 * The I and D separate address space has been inherited from PDP-11.
+	 * The 16-bit UNIX started with a single address space per program,
+	 * but was extended to two 16-bit (2 x 64kb) address spaces.
+	 *
+	 * We no longer maintain this feature in maintained architectures, but
+	 * we keep the API for backward compatiblity. Currently the I and D
+	 * operations are exactly the same and not distinguished in debuggers.
+	 */
+	case PT_WRITE_I:
 	case PT_WRITE_D:
 		write = 1;
 		tmp = data;
 		/* FALLTHROUGH */
-	case PT_READ_I:			/* XXX no separate I and D spaces */
+	case PT_READ_I:
 	case PT_READ_D:
 		piod.piod_addr = &tmp;
 		piod.piod_len = sizeof(tmp);
