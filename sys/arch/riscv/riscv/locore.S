@@ -35,11 +35,11 @@
 	.globl	_C_LABEL(cpu_Debugger_insn)
 
 ENTRY_NP(start)
-	// We get loaded and starting running at or near 0, not where we
-	// should be. We need to construct an initial PDETAB
-
+  /* Supervisor (Kernel) can access User Memory (SUM) */
   li t0, SR_SUM
   csrs sstatus, t0
+
+  call print_msg
 
   /* a0 is hartid, a1 is dtb_output (pointer?) */
 
@@ -52,11 +52,11 @@ ENTRY_NP(start)
   li	t1, SR_IM|SR_VM|SR_U64|SR_S64|R_EI
 #endif
  	csrc	sstatus, t1
-
+  */
 	li	s11, VM_MAX_KERNEL_ADDRESS
 	li	s10, PAGE_SIZE
 	li	s9, USPACE
-  */
+
 
 #if 0
 	// The kernel doesn't use gp/_gp since we'd have to reload it on

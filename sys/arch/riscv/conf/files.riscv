@@ -9,6 +9,8 @@ defflag	opt_ddb.h		DDB_TRACE
 #file	arch/riscv/riscv/locore.S
 file	arch/riscv/riscv/spl.S
 
+file arch/riscv/riscv/umprintf.c
+
 file	arch/riscv/riscv/autoconf.c
 file	arch/riscv/riscv/cpu_subr.c
 file	arch/riscv/riscv/db_disasm.c		ddb
