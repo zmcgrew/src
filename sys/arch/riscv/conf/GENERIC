@@ -166,6 +166,7 @@ pseudo-device	pty			# pseudo-terminals
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
 pseudo-device	lockstat		# lock profiling
+pseudo-device	tap			# virtual Ethernet
 
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device	drvctl
