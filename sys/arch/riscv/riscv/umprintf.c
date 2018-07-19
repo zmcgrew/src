@@ -126,27 +126,12 @@ ksprintn(unsigned long ul, int base, int *lenp)
 	return (p);
 }
 
-#define PADDR(var) \
-  do { \
-  umprintf("&"#var": 0x%x\n", &(var)); \
-  } while (0);
+void print_arg_hex(register_t arg);
+void print_arg_hex(register_t arg) {
+  umprintf("Arg: 0x%x\n", arg);
+}
 
-#define PVALX(var) \
-  do { \
-  umprintf(#var"= 0x%x\n", (var)); \
-  } while (0);
-
-#define PVALD(var) \
-  do { \
-  umprintf(#var"= %d\n", (var)); \
-  } while (0);
-
+void print_msg(void);
 void print_msg(void) {
-  const char *msg = "Hello RISC-V world!\n";
-  /* umprintf("The address of msg is 0x%x\n", &msg); //PC = 0x0000000080200758 */
-  PADDR(msg);
-
-  PVALX(msg);
-
-  PVALD(msg);
+	
 }
