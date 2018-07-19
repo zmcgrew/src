@@ -92,6 +92,68 @@ typedef __uint32_t pd_entry_t;
 #define	PTE_R		__BIT(1)	// Read
 #define	PTE_V		__BIT(0)	// Valid
 
+/* Constants From FreeBSD RISC-V Port */
+
+/* Level 0 table, 512GiB per entry */
+#define	L0_SHIFT	39
+
+/* Level 1 table, 1GiB per entry */
+#define	L1_SHIFT	30
+#define	L1_SIZE 	(1 << L1_SHIFT)
+#define	L1_OFFSET 	(L1_SIZE - 1)
+
+/* Level 2 table, 2MiB per entry */
+#define	L2_SHIFT	21
+#define	L2_SIZE 	(1 << L2_SHIFT)
+#define	L2_OFFSET 	(L2_SIZE - 1)
+
+/* Level 3 table, 4KiB per entry */
+#define	L3_SHIFT	12
+#define	L3_SIZE 	(1 << L3_SHIFT)
+#define	L3_OFFSET 	(L3_SIZE - 1)
+
+#define	Ln_ENTRIES	(1 << 9)
+#define	Ln_ADDR_MASK	(Ln_ENTRIES - 1)
+
+#define	PTE_PPN0_S	10
+#define	PTE_PPN1_S	19
+#define	PTE_PPN2_S	28
+#define	PTE_PPN3_S	37
+#define	PTE_SIZE	8
+
+/* End FreeBSD RISC-V Constants */
+
+struct sv39_va {
+	__uint64_t page_offset	: 12;
+	__uint64_t vpn0		: 9;
+	__uint64_t vpn1		: 9;
+	__uint64_t vpn2		: 9;
+};
+
+struct sv39_pa {
+	__uint64_t page_offset	: 12;
+	__uint64_t ppn0		: 9;
+	__uint64_t ppn1		: 9;
+	__uint64_t ppn2		: 26;
+};
+
+struct sv39_pte {
+	__uint64_t v		: 1;
+	__uint64_t r		: 1;
+	__uint64_t w		: 1;
+	__uint64_t x		: 1;
+	__uint64_t u		: 1;
+	__uint64_t g		: 1;
+	__uint64_t a		: 1;
+	__uint64_t d		: 1;
+	__uint64_t n		: 1;
+	__uint64_t wired       	: 1;
+	__uint64_t ppn0		: 9;
+	__uint64_t ppn1		: 9;
+	__uint64_t ppn2		: 26;
+	__uint64_t _reserved    : 10;
+};
+
 static inline bool
 pte_valid_p(pt_entry_t pte)
 {
