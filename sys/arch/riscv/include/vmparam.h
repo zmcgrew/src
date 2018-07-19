@@ -166,6 +166,8 @@
 #define VM_FREELIST_DIRECTMAP	1
 #endif
 
+#define	KERNBASE		(VM_MIN_KERNEL_ADDRESS)
+
 #ifdef _KERNEL
 #define	UVM_KM_VMFREELIST	riscv_poolpage_vmfreelist
 extern int riscv_poolpage_vmfreelist;
