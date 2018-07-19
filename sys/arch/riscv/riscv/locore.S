@@ -34,108 +34,67 @@
 	.globl	_C_LABEL(exception_userexit)
 	.globl	_C_LABEL(cpu_Debugger_insn)
 
+	.globl	kernbase
+	.set	kernbase, KERNBASE
+
 ENTRY_NP(start)
-  /* Supervisor (Kernel) can access User Memory (SUM) */
-  li t0, SR_SUM
-  csrs sstatus, t0
+	/* Entry point from BBL.
+	 * Here's what we get for free:
+	 * a0 is hartid, a1 is dtb_output (pointer to dtb)
+	 * Copy these to the s* registsers so they're saved.
+	*/
 
-  call print_msg
+	mv s0, a0
+	mv s1, a1
 
-  /* a0 is hartid, a1 is dtb_output (pointer?) */
+	/* Supervisor (Kernel) can access User Memory (SUM) */
+	li	t0, SR_SUM
+	csrs	sstatus, t0
+
+	call	pOK
+
+	/* XXX: If doing SMP should probably park other cores here */
+
+	call	_C_LABEL(init_mmu)
+	mv	s2, a0
+
+	call	pOK
+
+        /* We'll trap to the VA */
+	la	t0, va
+	/* a0 is returned phys_base from init_mmu */
+	sub	t0, t0, s2
+	li	t1, KERNBASE
+	add	t0, t0, t1
+	csrw	stvec, t0
+
+	/* Set the Supervisor Address and Translation Register (Turn the MMU on) */
+	la	t0, l1_pte
+	srli	t0, t0, PAGE_SHIFT
+	li	t1, SATP_MODE_SV39
+	or	t0, t0, t1
+	sfence.vma
+	csrw	satp, t0
+
+	.align 2
+va:
+        /* The MMU is on! We're running at a VA now! */
+
+        /* Zero the sscratch for when we need to use it next */
+        csrw	sscratch, zero
+
+	/* Setup the real supervisor trap vector */
+	la	t0, cpu_exception_handler
+	csrw	stvec, t0
+
+	call	pOK
+
+	/* tail	_C_LABEL(main) */
+	/* No return from main */
+
+	call _C_LABEL(pOK)
 
 /*
-#ifdef _LP64
-  li	t0, SR_U64|SR_S64
-  li	t1, SR_IM|SR_VM|SR_EI
-  csrs	sstatus, t0
-#else
-  li	t1, SR_IM|SR_VM|SR_U64|SR_S64|R_EI
-#endif
- 	csrc	sstatus, t1
-  */
-	li	s11, VM_MAX_KERNEL_ADDRESS
-	li	s10, PAGE_SIZE
-	li	s9, USPACE
-
-
-#if 0
-	// The kernel doesn't use gp/_gp since we'd have to reload it on
-	// each exception.
-	PTR_LA	gp, _C_LABEL(_gp)
-#endif
-
-	PTR_LA	a0, _C_LABEL(__bss_start)
-	PTR_LA	s1, _C_LABEL(_end)
-	li	a1, 0
-
-	add	s1, s1, s10		// PAGE_SIZE
-	addi	s1, s1, -1		//   -1 == PAGE_MASK
-	neg	a1, a0			// -PAGE_SIZE
-	and	s1, s1, a1		// s1 is page aligned end of kernel
-					// s1 = uarea
-	add	s2, s1, s9		// s2 = first PDE page
-#ifdef _LP64
-	add	s3, s2, s10		// s3 = second PDE page (RV64 only)
-#else
-	move	s3, 22
-#endif
-	add	s4, s3, s10		// s4 = first kernel PTE page
-	add	s5, s1, s9		// s5 = kernel_end
-	sub	a2, s5, a0
-	call	memset			// zero through kernel_end
-
-	// As a temporary hack, word 0 contains the amount of memory in MB
-	INT_L	a7, (zero)		// load memory size
-	slli	a7, a7, (20-PGSHIFT)	// convert MB to pages
-.L01:	PTR_LA	t0, physmem
-	INT_S	a7, (t0)		// store it in physmem
-
-	//li	t4, PTE_V | PTE_SX | PTE_SW | PTE_SR | PTE_G
-#ifdef _LP64
-	REG_S	t4, 0(s2)		// keep a mapping for the first 8GB.
-	or	t0, s3, t4		// point to next page
-	//or	t0, t0, PTE_T		// tranverse it.
-	REG_S	t0, -SZREG(s3)		// store in highest first level PDE
-#endif
-
-// #if (VM_MIN_KERNEL_ADDRESS >> XSEGSHIFT) != (VM_MAX_KERNEL_ADDRESS >> XSEGSHIFT)
-// #error VM_MIN_KERNEL_ADDRESS not in same first level PDE as VM_MAX_KERNEL_ADDRESS
-// #endif
-	// We allocated the kernel first PTE page so let's insert in the
-	// page table.  For now, we assume it's in the same PDE page as the
-	// direct-mapped memory.
-	or	t0, s4, t4
-	//or	t0, t0, PTE_T
-#if ((VM_MIN_KERNEL_ADDRESS >> SEGSHIFT) & (NPDEPG-1)) * SZREG
-	li	t1, ((VM_MIN_KERNEL_ADDRESS >> SEGSHIFT) & (NPDEPG-1)) * SZREG
-	add	t1, t1, s3
-	REG_S	t0, 0(t1)
-#else
-	REG_S	t0, 0(s3)
-#endif
-
-	li	t0, ((VM_MAX_KERNEL_ADDRESS >> SEGSHIFT) & (NPDEPG-1)) * SZREG
-	add	s3, s3, t0
-	srli	a7, a7, (SEGSHIFT-PGSHIFT) // pages to segments
-	li	t3, NBSEG		// load for ease
-
-	//
-	// Fill in the PDEs to direct map memory.
-	//
-.Lfill:	REG_S	t4, 0(s3)		// store PDE
-	add	t4, t4, t3		// advance PA in PDE to next segment
-	add	s3, s3, SZREG		// advance to next PDE slot
-	addi	a7, a7, -1		// count down segment
-	bgtz	a6, .Lfill		// loop if more
-
-	csrw	sptbr, s1		// set the page table base
-//	li	t0, SR_VM
-	csrs	sstatus, t0		// Enable VM
-
-	// We should have a VM so let's start using our real addresses
-	lui	t0, %hi(.Lmmu_on)	// load hi part of absolute address
-	jr	t0, %lo(.Lmmu_on)	// jump to absolute address
-
 .Lmmu_on:
 	// MMU is on!
 	csrw	sscratch, zero		// zero in sscratch to mark kernel
@@ -160,6 +119,8 @@ ENTRY_NP(start)
 	call	_C_LABEL(init_riscv)	// do MD startup
 	tail	_C_LABEL(main)		// and transfer to main
 	// not reached
+
+*/
 END(start)
 
 //
@@ -568,3 +529,16 @@ cpu_Debugger_insn:
 	sbreak
 	ret
 END(cpu_Debugger)
+
+ENTRY(mpentry)
+1:
+	wfi
+	j	1b
+END(mpentry)
+
+	/* Used for finding virtual / physical offsets */
+	.globl virt_map
+virt_map:
+	.quad   virt_map
+
+
