@@ -48,10 +48,16 @@ __RCSID("$NetBSD: riscv_machdep.c,v 1.2 2017/03/16 16:13:21 chs Exp $");
 #include <uvm/uvm_extern.h>
 
 #include <riscv/locore.h>
+#include <riscv/pte.h>
+#include <riscv/umprintf.h>
 
 int cpu_printfataltraps;
 char machine[] = MACHINE;
 char machine_arch[] = MACHINE_ARCH;
+
+extern paddr_t virt_map;
+extern paddr_t start;
+extern paddr_t end;
 
 struct vm_map *phys_map;
 
@@ -65,6 +71,10 @@ struct cpu_info cpu_info_store = {
 const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 	[PCU_FPU] = &pcu_fpu_ops,
 };
+
+extern __uint64_t l1_pte[512];
+extern __uint64_t l2_pte[512];
+extern __uint64_t l2_dtb[512];
 
 void
 delay(unsigned long us)
@@ -367,7 +377,32 @@ cpu_startup(void)
 	printf("avail memory = %s\n", pbuf);
 }
 
-void
-init_riscv(vaddr_t kernstart, vaddr_t kernend)
+paddr_t
+init_mmu(void)
 {
+	__uint64_t virt_delta = (__uint64_t)virt_map - (__uint64_t)&virt_map;
+	__uint64_t phys_base = KERNBASE - virt_delta;
+	__uint64_t phys_base_2mb_chunk = phys_base >> 21;
+	__uint64_t l2_perms = PTE_V | PTE_D | PTE_A | PTE_R | PTE_W | PTE_X;
+	__uint64_t i = (KERNBASE >> L1_SHIFT) & Ln_ADDR_MASK;
+
+	/* L1 PTE with entry for Kernel VA, pointing to L2 PTE */
+	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
+
+	/* L1 PTE with entry for Kernel PA, pointing to L2 PTE */
+	i = ((paddr_t)&start >> L1_SHIFT) & Ln_ADDR_MASK;
+	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
+
+	/* Build the L2 Page Table we just pointed to */
+	for (i = 0; i < 512; ++i) {
+		l2_pte[i] = ((phys_base_2mb_chunk + i) << PTE_PPN1_S) | l2_perms;
+	}
+
+	return phys_base;
+}
+
+void
+init_riscv(register_t hartid, paddr_t dtb, paddr_t kernstart, paddr_t kernend)
+{
+
 }
