@@ -51,18 +51,13 @@ ENTRY_NP(start)
 	li	t0, SR_SUM
 	csrs	sstatus, t0
 
-	call	pOK
-
 	/* XXX: If doing SMP should probably park other cores here */
 
 	call	_C_LABEL(init_mmu)
-	mv	s2, a0
+	mv	s2, a0 /* Save the returned phys_base */
 
-	call	pOK
-
-        /* We'll trap to the VA */
+	/* We'll trap to the VA, since it will cause a trap anyway... */
 	la	t0, va
-	/* a0 is returned phys_base from init_mmu */
 	sub	t0, t0, s2
 	li	t1, KERNBASE
 	add	t0, t0, t1
@@ -78,10 +73,10 @@ ENTRY_NP(start)
 
 	.align 2
 va:
-        /* The MMU is on! We're running at a VA now! */
+	/* The MMU is on! We're running at a VA now! */
 
-        /* Zero the sscratch for when we need to use it next */
-        csrw	sscratch, zero
+	/* Zero the sscratch for when we need to use it next */
+	csrw	sscratch, zero
 
 	/* Setup the real supervisor trap vector */
 	la	t0, cpu_exception_handler
@@ -89,20 +84,17 @@ va:
 
 	call	pOK
 
-	/* tail	_C_LABEL(main) */
-	/* No return from main */
+	/* Zero out BSS */
+	la	t0, __bss_start
+	la	t1, _end
+bss0:
+	sd	zero, (t0)
+	addi	t0, t0, 8
+	bltu	t0, t1, bss0
 
-	call _C_LABEL(pOK)
+	call	pOK
 
-/*
-.Lmmu_on:
-	// MMU is on!
-	csrw	sscratch, zero		// zero in sscratch to mark kernel
-
-	PTR_LA	tp, _C_LABEL(lwp0)	// put curlwp in tp
-
-	PTR_LA	a0, _C_LABEL(cpu_exception_handler)
-	csrw	stvec, a0
+	la	tp, _C_LABEL(lwp0)	// put curlwp in tp
 
 	PTR_S	s1, L_PCB(tp)		// set uarea of lwp (already zeroed)
 	addi	sp, s2, -TF_LEN		// switch to new stack
@@ -118,9 +110,8 @@ va:
 	add	a1, s5, s11		// kernel_end
 	call	_C_LABEL(init_riscv)	// do MD startup
 	tail	_C_LABEL(main)		// and transfer to main
-	// not reached
+	/* No return from main */
 
-*/
 END(start)
 
 //
@@ -539,6 +530,4 @@ END(mpentry)
 	/* Used for finding virtual / physical offsets */
 	.globl virt_map
 virt_map:
-	.quad   virt_map
-
-
+	.quad	virt_map
