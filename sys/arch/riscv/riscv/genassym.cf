@@ -164,6 +164,7 @@ define	FB_SR		offsetof(struct faultbuf, fb_sr)
 define	PAGE_SIZE	PAGE_SIZE
 define	PAGE_MASK	PAGE_MASK
 define	PAGE_SHIFT	PAGE_SHIFT
+define  UPAGES          UPAGES
 define	USRSTACK	USRSTACK
 
 ifdef	__HAVE_FAST_SOFTINTS
