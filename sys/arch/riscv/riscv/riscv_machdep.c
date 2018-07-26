@@ -55,10 +55,6 @@ int cpu_printfataltraps;
 char machine[] = MACHINE;
 char machine_arch[] = MACHINE_ARCH;
 
-extern paddr_t virt_map;
-extern paddr_t start;
-extern paddr_t end;
-
 struct vm_map *phys_map;
 
 struct trapframe cpu_ddb_regs;
@@ -72,6 +68,10 @@ const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 	[PCU_FPU] = &pcu_fpu_ops,
 };
 
+/* Used by init_mmu */
+extern paddr_t virt_map;
+extern paddr_t start;
+extern paddr_t end;
 extern __uint64_t l1_pte[512];
 extern __uint64_t l2_pte[512];
 extern __uint64_t l2_dtb[512];
@@ -378,7 +378,7 @@ cpu_startup(void)
 }
 
 paddr_t
-init_mmu(void)
+init_mmu(paddr_t dtb)
 {
 	__uint64_t virt_delta = (__uint64_t)virt_map - (__uint64_t)&virt_map;
 	__uint64_t phys_base = KERNBASE - virt_delta;
@@ -393,10 +393,25 @@ init_mmu(void)
 	i = ((paddr_t)&start >> L1_SHIFT) & Ln_ADDR_MASK;
 	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
 
+	/* XXX: This is the same index as the Kernel PA */
+	
+	/* L1 PTE with entry for L2_DTB */
+	/* i = ((paddr_t)&l2_dtb >> L1_SHIFT) & Ln_ADDR_MASK; */
+	/* umprintf("i = %d\n", i); */
+	/* l1_pte[i] = (((paddr_t)&l2_dtb >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V; */
+	/* umprintf("l1_pte[%d]: 0x%x\n", i, l1_pte[i]); */
+
 	/* Build the L2 Page Table we just pointed to */
 	for (i = 0; i < 512; ++i) {
-		l2_pte[i] = ((phys_base_2mb_chunk + i) << PTE_PPN1_S) | l2_perms;
+		l2_pte[i] = ((phys_base_2mb_chunk + i) << PTE_PPN1_S)
+		    | l2_perms;
 	}
+
+	/* umprintf("DTB: 0x%x\n", dtb); */
+
+	/* Put the DTB in the L2_DTB table */
+	/* i = ((paddr_t)dtb >> L1_SHIFT) & Ln_ADDR_MASK; */
+	/* l2_dtb[i] = (dtb << PTE_PPN0_S) | PTE_V | PTE_A | PTE_R; */
 
 	return phys_base;
 }
