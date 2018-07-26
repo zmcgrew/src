@@ -81,9 +81,6 @@ SECTIONS
   . = ALIGN(64 / 8);
   _end = .; PROVIDE (end = .);
   . = ALIGN(4096);
-  PROVIDE(l1_pte = .);
-  PROVIDE(l2_pte = . + 4096);
-  PROVIDE(l2_dtb = . + 8192);
   /*  . = DATA_SEGMENT_END (.); */
   /* Stabs debugging sections.  */
   .stab 0 : { *(.stab) }
