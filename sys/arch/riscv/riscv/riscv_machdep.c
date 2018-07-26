@@ -390,8 +390,8 @@ init_mmu(paddr_t dtb)
 	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
 
 	/* L1 PTE with entry for Kernel PA, pointing to L2 PTE */
-	i = ((paddr_t)&start >> L1_SHIFT) & Ln_ADDR_MASK;
-	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
+	/* i = ((paddr_t)&start >> L1_SHIFT) & Ln_ADDR_MASK; */
+	/* l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V; */
 
 	/* XXX: This is the same index as the Kernel PA */
 	
