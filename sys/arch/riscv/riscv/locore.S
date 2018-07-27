@@ -51,18 +51,15 @@ ENTRY_NP(start)
 	li	t0, SR_SUM
 	csrs	sstatus, t0
 
-	call	pOK
-
 	/* XXX: If doing SMP should probably park other cores here */
 
+	mv	a0, a1 /* We need the DTB's PA passed in */
 	call	_C_LABEL(init_mmu)
 	mv	s2, a0
 
-	call	pOK
-
         /* We'll trap to the VA */
 	la	t0, va
-	/* a0 is returned phys_base from init_mmu */
+	/* s2 is returned phys_base from init_mmu */
 	sub	t0, t0, s2
 	li	t1, KERNBASE
 	add	t0, t0, t1
@@ -87,40 +84,34 @@ va:
 	la	t0, cpu_exception_handler
 	csrw	stvec, t0
 
+       /* Zero out BSS */
+	la	t0, __bss_start
+	la	t1, _end
+	beq	t0, t1, bss1	/* Skip if start == end */
+bss0:
+	sd	zero, (t0)
+	addi	t0, t0, 8
+	bltu	t0, t1, bss0
+bss1:
+
+	la	t0, _C_LABEL(cpu_exception_handler)
+	csrw	stvec, t0
+
+	/* Setup the new stack pointer */
+	la 	t0, lwp0uspace
+	li	t1, (UPAGES * PAGE_SIZE) - TF_LEN
+	add	t0, t0, t1	/* lwp0space + USPACE - TF_LEN */
+	mv	sp, t0
+
 	call	pOK
-
-	/* tail	_C_LABEL(main) */
-	/* No return from main */
-
-	call _C_LABEL(pOK)
-
-/*
-.Lmmu_on:
-	// MMU is on!
-	csrw	sscratch, zero		// zero in sscratch to mark kernel
-
-	PTR_LA	tp, _C_LABEL(lwp0)	// put curlwp in tp
-
-	PTR_LA	a0, _C_LABEL(cpu_exception_handler)
-	csrw	stvec, a0
-
-	PTR_S	s1, L_PCB(tp)		// set uarea of lwp (already zeroed)
-	addi	sp, s2, -TF_LEN		// switch to new stack
-	PTR_S	sp, L_MD_UTF(tp)	// store pointer to empty trapframe
-
-	PTR_LA	t1, _C_LABEL(kernel_pmap_store)
-	add	t2, s2, s11 		// PA -> VA
-	//PTR_S	t2, PM_PDETAB(t1)	// VA of kernel PDETAB
-	//PTR_S	s2, PM_MD_PTBR(t1)	// PA of kernel PDETAB
 
 	// Now we should ready to start initializing the kernel.
 	PTR_LA	a0, _C_LABEL(start)	// kernel_start
 	add	a1, s5, s11		// kernel_end
 	call	_C_LABEL(init_riscv)	// do MD startup
 	tail	_C_LABEL(main)		// and transfer to main
-	// not reached
-
-*/
+	/* tail	_C_LABEL(main) */
+	/* No return from main */
 END(start)
 
 //
@@ -541,4 +532,20 @@ END(mpentry)
 virt_map:
 	.quad   virt_map
 
+	.align PGSHIFT
+	.global _C_LABEL(lwp0uspace)
+_C_LABEL(lwp0uspace):
+	.space	UPAGES * PAGE_SIZE
 
+	.align PGSHIFT
+mmutables_start:
+	.global _C_LABEL(l1_pte)
+l1_pte:	
+	.space PAGE_SIZE
+	.global _C_LABEL(l2_pte)
+l2_pte:	
+	.space PAGE_SIZE
+	.global _C_LABEL(l2_dtb)
+l2_dtb:	
+	.space PAGE_SIZE
+mmutables_end:
