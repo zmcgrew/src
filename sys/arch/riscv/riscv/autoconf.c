@@ -58,8 +58,3 @@ void
 device_register(device_t dv, void *aux)
 {
 }
-
-void
-consinit(void)
-{
-}

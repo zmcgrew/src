@@ -36,6 +36,7 @@ file	arch/riscv/riscv/sig_machdep.c		# signal delivery
 file	arch/riscv/riscv/softint_machdep.c
 file	arch/riscv/riscv/sys_machdep.c
 file	arch/riscv/riscv/vm_machdep.c
+file	arch/riscv/riscv/sbicons.c		# SBI Console
 
 file	dev/cons.c
 file	dev/md_root.c				memory_disk_hooks
