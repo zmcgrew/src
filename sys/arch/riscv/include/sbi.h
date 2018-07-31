@@ -15,19 +15,19 @@
 
 static __inline __uint64_t
 sbi_call(__uint64_t arg7, __uint64_t arg0, __uint64_t arg1, __uint64_t arg2) {
-  /* a7 is the actual SBI_ID from above */
-  register register_t a7 __asm ("a7") = (register_t)arg7;
+	/* a7 is the actual SBI_ID from above */
+	register register_t a7 __asm ("a7") = (register_t)arg7;
 
-  /* Max of 3 arguments -- Copy the args to their respective registers */
-  register register_t a0 __asm ("a0") = (register_t)arg0;
-  register register_t a1 __asm ("a1") = (register_t)arg1;
-  register register_t a2 __asm ("a2") = (register_t)arg2;
+	/* Max of 3 arguments -- Copy the args to their respective registers */
+	register register_t a0 __asm ("a0") = (register_t)arg0;
+	register register_t a1 __asm ("a1") = (register_t)arg1;
+	register register_t a2 __asm ("a2") = (register_t)arg2;
 
-  __asm __volatile (
-                "ecall"
-                : "+r" (a0)
-                : "r" (a1), "r" (a2), "r" (a7)
-                : "memory");
+	__asm __volatile (
+		"ecall"
+		: "+r" (a0)
+		: "r" (a1), "r" (a2), "r" (a7)
+		: "memory");
 	return a0;
 }
 
