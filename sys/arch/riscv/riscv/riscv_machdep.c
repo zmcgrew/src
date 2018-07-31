@@ -419,5 +419,5 @@ init_mmu(paddr_t dtb)
 void
 init_riscv(register_t hartid, paddr_t dtb, paddr_t kernstart, paddr_t kernend)
 {
-
+	consinit();
 }
