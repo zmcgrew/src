@@ -123,37 +123,6 @@ typedef __uint32_t pd_entry_t;
 
 /* End FreeBSD RISC-V Constants */
 
-struct sv39_va {
-	__uint64_t page_offset	: 12;
-	__uint64_t vpn0		: 9;
-	__uint64_t vpn1		: 9;
-	__uint64_t vpn2		: 9;
-};
-
-struct sv39_pa {
-	__uint64_t page_offset	: 12;
-	__uint64_t ppn0		: 9;
-	__uint64_t ppn1		: 9;
-	__uint64_t ppn2		: 26;
-};
-
-struct sv39_pte {
-	__uint64_t v		: 1;
-	__uint64_t r		: 1;
-	__uint64_t w		: 1;
-	__uint64_t x		: 1;
-	__uint64_t u		: 1;
-	__uint64_t g		: 1;
-	__uint64_t a		: 1;
-	__uint64_t d		: 1;
-	__uint64_t n		: 1;
-	__uint64_t wired       	: 1;
-	__uint64_t ppn0		: 9;
-	__uint64_t ppn1		: 9;
-	__uint64_t ppn2		: 26;
-	__uint64_t _reserved    : 10;
-};
-
 static inline bool
 pte_valid_p(pt_entry_t pte)
 {
