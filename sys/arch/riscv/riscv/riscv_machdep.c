@@ -419,5 +419,11 @@ init_mmu(paddr_t dtb)
 void
 init_riscv(register_t hartid, paddr_t dtb, paddr_t kernstart, paddr_t kernend)
 {
+	/* Main screen turn on */
 	consinit();
+
+	/* XXX: Setup lwp0 here */
+
+	/* XXX: Init memory stuffs here too */
+
 }
