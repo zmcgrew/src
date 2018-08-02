@@ -118,7 +118,7 @@ __CTASSERT(sizeof(pmap_ptpage_t) == NBPG);
 MULT_CTASSERT(PMAP_PDETABSIZE, NPDEPG);
 MULT_CTASSERT(NPDEPG, PMAP_PDETABSIZE);
 MULT_CTASSERT(PMAP_PDETABSIZE, NPDEPG);
-#endif
+#endif /* _LP64 */
 MULT_CTASSERT(sizeof(pmap_pdetab_t *), sizeof(pd_entry_t));
 MULT_CTASSERT(sizeof(pd_entry_t), sizeof(pmap_pdetab_t));
 
@@ -126,7 +126,7 @@ MULT_CTASSERT(sizeof(pd_entry_t), sizeof(pmap_pdetab_t));
 static const bool separate_pdetab_root_p = NPDEPG != PMAP_PDETABSIZE;
 #else
 static const bool separate_pdetab_root_p = true;
-#endif
+#endif /* _LP64 */
 
 typedef struct {
 	pmap_pdetab_t *free_pdetab0;	/* free list kept locally */
@@ -138,9 +138,9 @@ typedef struct {
 #define	PDETAB_ADD(n, v)	(pmap_segtab_info.pdealloc.n += (v))
 #else
 #define	PDETAB_ADD(n, v)	((void) 0)
-#endif
+#endif /* DEBUG */
 } pmap_pdetab_alloc_t;
-#endif
+#endif /* PMAP_HWPAGEWALKER */
 
 #if !defined(PMAP_HWPAGEWALKER) || !defined(PMAP_MAP_POOLPAGE)
 #ifdef _LP64
@@ -351,9 +351,15 @@ pmap_segtab_free(pmap_segtab_t *stp)
 	 * Insert the the segtab into the segtab freelist.
 	 */
 	mutex_spin_enter(&pmap_segtab_lock);
-	stp->seg_seg[0] = pmap_segtab_info.free_segtab;
-	pmap_segtab_info.free_segtab = stp;
+#ifdef PMAP_HWPAGEWALKER
+	stp->seg_seg[0] = pmap_segtab_info.pdealloc.free_pdetab;
+	pmap_segtab_info.pdealloc.free_pdetab = stp;
+	PDETAB_ADD(nput, 1);
+#else
+	stp->seg_seg[0] = pmap_segtab_info.segalloc.free_segtab;
+	pmap_segtab_info.segalloc.free_segtab = stp;
 	SEGTAB_ADD(nput, 1);
+#endif
 	mutex_spin_exit(&pmap_segtab_lock);
 }
 
@@ -439,10 +445,16 @@ pmap_segtab_alloc(void)
 
  again:
 	mutex_spin_enter(&pmap_segtab_lock);
-	if (__predict_true((stp = pmap_segtab_info.free_segtab) != NULL)) {
-		pmap_segtab_info.free_segtab = stp->seg_seg[0];
-		stp->seg_seg[0] = NULL;
+#ifdef PMAP_HWPAGEWALKER
+	if (__predict_true((stp = pmap_segtab_info.pdealloc.free_pdetab) != NULL)) {
+		pmap_segtab_info.pdealloc.free_pdetab = stp->seg_seg[0];
+		PDETAB_ADD(nget, 1);
+#else
+	if (__predict_true((stp = pmap_segtab_info.segalloc.free_segtab) != NULL)) {
+		pmap_segtab_info.segalloc.free_segtab = stp->seg_seg[0];
 		SEGTAB_ADD(nget, 1);
+#endif
+		stp->seg_seg[0] = NULL;
 		found_on_freelist = true;
 	}
 	mutex_spin_exit(&pmap_segtab_lock);
@@ -457,7 +469,11 @@ pmap_segtab_alloc(void)
 			uvm_wait("pmap_create");
 			goto again;
 		}
+#ifdef PMAP_HWPAGEWALKER
+		PDETAB_ADD(npage, 1);
+#else
 		SEGTAB_ADD(npage, 1);
+#endif
 		const paddr_t stp_pa = VM_PAGE_TO_PHYS(stp_pg);
 
 		stp = (pmap_segtab_t *)PMAP_MAP_POOLPAGE(stp_pa);
@@ -473,9 +489,15 @@ pmap_segtab_alloc(void)
 			 * Now link the new segtabs into the free segtab list.
 			 */
 			mutex_spin_enter(&pmap_segtab_lock);
-			stp[n-1].seg_seg[0] = pmap_segtab_info.free_segtab;
-			pmap_segtab_info.free_segtab = stp + 1;
+#ifdef PMAP_HWPAGEWALKER
+			stp[n-1].seg_seg[0] = pmap_segtab_info.pdealloc.free_pdetab;
+			pmap_segtab_info.pdealloc.free_pdetab = stp + 1;
+			PDETAB_ADD(nput, n - 1);
+#else
+			stp[n-1].seg_seg[0] = pmap_segtab_info.segalloc.free_segtab;
+			pmap_segtab_info.segalloc.free_segtab = stp + 1;
 			SEGTAB_ADD(nput, n - 1);
+#endif
 			mutex_spin_exit(&pmap_segtab_lock);
 		}
 	}
