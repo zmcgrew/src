@@ -35,6 +35,8 @@
 #include <sys/param.h>
 #endif
 
+#include <riscv/reg.h>
+
 #define FCSR_FMASK	0	// no exception bits
 #define FCSR_FRM	__BITS(7,5)
 #define FCSR_FRM_RNE	0b000	// Round Nearest, ties to Even
@@ -226,32 +228,53 @@ riscvreg_cycle_read(void)
 #endif
 }
 
-static inline uintptr_t
-riscvreg_ptbr_read(void)
+static inline register_t
+riscvreg_satp_read(void)
 {
-	uintptr_t __ptbr;
-	__asm("csrr\t%0, sptbr" : "=r"(__ptbr));
-	return __ptbr;
+	register_t __satp;
+	__asm("csrr\t%0, satp" : "=r"(__satp));
+	return __satp;
 }
 
 static inline void
-riscvreg_ptbr_write(uint32_t __ptbr)
+riscvreg_satp_write(register_t __satp)
 {
-	__asm("csrw\tsptbr, %0" :: "r"(__ptbr));
+	__asm("csrw\tsatp, %0" :: "r"(__satp));
+}
+
+static inline register_t
+riscvreg_satp_ppn_read(void)
+{
+	register_t __satp;
+	__asm("csrr\t%0, satp" : "=r"(__satp));
+	return __satp & SATP_PPN_MASK;
+}
+
+static inline void
+riscvreg_satp_ppn_write(register_t ppn)
+{
+	register_t __satp = riscvreg_satp_read();
+	__satp &= ~SATP_PPN_MASK | (ppn & SATP_PPN_MASK);
+	__asm("csrw\tsatp, %0" :: "r"(__satp));
 }
 
 static inline uint32_t
-riscvreg_asid_read(void)
+riscvreg_satp_asid_read(void)
 {
-	uint32_t __asid;
-//	__asm __volatile("csrr\t%0, sasid" : "=r"(__asid));
-	return __asid;
+	register_t __asid;
+	__asm __volatile("csrr\t%0, satp" : "=r"(__asid));
+	return (uint32_t)(__asid >> SATP_ASID_SHIFT);
 }
 
 static inline void
-riscvreg_asid_write(uint32_t __asid)
+riscvreg_satp_asid_write(uint32_t __asid)
 {
-//	__asm __volatile("csrw\tsasid, %0" :: "r"(__asid));
+	register_t satp, asid;
+	asid = __asid;
+	asid <<= SATP_ASID_SHIFT;
+	__asm __volatile("csrr\t%0, satp" : "=r"(satp));
+	satp &= ~SATP_ASID_MASK | asid;
+	riscvreg_satp_write(satp);
 }
 
 #endif /* _RISCV_SYSREG_H_ */
