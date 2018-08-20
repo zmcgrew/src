@@ -124,11 +124,11 @@ struct fpreg {
 #define r_fcsr		r_fpreg[32].u_u64
 
 #define	SATP_PPN_SHIFT	0
-#define	SATP_PPN_MASK	(0xfffffffffff << SATP_PPN_SHIFT)
+#define	SATP_PPN_MASK	(0xfffffffffffULL << SATP_PPN_SHIFT)
 #define	SATP_ASID_SHIFT	44
-#define	SATP_ASID_MASK	(0xffff << SATP_ASID_SHIFT)
+#define	SATP_ASID_MASK	(0xffffULL << SATP_ASID_SHIFT)
 #define	SATP_MODE_SHIFT	60
-#define	SATP_MODE_MASK	(0xf << SATP_MODE_SHIFT)
+#define	SATP_MODE_MASK	(0xfULL << SATP_MODE_SHIFT)
 #define	SATP_MODE_SV39	(8ULL << SATP_MODE_SHIFT)
 #define	SATP_MODE_SV48	(9ULL << SATP_MODE_SHIFT)
 
