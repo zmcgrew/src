@@ -151,7 +151,8 @@ pmap_md_tlb_check_entry(void *ctx, vaddr_t va, tlb_asid_t asid, pt_entry_t pte)
 void
 pmap_md_pdetab_activate(struct pmap *pmap)
 {
-	//__asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
+	riscvreg_satp_ppn_write(pmap->pm_md.md_ptbr);
+	//OLD: __asm("csrw\tsptbr, %0" :: "r"(pmap->pm_md.md_ptbr));
 }
 
 void
@@ -169,13 +170,13 @@ pmap_md_pdetab_init(struct pmap *pmap)
 tlb_asid_t
 tlb_get_asid(void)
 {
-	return riscvreg_asid_read();
+	return riscvreg_satp_asid_read();
 }
 
 void
 tlb_set_asid(tlb_asid_t asid)
 {
-	riscvreg_asid_write(asid);
+	riscvreg_satp_asid_write(asid);
 }
 
 #if 0
