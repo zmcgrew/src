@@ -189,6 +189,27 @@ PMAP_COUNTER(page_protect, "page_protects");
 #define PMAP_ASID_RESERVED 0
 CTASSERT(PMAP_ASID_RESERVED == 0);
 
+#ifdef PMAP_HWPAGEWALKER
+#ifndef PMAP_PDETAB_ALIGN
+#define PMAP_PDETAB_ALIGN	/* nothing */
+#endif
+
+#ifdef _LP64
+pmap_pdetab_t	pmap_kstart_pdetab PMAP_PDETAB_ALIGN; /* first mid-level pdetab for kernel */
+#endif
+pmap_pdetab_t	pmap_kern_pdetab PMAP_PDETAB_ALIGN = { /* top level pdetab for kernel */
+#ifdef _LP64
+	
+	/* TODO: This seems wrong. Index out of bounds on RISCV at least.
+	  .pde_pde[(VM_MIN_KERNEL_ADDRESS & XSEGOFSET) >> SEGSHIFT] =
+	  &pmap_kstart_pdetab,
+	*/
+	0 /* Just zero it for now until the above is fixed */
+#endif
+};
+
+#endif
+
 #if !defined(PMAP_HWPAGEWALKER) || !defined(POOL_PHYSTOV)
 #ifndef PMAP_SEGTAB_ALIGN
 #define PMAP_SEGTAB_ALIGN	/* nothing */
@@ -597,7 +618,11 @@ pmap_create(void)
 	pmap->pm_minaddr = VM_MIN_ADDRESS;
 	pmap->pm_maxaddr = VM_MAXUSER_ADDRESS;
 
+#ifndef PMAP_HWPAGEWALKER
 	pmap_segtab_init(pmap);
+#else
+	/* TODO: PDE init code here */
+#endif
 
 #ifdef MULTIPROCESSOR
 	kcpuset_create(&pmap->pm_active, true);
@@ -634,7 +659,11 @@ pmap_destroy(pmap_t pmap)
 	kpreempt_disable();
 	pmap_md_tlb_miss_lock_enter();
 	pmap_tlb_asid_release_all(pmap);
+#ifndef PMAP_HWPAGEWALKER
 	pmap_segtab_destroy(pmap, NULL, 0);
+#else
+	/* TODO: PDE destroy code here */
+#endif
 	pmap_md_tlb_miss_lock_exit();
 
 #ifdef MULTIPROCESSOR
@@ -684,7 +713,11 @@ pmap_activate(struct lwp *l)
 	pmap_md_tlb_miss_lock_enter();
 	pmap_tlb_asid_acquire(pmap, l);
 	if (l == curlwp) {
+#ifndef PMAP_HWPAGEWALKER
 		pmap_segtab_activate(pmap, l);
+#else
+		/* TODO: PDE activate code here */
+#endif
 	}
 	pmap_md_tlb_miss_lock_exit();
 	kpreempt_enable();
@@ -838,6 +871,7 @@ pmap_deactivate(struct lwp *l)
 	curcpu()->ci_pmap_user_seg0tab = NULL;
 #endif
 #endif
+	/* TODO: MAYBE PDE code here? */
 	pmap_tlb_asid_deactivate(pmap);
 	pmap_md_tlb_miss_lock_exit();
 	kpreempt_enable();
@@ -871,7 +905,11 @@ pmap_update(struct pmap *pmap)
 	if (__predict_false(pmap->pm_flags & PMAP_DEFERRED_ACTIVATE)) {
 		pmap->pm_flags ^= PMAP_DEFERRED_ACTIVATE;
 		pmap_tlb_asid_acquire(pmap, curlwp);
+#ifndef PMAP_HWPAGEWALKER
 		pmap_segtab_activate(pmap, curlwp);
+#else
+		/* TODO: PDE activate code here */
+#endif
 	}
 	pmap_md_tlb_miss_lock_exit();
 	kpreempt_enable();
