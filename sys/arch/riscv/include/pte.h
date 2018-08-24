@@ -55,23 +55,34 @@
     [0] = V
 */
 
-#define NPTEPG		__BIT(9)	// PTEs per Page
+#define NPTEPG		(4096 / sizeof(void *))	// PTEs per Page
+
 #define NSEGPG		NPTEPG
 #define NPDEPG		NPTEPG
 
 #ifdef _LP64 /* Sv39 */
+/*
+ * XXX --- WARNING
+ * These are numbered backwards from the numbering in the Privilege Spec 1.10!
+ * 0 = PrivSpec 2
+ * 1 = PrivSpec 1
+ * 2 = PrivSpec 0
+ */
 #define PTE_PPN		__BITS(53, 10)	// Physical Page Number
-#define	PTE_PPN2	__BITS(53, 28)	// 1K 8-byte SDEs / PAGE
-#define	PTE_PPN1	__BITS(27, 19)	// 1K 8-byte PDEs / PAGE
-#define	PTE_PPN0	__BITS(18, 10)	// 1K 8-byte PTEs / PAGE
+#define	PTE_PPN0	__BITS(53, 28)	// 512 8-byte SDEs / PAGE
+#define	PTE_PPN1	__BITS(27, 19)	// 512 8-byte PDEs / PAGE
+#define	PTE_PPN2	__BITS(18, 10)	// 512 8-byte PTEs / PAGE
 typedef __uint64_t pt_entry_t;
 typedef __uint64_t pd_entry_t;
 #define atomic_cas_pte	atomic_cas_64
 #define atomic_cas_pde	atomic_cas_64
 #else
+/*
+ * WARNING -- Same as above, but 0 = PS 1, 1 = PS 0
+ */ 
 #define PTE_PPN		__BITS(31, 10)	// Physical Page Number
-#define	PTE_PPN1	__BITS(31, 20)	// 1K 4-byte PDEs / PAGE
-#define	PTE_PPN0	__BITS(19, 10)	// 1K 4-byte PTEs / PAGE
+#define	PTE_PPN0	__BITS(31, 20)	// 1K 4-byte PDEs / PAGE
+#define	PTE_PPN1	__BITS(19, 10)	// 1K 4-byte PTEs / PAGE
 typedef __uint32_t pt_entry_t;
 typedef __uint32_t pd_entry_t;
 #define atomic_cas_pte	atomic_cas_32
@@ -91,6 +102,12 @@ typedef __uint32_t pd_entry_t;
 #define	PTE_W		__BIT(2)	// Write
 #define	PTE_R		__BIT(1)	// Read
 #define	PTE_V		__BIT(0)	// Valid
+
+/*
+  Helper macro for determining if on a "Transit" (non-leaf) page.
+  A previous spec had PTE_T for this.
+*/
+#define PTE_IS_T(pte)	(((pte) & PTE_V) && !((pte) & (PTE_W|PTE_R|PTE_X)))
 
 /* Constants From FreeBSD RISC-V Port */
 
@@ -169,7 +186,7 @@ pte_unwire_entry(pt_entry_t pte)
 static inline paddr_t
 pte_to_paddr(pt_entry_t pte)
 {
-	return pte & ~PAGE_MASK;
+	return pte >> PTE_PPN0_S;
 }
 
 static inline pt_entry_t
@@ -197,20 +214,25 @@ static inline pt_entry_t
 pte_prot_bits(struct vm_page_md *mdpg, vm_prot_t prot, bool kernel_p)
 {
 	KASSERT(prot & VM_PROT_READ);
-	/* pt_entry_t pt_entry = PTE_SR | (kernel_p ? 0 : PTE_UR); */
-	/* if (prot & VM_PROT_EXECUTE) { */
-	/* 	if (mdpg != NULL && !VM_PAGEMD_EXECPAGE_P(mdpg)) */
-	/* 		pt_entry |= PTE_NX; */
-	/* 	else */
-	/* 		pt_entry |= kernel_p ? PTE_SX : PTE_UX; */
-	/* } */
-	/* if (prot & VM_PROT_WRITE) { */
-	/* 	if (mdpg != NULL && !VM_PAGEMD_MODIFIED_P(mdpg)) */
-	/* 		pt_entry |= PTE_NW; */
-	/* 	else */
-	/* 		pt_entry |= PTE_SW | (kernel_p ? 0 : PTE_UW); */
-	/* } */
-	return 0;
+	pt_entry_t pt_entry = PTE_R | (kernel_p ? 0 : PTE_U);
+	if (prot & VM_PROT_EXECUTE) {
+		if (mdpg != NULL && !VM_PAGEMD_EXECPAGE_P(mdpg))
+			pt_entry |= PTE_NX;
+		else
+			pt_entry |= kernel_p ? 0 : PTE_U;
+	}
+	if (prot & VM_PROT_WRITE) {
+		if (mdpg != NULL && !VM_PAGEMD_MODIFIED_P(mdpg))
+			/*
+			  TODO: Mark page as not dirty? Was
+			  previously "Not Written" (PTE_NW) which no
+			  longer exists
+			*/
+			pt_entry &= ~PTE_D;
+		else
+			pt_entry |= PTE_W | (kernel_p ? 0 : PTE_U);
+	}
+	return pt_entry;
 }
 
 static inline pt_entry_t
@@ -278,19 +300,20 @@ pte_invalid_pde(void)
 static inline pd_entry_t
 pte_pde_pdetab(paddr_t pa)
 {
-	return 0;
+	return PTE_V | PTE_G | pa;
 }
 
 static inline pd_entry_t
 pte_pde_ptpage(paddr_t pa)
 {
-	return 0;
+	return PTE_V | PTE_G | pa;
 }
 
 static inline bool
 pte_pde_valid_p(pd_entry_t pde)
 {
-	return 0;
+	/* OLD: return (pde & (PTE_V|PTE_T)) == (PTE_V|PTE_T); */
+	return PTE_IS_T(pde);
 }
 
 static inline paddr_t
