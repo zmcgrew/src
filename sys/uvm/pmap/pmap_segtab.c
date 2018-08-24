@@ -106,6 +106,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.6 2017/05/12 12:18:37 skrll Exp $"
 #include <sys/atomic.h>
 
 #include <uvm/uvm.h>
+#include <uvm/pmap/pmap.h>
 
 
 #define MULT_CTASSERT(a,b)	__CTASSERT((a) < (b) || ((a) % (b) == 0))
@@ -188,6 +189,7 @@ struct pmap_segtab_info {
 
 kmutex_t pmap_segtab_lock __cacheline_aligned;
 
+#ifndef PMAP_HWPAGEWALKER
 static void
 pmap_check_stp(pmap_segtab_t *stp, const char *caller, const char *why)
 {
@@ -205,6 +207,7 @@ pmap_check_stp(pmap_segtab_t *stp, const char *caller, const char *why)
 	}
 #endif
 }
+#endif /* PMAP_HWPAGEWALKER */
 
 static inline struct vm_page *
 pmap_pte_pagealloc(void)
@@ -264,7 +267,7 @@ pmap_ptpage(struct pmap *pmap, vaddr_t va)
 	     segshift > SEGSHIFT;
 	     segshift -= PGSHIFT - 3, pdetab_mask = NSEGPG - 1) {
 		ptb = pmap_pde_to_pdetab(ptb->pde_pde[(va >> segshift) & pdetab_mask]);
-		if (ptb == NULL);
+		if (ptb == NULL)
 			return NULL;
 	}
 #endif
@@ -288,6 +291,13 @@ pmap_ptpage(struct pmap *pmap, vaddr_t va)
 #endif
 }
 
+#ifdef PMAP_HWPAGEWALKER
+void pte_pde_set(pd_entry_t *oldpte, pd_entry_t newpte) {
+	/* TODO: PDE Setting code here? Based on function call below,
+	 * guessing this is a wrapper for pte_pde_cas() ? */
+}
+#endif
+
 #if defined(PMAP_HWPAGEWALKER)
 bool
 pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va)
@@ -304,11 +314,11 @@ pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va)
 	// Regardless of how many levels deep this page table deep, we only
 	// need to verify the first level PDEs match up.
 #ifdef XSEGSHIFT
-	pde_idx &= va >> XSEGSHIFT;
+	idx &= va >> XSEGSHIFT;
 #else
-	pde_idx &= va >> SEGSHIFT;
+	idx &= va >> SEGSHIFT;
 #endif
-	if (uptb->pde_pde[idx] != kptb->pde_pde[idx]) [
+	if (uptb->pde_pde[idx] != kptb->pde_pde[idx]) {
 		pte_pde_set(&uptb->pde_pde[idx], kptb->pde_pde[idx]);
 #if !defined(PMAP_MAP_POOLPAGE)
 		ustb->seg_seg[idx] = kstb->seg_seg[idx]; // copy KVA of PTP
@@ -319,6 +329,7 @@ pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va)
 }
 #endif /* PMAP_HWPAGEWALKER */
 
+#ifndef PMAP_HWPAGEWALKER
 static inline pt_entry_t *
 pmap_segmap(struct pmap *pmap, vaddr_t va)
 {
@@ -333,17 +344,23 @@ pmap_segmap(struct pmap *pmap, vaddr_t va)
 
 	return stp->seg_tab[(va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1)];
 }
+#endif /* PMAP_HWPAGEWALKER */
 
 pt_entry_t *
 pmap_pte_lookup(pmap_t pmap, vaddr_t va)
 {
+#ifndef PMAP_HWPAGEWALKER
 	pt_entry_t *pte = pmap_segmap(pmap, va);
+#else
+	pt_entry_t *pte = 0; /* TODO: PDE STUFF HERE */
+#endif
 	if (pte == NULL)
 		return NULL;
 
 	return pte + ((va >> PGSHIFT) & (NPTEPG - 1));
 }
 
+#ifndef PMAP_HWPAGEWALKER
 static void
 pmap_segtab_free(pmap_segtab_t *stp)
 {
@@ -362,7 +379,9 @@ pmap_segtab_free(pmap_segtab_t *stp)
 #endif
 	mutex_spin_exit(&pmap_segtab_lock);
 }
+#endif
 
+#ifndef PMAP_HWPAGEWALKER
 static void
 pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 	pte_callback_t callback, uintptr_t flags,
@@ -424,6 +443,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 		*stp_p = NULL;
 	}
 }
+#endif
 
 /*
  *	Create and return a physical map.
@@ -437,6 +457,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
  *	the map will be used in software only, and
  *	is bounded by that size.
  */
+#ifndef PMAP_HWPAGEWALKER
 static pmap_segtab_t *
 pmap_segtab_alloc(void)
 {
@@ -507,22 +528,26 @@ pmap_segtab_alloc(void)
 
 	return stp;
 }
+#endif
 
 /*
  * Allocate the top segment table for the pmap.
  */
+#ifndef PMAP_HWPAGEWALKER
 void
 pmap_segtab_init(pmap_t pmap)
 {
 
 	pmap->pm_segtab = pmap_segtab_alloc();
 }
+#endif
 
 /*
  *	Retire the given physical map from service.
  *	Should only be called if the map contains
  *	no valid mappings.
  */
+#ifndef PMAP_HWPAGEWALKER
 void
 pmap_segtab_destroy(pmap_t pmap, pte_callback_t func, uintptr_t flags)
 {
@@ -537,10 +562,12 @@ pmap_segtab_destroy(pmap_t pmap, pte_callback_t func, uintptr_t flags)
 	pmap_segtab_release(pmap, &pmap->pm_segtab,
 	    func == NULL, func, flags, pmap->pm_minaddr, vinc);
 }
+#endif
 
 /*
  *	Make a new pmap (vmspace) active for the given process.
  */
+#ifndef PMAP_HWPAGEWALKER
 void
 pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 {
@@ -560,6 +587,7 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 		}
 	}
 }
+#endif
 
 /*
  *	Act on the given range of addresses from the specified map.
@@ -606,6 +634,7 @@ pmap_pte_process(pmap_t pmap, vaddr_t sva, vaddr_t eva,
 pt_entry_t *
 pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 {
+#ifndef PMAP_HWPAGEWALKER
 	pmap_segtab_t *stp = pmap->pm_segtab;
 	pt_entry_t *pte;
 
@@ -686,4 +715,6 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 	}
 
 	return pte;
+#endif /* PMAP_HWPAGEWALKER */
+	return 0; /* TODO: FIX THIS ENTIRE FUNCTION for PDE */
 }
