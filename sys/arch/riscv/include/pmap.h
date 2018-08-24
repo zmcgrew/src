@@ -48,8 +48,10 @@
 
 #include <riscv/pte.h>
 
-#define	PMAP_SEGTABSIZE		(__SHIFTOUT(PTE_PPN0, PTE_PPN0) + 1)
-#define	PMAP_PDETABSIZE		(__SHIFTOUT(PTE_PPN0, PTE_PPN0) + 1)
+#ifdef _LP64
+#define	PMAP_SEGTABSIZE		NPTEPG
+#define	PMAP_PDETABSIZE		NPTEPG
+#endif
 
 #define NBSEG		(NBPG*NPTEPG)
 #ifdef _LP64
@@ -64,7 +66,7 @@
 
 #define KERNEL_PID	0
 
-//#define PMAP_HWPAGEWALKER		1
+#define PMAP_HWPAGEWALKER		1
 #define PMAP_TLB_NUM_PIDS		256
 #define PMAP_TLB_MAX			1
 #ifdef _LP64
