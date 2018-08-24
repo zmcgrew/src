@@ -55,7 +55,7 @@
     [0] = V
 */
 
-#define NPTEPG		(4096 / sizeof(void *))	// PTEs per Page
+#define NPTEPG		(NBPG / sizeof(void *))	// PTEs per Page
 
 #define NSEGPG		NPTEPG
 #define NPDEPG		NPTEPG
