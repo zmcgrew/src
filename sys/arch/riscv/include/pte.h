@@ -68,7 +68,7 @@
  * 1 = PrivSpec 1
  * 2 = PrivSpec 0
  */
-#define PTE_PPN		__BITS(53, 10)	// Physical Page Number
+#define	PTE_PPN		__BITS(53, 10)	// Physical Page Number
 #define	PTE_PPN0	__BITS(53, 28)	// 512 8-byte SDEs / PAGE
 #define	PTE_PPN1	__BITS(27, 19)	// 512 8-byte PDEs / PAGE
 #define	PTE_PPN2	__BITS(18, 10)	// 512 8-byte PTEs / PAGE
@@ -161,7 +161,7 @@ pte_modified_p(pt_entry_t pte)
 static inline bool
 pte_cached_p(pt_entry_t pte)
 {
-  /* TODO: This seems wrong... */
+	/* TODO: This seems wrong... */
 	return true;
 }
 
@@ -176,7 +176,7 @@ pte_wire_entry(pt_entry_t pte)
 {
 	return pte | PTE_WIRED;
 }
-        
+
 static inline pt_entry_t   
 pte_unwire_entry(pt_entry_t pte)
 {
@@ -261,7 +261,7 @@ static inline pt_entry_t
 pte_make_enter(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 	int flags, bool kernel_p)
 {
-	pt_entry_t pte = (pt_entry_t) pa & ~PAGE_MASK;
+	pt_entry_t pte = (((pt_entry_t)pa) >> PAGE_SHIFT) << PTE_PPN0_S;
 
 	pte |= pte_flag_bits(mdpg, flags, kernel_p);
 	pte |= pte_prot_bits(mdpg, prot, kernel_p);
@@ -276,7 +276,7 @@ static inline pt_entry_t
 pte_make_kenter_pa(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 	int flags)
 {
-	pt_entry_t pte = (pt_entry_t) pa & ~PAGE_MASK;
+	pt_entry_t pte = (((pt_entry_t)pa) >> PAGE_SHIFT) << PTE_PPN0_S;
 
 	pte |= PTE_WIRED | PTE_V;
 	pte |= pte_flag_bits(NULL, flags, true);
@@ -319,7 +319,7 @@ pte_pde_valid_p(pd_entry_t pde)
 static inline paddr_t
 pte_pde_to_paddr(pd_entry_t pde)
 {
-	return pde & ~PAGE_MASK;
+	return pde >> PTE_PPN0_S;
 }
 
 static inline pd_entry_t
@@ -341,6 +341,6 @@ pte_pde_cas(pd_entry_t *pdep, pd_entry_t opde, pt_entry_t npde)
 static inline uint32_t
 pte_value(pt_entry_t pte)
 {
-        return pte;
+	return pte;
 }
 #endif /* _RISCV_PTE_H_ */
