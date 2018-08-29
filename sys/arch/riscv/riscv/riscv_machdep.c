@@ -381,10 +381,10 @@ paddr_t
 init_mmu(paddr_t dtb)
 {
 	__uint64_t virt_delta = (__uint64_t)virt_map - (__uint64_t)&virt_map;
-	__uint64_t phys_base = KERNBASE - virt_delta;
+	__uint64_t phys_base = VM_MIN_KERNEL_ADDRESS - virt_delta;
 	__uint64_t phys_base_2mb_chunk = phys_base >> 21;
 	__uint64_t l2_perms = PTE_V | PTE_D | PTE_A | PTE_R | PTE_W | PTE_X;
-	__uint64_t i = (KERNBASE >> L1_SHIFT) & Ln_ADDR_MASK;
+	__uint64_t i = (VM_MIN_KERNEL_ADDRESS >> L1_SHIFT) & Ln_ADDR_MASK;
 
 	/* L1 PTE with entry for Kernel VA, pointing to L2 PTE */
 	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
@@ -394,7 +394,7 @@ init_mmu(paddr_t dtb)
 	/* l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V; */
 
 	/* XXX: This is the same index as the Kernel PA */
-	
+
 	/* L1 PTE with entry for L2_DTB */
 	/* i = ((paddr_t)&l2_dtb >> L1_SHIFT) & Ln_ADDR_MASK; */
 	/* umprintf("i = %d\n", i); */
@@ -425,5 +425,4 @@ init_riscv(register_t hartid, paddr_t dtb, paddr_t kernstart, paddr_t kernend)
 	/* XXX: Setup lwp0 here */
 
 	/* XXX: Init memory stuffs here too */
-
 }
