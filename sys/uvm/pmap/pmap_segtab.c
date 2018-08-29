@@ -292,9 +292,10 @@ pmap_ptpage(struct pmap *pmap, vaddr_t va)
 }
 
 #ifdef PMAP_HWPAGEWALKER
-void pte_pde_set(pd_entry_t *oldpte, pd_entry_t newpte) {
-	/* TODO: PDE Setting code here? Based on function call below,
+void pte_pde_set(pd_entry_t *oldpde, pd_entry_t newpde) {
+	/* XXX: PDE Setting code here? Based on function call below,
 	 * guessing this is a wrapper for pte_pde_cas() ? */
+	pte_pde_cas(oldpde, 0, npde);
 }
 #endif
 
