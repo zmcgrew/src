@@ -100,28 +100,29 @@ paddr_t
 pmap_md_direct_mapped_vaddr_to_paddr(vaddr_t va)
 {
 	KASSERT(VM_MAX_KERNEL_ADDRESS <= va && (intptr_t) va < 0);
-	/* const pmap_pdetab_t *ptb = pmap_kernel()->pm_pdetab; */
-/* 	pd_entry_t pde; */
+	const pmap_pdetab_t *ptb = pmap_kernel()->pm_pdetab;
+	pd_entry_t pde;
 
-/* #ifdef _LP64 */
-/* 	pde = ptb->pde_pde[(va >> XSEGSHIFT) & (NPDEPG-1)]; */
-/* 	if ((pde & PTE_V) == 0) { */
-/* 		return -(paddr_t)1; */
-/* 	} */
-/* 	if ((pde & PTE_T) == 0) { */
-/* 		return pde & ~XSEGOFSET; */
-/* 	} */
-/* 	ptb = (const pmap_pdetab_t *)POOL_PHYSTOV(pte_pde_to_paddr(pde)); */
-/* #endif */
-/* 	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)]; */
-/* 	if ((pde & PTE_V) == 0) { */
-/* 		return -(paddr_t)1; */
-/* 	} */
-/* 	if ((pde & PTE_T) == 0) { */
-/* 		return pde & ~SEGOFSET; */
-/* 	} */
-/* 	return -(paddr_t)1; */
-  return (paddr_t *)0;
+#ifdef _LP64
+	for (size_t segshift = XSEGSHIFT; segshift > SEGSHIFT; segshift -= (PGSHIFT - 3)) {
+		pde = ptb->pde_pde[(va >> segshift) & (NDPEPG-1)];
+		if ((pde & PTE_V) == 0) {
+			return -(paddr_t)1;
+		}
+		if (!PTE_IS_T(pde)) {
+			return pte_pde_to_paddr(pde);
+		}
+	}
+	ptb = (const pmap_pdetab_t *)POOL_PHYSTOV(pte_pde_to_paddr(pde));
+#endif
+	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)];
+	if ((pde & PTE_V) == 0) {
+		return -(paddr_t)1;
+	}
+	if (!PTE_IS_T(pde)) {
+		return pte_pde_to_paddr(pde);
+	}
+	return -(paddr_t)1;
 }
 
 vaddr_t
@@ -158,11 +159,9 @@ pmap_md_pdetab_activate(struct pmap *pmap)
 void
 pmap_md_pdetab_init(struct pmap *pmap)
 {
-	/*
 	pmap->pm_pdetab[NPDEPG-1] = pmap_kernel()->pm_pdetab[NPDEPG-1];
 	pmap->pm_md.md_ptbr =
 	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab);
-	*/
 }
 
 // TLB mainenance routines
