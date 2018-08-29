@@ -621,7 +621,7 @@ pmap_create(void)
 #ifndef PMAP_HWPAGEWALKER
 	pmap_segtab_init(pmap);
 #else
-	/* TODO: PDE init code here */
+	pmap_md_pdetab_init(pmap);
 #endif
 
 #ifdef MULTIPROCESSOR
@@ -716,7 +716,7 @@ pmap_activate(struct lwp *l)
 #ifndef PMAP_HWPAGEWALKER
 		pmap_segtab_activate(pmap, l);
 #else
-		/* TODO: PDE activate code here */
+		pmap_md_pdetab_activate(pmap);
 #endif
 	}
 	pmap_md_tlb_miss_lock_exit();
@@ -871,7 +871,6 @@ pmap_deactivate(struct lwp *l)
 	curcpu()->ci_pmap_user_seg0tab = NULL;
 #endif
 #endif
-	/* TODO: MAYBE PDE code here? */
 	pmap_tlb_asid_deactivate(pmap);
 	pmap_md_tlb_miss_lock_exit();
 	kpreempt_enable();
@@ -908,7 +907,7 @@ pmap_update(struct pmap *pmap)
 #ifndef PMAP_HWPAGEWALKER
 		pmap_segtab_activate(pmap, curlwp);
 #else
-		/* TODO: PDE activate code here */
+		pmap_md_pdetab_activate(pmap);
 #endif
 	}
 	pmap_md_tlb_miss_lock_exit();
