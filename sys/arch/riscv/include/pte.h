@@ -186,7 +186,7 @@ pte_unwire_entry(pt_entry_t pte)
 static inline paddr_t
 pte_to_paddr(pt_entry_t pte)
 {
-	return pte >> PTE_PPN0_S;
+	return (pte >> PTE_PPN0_S) * PAGE_SIZE;
 }
 
 static inline pt_entry_t
@@ -319,7 +319,7 @@ pte_pde_valid_p(pd_entry_t pde)
 static inline paddr_t
 pte_pde_to_paddr(pd_entry_t pde)
 {
-	return pde >> PTE_PPN0_S;
+	return pte_to_paddr((pt_entry_t)pde);
 }
 
 static inline pd_entry_t
