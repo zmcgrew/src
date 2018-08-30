@@ -47,8 +47,6 @@ include <uvm/uvm_extern.h>
 include <riscv/locore.h>
 include <riscv/sysreg.h>
 
-define	KERNBASE	KERNBASE
-
 # define	SR_IM		SR_IM
 # define	SR_IM_LSHIFT	__SIZEOF_LONG__ * 8 - (ilog2(SR_IM) + 1)
 # define	SR_IM_RSHIFT	ilog2(__LOWEST_SET_BIT(SR_IM))
