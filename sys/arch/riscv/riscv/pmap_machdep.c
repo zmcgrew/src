@@ -105,7 +105,7 @@ pmap_md_direct_mapped_vaddr_to_paddr(vaddr_t va)
 
 #ifdef _LP64
 	for (size_t segshift = XSEGSHIFT; segshift > SEGSHIFT; segshift -= (PGSHIFT - 3)) {
-		pde = ptb->pde_pde[(va >> segshift) & (NDPEPG-1)];
+		pde = ptb->pde_pde[(va >> segshift) & (NPDEPG-1)];
 		if ((pde & PTE_V) == 0) {
 			return -(paddr_t)1;
 		}
@@ -162,6 +162,34 @@ pmap_md_pdetab_init(struct pmap *pmap)
 	pmap->pm_pdetab[NPDEPG-1] = pmap_kernel()->pm_pdetab[NPDEPG-1];
 	pmap->pm_md.md_ptbr =
 	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab);
+}
+
+pt_entry_t *
+pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va)
+{
+	/* TODO: Do the lookup until the last entry, returning a
+	   pointer to the final PTE? */
+	const pmap_pdetab_t *ptb = pmap->pm_pdetab;
+	pd_entry_t pde;
+
+#ifdef _LP64
+	for (size_t segshift = XSEGSHIFT; segshift > SEGSHIFT; segshift -= (PGSHIFT - 3)) {
+		pde = ptb->pde_pde[(va >> segshift) & (NPDEPG-1)];
+		if ((pde & PTE_V) == 0) {
+			return NULL;
+		}
+		if (!PTE_IS_T(pde)) {
+			return ptb->pde_pde + ((va >> segshift) & (NPDEPG-1));
+		}
+	}
+	pde = ptb->pde_pde[(va >> SEGSHIFT) & (NPDEPG-1)];
+	if ((pde & PTE_V) == 0) {
+		return NULL;
+	}
+	return ptb->pde_pde + ((va >> SEGSHIFT) & (NPDEPG-1));
+#endif
+	/* XXX 32-bit code here */
+	return NULL;
 }
 
 // TLB mainenance routines
