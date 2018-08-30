@@ -300,13 +300,13 @@ pte_invalid_pde(void)
 static inline pd_entry_t
 pte_pde_pdetab(paddr_t pa)
 {
-	return PTE_V | PTE_G | pa;
+	return PTE_V | PTE_G | (pa >> PAGE_SHIFT) << PTE_PPN0_S;
 }
 
 static inline pd_entry_t
 pte_pde_ptpage(paddr_t pa)
 {
-	return PTE_V | PTE_G | pa;
+	return PTE_V | PTE_G | (pa >> PAGE_SHIFT) << PTE_PPN0_S;
 }
 
 static inline bool
@@ -337,8 +337,7 @@ pte_pde_cas(pd_entry_t *pdep, pd_entry_t opde, pt_entry_t npde)
 #endif
 }
 
-
-static inline uint32_t
+static inline pt_entry_t
 pte_value(pt_entry_t pte)
 {
 	return pte;
