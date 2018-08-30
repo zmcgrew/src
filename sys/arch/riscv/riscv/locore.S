@@ -34,9 +34,6 @@
 	.globl	_C_LABEL(exception_userexit)
 	.globl	_C_LABEL(cpu_Debugger_insn)
 
-	.globl	kernbase
-	.set	kernbase, KERNBASE
-
 ENTRY_NP(start)
 	/* Entry point from BBL.
 	 * Here's what we get for free:
@@ -61,7 +58,7 @@ ENTRY_NP(start)
 	la	t0, va
 	/* s2 is returned phys_base from init_mmu */
 	sub	t0, t0, s2
-	li	t1, KERNBASE
+	li	t1, VM_MIN_KERNEL_ADDRESS
 	add	t0, t0, t1
 	csrw	stvec, t0
 
@@ -102,8 +99,6 @@ bss1:
 	li	t1, (UPAGES * PAGE_SIZE) - TF_LEN
 	add	t0, t0, t1	/* lwp0space + USPACE - TF_LEN */
 	mv	sp, t0
-
-	call	pOK
 
 	// Now we should ready to start initializing the kernel.
 	PTR_LA	a0, _C_LABEL(start)	// kernel_start
