@@ -295,7 +295,7 @@ pmap_ptpage(struct pmap *pmap, vaddr_t va)
 void pte_pde_set(pd_entry_t *oldpde, pd_entry_t newpde) {
 	/* XXX: PDE Setting code here? Based on function call below,
 	 * guessing this is a wrapper for pte_pde_cas() ? */
-	pte_pde_cas(oldpde, 0, npde);
+	pte_pde_cas(oldpde, 0, newpde);
 }
 #endif
 
@@ -350,10 +350,12 @@ pmap_segmap(struct pmap *pmap, vaddr_t va)
 pt_entry_t *
 pmap_pte_lookup(pmap_t pmap, vaddr_t va)
 {
+	pt_entry_t *pte;
+
 #ifndef PMAP_HWPAGEWALKER
-	pt_entry_t *pte = pmap_segmap(pmap, va);
+	pte = pmap_segmap(pmap, va);
 #else
-	pt_entry_t *pte = 0; /* TODO: PDE STUFF HERE */
+	pte = pmap_md_pde_lookup_pte(pmap, va);
 #endif
 	if (pte == NULL)
 		return NULL;
