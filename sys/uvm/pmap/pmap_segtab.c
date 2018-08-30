@@ -350,17 +350,16 @@ pmap_segmap(struct pmap *pmap, vaddr_t va)
 pt_entry_t *
 pmap_pte_lookup(pmap_t pmap, vaddr_t va)
 {
-	pt_entry_t *pte;
-
-#ifndef PMAP_HWPAGEWALKER
-	pte = pmap_segmap(pmap, va);
+#ifdef PMAP_HWPAGEWALKER
+	return pmap_md_pde_lookup_pte(pmap, va);
 #else
-	pte = pmap_md_pde_lookup_pte(pmap, va);
-#endif
+	pt_entry_t *pte = pmap_segmap(pmap, va);
+
 	if (pte == NULL)
 		return NULL;
 
 	return pte + ((va >> PGSHIFT) & (NPTEPG - 1));
+#endif
 }
 
 #ifndef PMAP_HWPAGEWALKER
