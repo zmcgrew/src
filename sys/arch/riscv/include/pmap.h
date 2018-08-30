@@ -82,7 +82,11 @@
 
 #ifndef __BSD_PTENTRY_T__
 #define __BSD_PTENTRY_T__
+#ifdef _LP64
+#define PRIxPTE         PRIx64
+#else
 #define PRIxPTE         PRIx32
+#endif
 #endif /* __BSD_PTENTRY_T__ */
 
 #define PMAP_NEED_PROCWR
@@ -122,6 +126,9 @@ bool    pmap_md_tlb_check_entry(void *, vaddr_t, tlb_asid_t, pt_entry_t);
 void	pmap_md_pdetab_activate(struct pmap *);
 void	pmap_md_pdetab_init(struct pmap *);
 bool    pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
+
+pt_entry_t *
+	pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va);
 
 #ifdef __PMAP_PRIVATE
 static inline void
