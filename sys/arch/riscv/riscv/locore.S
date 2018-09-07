@@ -41,8 +41,12 @@ ENTRY_NP(start)
 	 * Copy these to the s* registsers so they're saved.
 	*/
 
-	mv s0, a0
-	mv s1, a1
+	mv      s0, a0
+	mv      s1, a1
+
+        /* Save the phys addr from the start and end of the kernel */
+        la      s3, _C_LABEL(start)
+        la      s4, _C_LABEL(end)
 
 	/* Supervisor (Kernel) can access User Memory (SUM) */
 	li	t0, SR_SUM
@@ -94,6 +98,9 @@ bss1:
 	la	t0, _C_LABEL(cpu_exception_handler)
 	csrw	stvec, t0
 
+        /* tp is curlwp, init it for the first time */
+        la      tp, _C_LABEL(lwp0)
+
 	/* Setup the new stack pointer */
 	la 	t0, lwp0uspace
 	li	t1, (UPAGES * PAGE_SIZE) - TF_LEN
@@ -101,11 +108,12 @@ bss1:
 	mv	sp, t0
 
 	// Now we should ready to start initializing the kernel.
-	PTR_LA	a0, _C_LABEL(start)	// kernel_start
-	add	a1, s5, s11		// kernel_end
+	mv      a0, s0                  // hartid
+	mv	a1, s1                  // dtb
+        mv      a2, s3                  // kernel start
+	mv	a3, s4                  // kernel end
 	call	_C_LABEL(init_riscv)	// do MD startup
 	tail	_C_LABEL(main)		// and transfer to main
-	/* tail	_C_LABEL(main) */
 	/* No return from main */
 END(start)
 
