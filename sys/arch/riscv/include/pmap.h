@@ -96,7 +96,6 @@ pmap_procwr(struct proc *p, vaddr_t va, vsize_t len)
 	__asm __volatile("fence\trw,rw; fence.i");
 }
 
-
 #include <uvm/pmap/tlb.h>
 
 #include <uvm/pmap/pmap_tlb.h>
@@ -129,6 +128,7 @@ bool    pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
 
 pt_entry_t *
 	pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va);
+void	pmap_bootstrap(paddr_t pstart, paddr_t pend, paddr_t kstart, paddr_t kend);
 
 #ifdef __PMAP_PRIVATE
 static inline void
@@ -165,8 +165,9 @@ pmap_md_tlb_asid_max(void)
 #endif /* __PMAP_PRIVATE */
 #endif /* _KERNEL */
 
-#define POOL_VTOPHYS(va)	((paddr_t)((vaddr_t)(va)-VM_MAX_KERNEL_ADDRESS))
-#define POOL_PHYSTOV(pa)	((vaddr_t)(paddr_t)(pa)+VM_MAX_KERNEL_ADDRESS)
+extern __uint64_t kern_vtopdiff;
+#define POOL_VTOPHYS(va)	((paddr_t)((vaddr_t)(va)-kern_vtopdiff))
+#define POOL_PHYSTOV(pa)	((vaddr_t)((paddr_t)(pa)+kern_vtopdiff))
 
 #include <uvm/pmap/pmap.h>
 
