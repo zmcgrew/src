@@ -71,8 +71,8 @@
 #define	MAXPHYS		65536		/* max I/O transfer size */
 #endif
 
-#define NKMEMPAGES_MAX_DEFAULT	(2048UL * 1024 * 1024)
-#define NKMEMPAGES_MIN_DEFAULT	(128UL * 1024 * 1024)
+#define NKMEMPAGES_MAX_DEFAULT	((2048UL * 1024 * 1024) >> PAGE_SHIFT)
+#define NKMEMPAGES_MIN_DEFAULT	((128UL * 1024 * 1024) >> PAGE_SHIFT)
 
 /* Both RV64 and RV32 use 4K pages */
 #define PGSHIFT		12
