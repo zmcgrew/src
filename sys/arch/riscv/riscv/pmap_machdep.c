@@ -167,8 +167,6 @@ pmap_md_pdetab_init(struct pmap *pmap)
 pt_entry_t *
 pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va)
 {
-	/* TODO: Do the lookup until the last entry, returning a
-	   pointer to the final PTE? */
 	const pmap_pdetab_t *ptb = pmap->pm_pdetab;
 	pd_entry_t pde;
 
@@ -190,6 +188,45 @@ pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va)
 #endif
 	/* XXX 32-bit code here */
 	return NULL;
+}
+
+void
+pmap_bootstrap(paddr_t pstart, paddr_t pend, paddr_t kstart, paddr_t kend)
+{
+	pmap_pdetab_t * const kptb = &pmap_kern_pdetab;
+	pmap_t pm = pmap_kernel();
+
+	/* Setup basic info like pagesize=PAGE_SIZE */
+	uvm_md_init();
+	
+	/* init the lock */
+	pmap_tlb_info_init(&pmap_tlb0_info);
+
+	/* TODO: Pretend we have a gigabyte of RAM until this gets FDT */
+
+	/* Don't physload the space where the kernel is loaded, just
+	 * the space after it. */
+	uvm_page_physload(atop(round_page(kend)), atop(pend),
+	    atop(round_page(kend)), atop(pend),
+	    riscv_poolpage_vmfreelist);
+
+	/* XXX - How do I really set this? */
+	physmem = btoc(0x40000000);
+
+	/* XXX: Mostly from MIPS =) */
+	pmap_limits.avail_start = ptoa(uvm_physseg_get_start(uvm_physseg_get_first()));
+	pmap_limits.avail_end = ptoa(uvm_physseg_get_end(uvm_physseg_get_last()));
+	pmap_limits.virtual_end = VM_MAX_KERNEL_ADDRESS;
+
+	/*
+	 * Initialize the pools.
+	 */
+	pool_init(&pmap_pmap_pool, PMAP_SIZE, 0, 0, 0, "pmappl",
+	    &pool_allocator_nointr, IPL_NONE);
+	pool_init(&pmap_pv_pool, sizeof(struct pv_entry), 0, 0, 0, "pvpl",
+	    &pmap_pv_page_allocator, IPL_NONE);
+
+	tlb_set_asid(0);
 }
 
 // TLB mainenance routines
@@ -236,10 +273,15 @@ tlb_record_asids(u_long *ptr, tlb_asid_t UNUSED)
 	return PMAP_TLB_NUM_PIDS - 1;
 }
 
+void
+tlb_walk(void *ctx, bool (*func)(void *, vaddr_t, tlb_asid_t, pt_entry_t))
+{
+	/* no way to view the TLB */
+}
+
 #if 0
 void    tlb_enter_addr(size_t, const struct tlbmask *);
 void    tlb_read_entry(size_t, struct tlbmask *);
 void    tlb_write_entry(size_t, const struct tlbmask *);
-void    tlb_walk(void *, bool (*)(void *, vaddr_t, tlb_asid_t, pt_entry_t));
 void    tlb_dump(void (*)(const char *, ...));
 #endif
