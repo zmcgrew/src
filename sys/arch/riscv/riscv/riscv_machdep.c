@@ -68,6 +68,10 @@ const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 	[PCU_FPU] = &pcu_fpu_ops,
 };
 
+/* Used by PHYSTOV and VTOPHYS -- Will be set be BSS is zeroed so
+ * keep it in data */
+__uint64_t kern_vtopdiff __attribute__((__section__(".data")));
+
 /* Used by init_mmu */
 extern paddr_t virt_map;
 extern paddr_t start;
@@ -386,6 +390,9 @@ init_mmu(paddr_t dtb)
 	__uint64_t l2_perms = PTE_V | PTE_D | PTE_A | PTE_R | PTE_W | PTE_X;
 	__uint64_t i = (VM_MIN_KERNEL_ADDRESS >> L1_SHIFT) & Ln_ADDR_MASK;
 
+	/* Global used later for VTOPHYS and PHYSTOV */
+	kern_vtopdiff = VM_MIN_KERNEL_ADDRESS - phys_base;
+
 	/* L1 PTE with entry for Kernel VA, pointing to L2 PTE */
 	l1_pte[i] = (((paddr_t)&l2_pte >> PAGE_SHIFT) << PTE_PPN0_S) | PTE_V;
 
@@ -417,12 +424,33 @@ init_mmu(paddr_t dtb)
 }
 
 void
+riscv_init_lwp0_uarea(void)
+{
+	extern char lwp0uspace[];
+
+	uvm_lwp_setuarea(&lwp0, (vaddr_t)lwp0uspace);
+	memset(&lwp0.l_md, 0, sizeof(lwp0.l_md));
+	memset(lwp_getpcb(&lwp0), 0, sizeof(struct pcb));
+
+	/* tf = (struct trapframe *)(lwp0uspace + USPACE) - 1; */
+	/* memset(tf, 0, sizeof(struct trapframe)); */
+	/* tf->tf_spsr = SPSR_M_EL0T; */
+	/* lwp0.l_md.md_utf = lwp0.l_md.md_ktf = tf; */
+}
+
+void
 init_riscv(register_t hartid, paddr_t dtb, paddr_t kernstart, paddr_t kernend)
 {
 	/* Main screen turn on */
 	consinit();
 
-	/* XXX: Setup lwp0 here */
+	/* SPAM me while testing */
+	boothowto |= AB_DEBUG;
 
-	/* XXX: Init memory stuffs here too */
+	/* Just pretend we have a gig of ram until FDT is implemented */
+	pmap_bootstrap(0x80000000ULL, 0xc0000000ULL, kernstart, kernend);
+
+	/* Finish setting up lwp0 on our end before we call main() */
+	riscv_init_lwp0_uarea();
+
 }
