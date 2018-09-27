@@ -82,6 +82,9 @@ const struct db_variable db_regs[] = {
 };
 const struct db_variable * const db_eregs = db_regs + __arraycount(db_regs);
 
+int db_active;
+db_regs_t ddb_regs;
+
 int
 db_rw_ddbreg(const struct db_variable *vp, db_expr_t *valp, int rw)
 {
