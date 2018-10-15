@@ -55,6 +55,7 @@ ENTRY_NP(start)
 	/* XXX: If doing SMP should probably park other cores here */
 
 	mv	a0, a1 /* We need the DTB's PA passed in */
+        mv	a1, s4
 	call	_C_LABEL(init_mmu)
 	mv	s2, a0
 
@@ -330,8 +331,8 @@ ENTRY_NP(cpu_exception_handler)
 	csrr	a3, scause		// get cause
 
 	REG_S	a1, TF_PC(sp)
-	INT_S	a2, TF_SR(sp)
-	INT_S	a3, TF_CAUSE(sp)	// save cause
+	REG_S	a2, TF_SR(sp)
+	REG_S	a3, TF_CAUSE(sp)	// save cause
 
 	// Now we've saved the trapfame, the cause is still in a3.
 
