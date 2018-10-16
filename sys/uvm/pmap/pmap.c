@@ -199,7 +199,6 @@ pmap_pdetab_t	pmap_kstart_pdetab PMAP_PDETAB_ALIGN; /* first mid-level pdetab fo
 #endif
 pmap_pdetab_t	pmap_kern_pdetab PMAP_PDETAB_ALIGN = { /* top level pdetab for kernel */
 #ifdef _LP64
-	
 	/* TODO: This seems wrong. Index out of bounds on RISCV at least.
 	  .pde_pde[(VM_MIN_KERNEL_ADDRESS & XSEGOFSET) >> SEGSHIFT] =
 	  &pmap_kstart_pdetab,
@@ -1393,7 +1392,11 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 
 	pt_entry_t npte = pte_make_kenter_pa(pa, mdpg, prot, flags);
 	kpreempt_disable();
+#ifdef PMAP_HWPAGEWALKER
+	pt_entry_t * const ptep = pmap_md_pdetab_lookup_create_ptep(pmap, va);
+#else
 	pt_entry_t * const ptep = pmap_pte_lookup(pmap, va);
+#endif
 	KASSERTMSG(ptep != NULL, "%#"PRIxVADDR " %#"PRIxVADDR, va,
 	    pmap_limits.virtual_end);
 	KASSERT(!pte_valid_p(*ptep));
