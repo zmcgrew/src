@@ -49,7 +49,10 @@ __RCSID("$NetBSD: trap.c,v 1.1 2015/03/28 16:13:56 matt Exp $");
 
 #define	FAULT_TRAP_MASK		(__BIT(CAUSE_LOAD_ACCESS_FAULT) \
 				|__BIT(CAUSE_STORE_ACCESS_FAULT) \
-				|__BIT(CAUSE_INST_ACCESS_FAULT))
+				|__BIT(CAUSE_INST_ACCESS_FAULT) \
+				|__BIT(CAUSE_INST_PAGE_FAULT) \
+				|__BIT(CAUSE_LOAD_PAGE_FAULT) \
+				|__BIT(CAUSE_STORE_PAGE_FAULT))
 
 #define	MISALIGNED_TRAP_MASK	(__BIT(CAUSE_INST_MISALIGNED) \
 				|__BIT(CAUSE_STORE_MISALIGNED))
@@ -65,7 +68,7 @@ static const char * const causenames[] = {
   [CAUSE_SYSCALL] = "syscall",
   [CAUSE_INST_PAGE_FAULT] = "instruction page fault",
   [CAUSE_LOAD_PAGE_FAULT] = "load page fault",
-  [CAUSE_STORE_PAGE_FAULT] = "store page fault"
+  [CAUSE_STORE_PAGE_FAULT] = "store page fault",
 };
 
 void
@@ -234,9 +237,9 @@ cpu_trapsignal(struct trapframe *tf, ksiginfo_t *ksi)
 static inline vm_prot_t
 get_faulttype(register_t cause)
 {
-	if (cause == CAUSE_LOAD_ACCESS_FAULT)
+	if (cause == CAUSE_LOAD_ACCESS_FAULT || cause == CAUSE_LOAD_PAGE_FAULT)
 		return VM_PROT_READ;
-	if (cause == CAUSE_STORE_ACCESS_FAULT)
+	if (cause == CAUSE_STORE_ACCESS_FAULT || cause == CAUSE_STORE_PAGE_FAULT)
 		return VM_PROT_READ | VM_PROT_WRITE;
 	KASSERT(cause == CAUSE_INST_ACCESS_FAULT);
 	return VM_PROT_READ | VM_PROT_EXECUTE;
@@ -256,8 +259,11 @@ trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
 	pt_entry_t npte;
 	u_int attr;
 	do {
-		if ((opte & ~PTE_G) == 0)
-			return false;
+		/* TODO: PTE_G is just the kernel PTE, but all pages
+		 * can fault for CAUSE_LOAD_PAGE_FAULT and
+		 * CAUSE_STORE_PAGE_FAULT...*/
+		/* if ((opte & ~PTE_G) == 0) */
+		/* 	return false; */
 
 		pg = PHYS_TO_VM_PAGE(pte_to_paddr(opte));
 		if (pg == NULL)
@@ -269,16 +275,23 @@ trap_pagefault_fixup(struct trapframe *tf, struct pmap *pmap, register_t cause,
 			npte |= PTE_V;
 			attr |= VM_PAGEMD_REFERENCED;
 		}
-		if (cause == CAUSE_STORE_ACCESS_FAULT) {
-			if ((npte & PTE_D) != 0) {
-				npte &= ~PTE_D;
-				attr |= VM_PAGEMD_MODIFIED;
+		if (cause == CAUSE_LOAD_PAGE_FAULT) {
+			if (!(npte & PTE_A)) {
+				npte |= PTE_A;
+				attr |= VM_PAGEMD_REFERENCED;
 			}
-		} else if (cause == CAUSE_INST_ACCESS_FAULT) {
+		} else if (cause == CAUSE_STORE_PAGE_FAULT) {
+			if (!(npte & PTE_D)) {
+				npte |= PTE_A | PTE_D;
+				attr |= VM_PAGEMD_REFERENCED | VM_PAGEMD_MODIFIED;
+			}
+		} else if (cause == CAUSE_INST_PAGE_FAULT) {
 			if ((npte & PTE_NX) != 0) {
 				npte &= ~PTE_NX;
 				attr |= VM_PAGEMD_EXECPAGE;
 			}
+		} else {
+			panic("%s: Unhandled cause!", __func__);
 		}
 
 		if (attr == 0)
@@ -316,7 +329,7 @@ trap_pagefault(struct trapframe *tf, register_t epc, register_t status,
 		return false;
 	}
 
-	struct vm_map * const map = (addr >= 0 ? &p->p_vmspace->vm_map : kernel_map);
+	struct vm_map * const map = (addr > 0 ? &p->p_vmspace->vm_map : kernel_map);
 
 	// See if this fault is for reference/modified/execpage tracking
 	if (trap_pagefault_fixup(tf, map->pmap, cause, addr))
@@ -343,6 +356,7 @@ trap_pagefault(struct trapframe *tf, register_t epc, register_t status,
 	struct faultbuf * const fb = cpu_disable_onfault();
 	int error = uvm_fault(map, addr, ftype);
 	cpu_enable_onfault(fb);
+
 	if (error == 0) {
 		if (map != kernel_map) {
 			uvm_grow(p, addr);
