@@ -51,12 +51,17 @@ options 	BUFQ_PRIOCSCAN
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 				# XXX to be commented out on release branch
-#options	DEBUG		# expensive debugging checks/support
+#options		DEBUG		# expensive debugging checks/support
 #options	LOCKDEBUG	# expensive locking checks/support
-#options	KERNHIST
-#options	KERNHIST_PRINT
-#options	UVMHIST
-#options	UVMHIST_PRINT
+#options		KERNHIST
+#options		KERNHIST_PRINT
+#options		UVMHIST
+#options		UVMHIST_PRINT
+#options		PMAPHIST
+#options		PMAPHIST_PRINT
+#options		SYSCTL_DEBUG
+#options		SYSCTL_DEBUG_SETUP
+#options		SYSCTL_DEBUG_CREATE
 
 #
 # Because gcc omits the frame pointer for any -O level, the line below
