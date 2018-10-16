@@ -79,7 +79,7 @@ typedef __uint64_t pd_entry_t;
 #else
 /*
  * WARNING -- Same as above, but 0 = PS 1, 1 = PS 0
- */ 
+ */
 #define PTE_PPN		__BITS(31, 10)	// Physical Page Number
 #define	PTE_PPN0	__BITS(31, 20)	// 1K 4-byte PDEs / PAGE
 #define	PTE_PPN1	__BITS(19, 10)	// 1K 4-byte PTEs / PAGE
@@ -107,7 +107,7 @@ typedef __uint32_t pd_entry_t;
   Helper macro for determining if on a "Transit" (non-leaf) page.
   A previous spec had PTE_T for this.
 */
-#define PTE_IS_T(pte)	(((pte) & PTE_V) && !((pte) & (PTE_W|PTE_R|PTE_X)))
+#define PTE_IS_T(pte)	(((pd_entry_t)(pte) & PTE_V) && !((pd_entry_t)(pte) & (PTE_W|PTE_R|PTE_X)))
 
 /* Constants From FreeBSD RISC-V Port */
 
@@ -139,6 +139,10 @@ typedef __uint32_t pd_entry_t;
 #define	PTE_SIZE	8
 
 /* End FreeBSD RISC-V Constants */
+
+#define l1pde_index(v)	(((vaddr_t)(v) >> L1_SHIFT) & Ln_ADDR_MASK)
+#define l2pde_index(v)	(((vaddr_t)(v) >> L2_SHIFT) & Ln_ADDR_MASK)
+#define l3pte_index(v)	(((vaddr_t)(v) >> L3_SHIFT) & Ln_ADDR_MASK)
 
 static inline bool
 pte_valid_p(pt_entry_t pte)
@@ -177,7 +181,7 @@ pte_wire_entry(pt_entry_t pte)
 	return pte | PTE_WIRED;
 }
 
-static inline pt_entry_t   
+static inline pt_entry_t
 pte_unwire_entry(pt_entry_t pte)
 {
 	return pte & ~PTE_WIRED;
@@ -214,12 +218,12 @@ static inline pt_entry_t
 pte_prot_bits(struct vm_page_md *mdpg, vm_prot_t prot, bool kernel_p)
 {
 	KASSERT(prot & VM_PROT_READ);
-	pt_entry_t pt_entry = PTE_R | (kernel_p ? 0 : PTE_U);
+	pt_entry_t pt_entry = PTE_R | (kernel_p ? PTE_G : PTE_U);
 	if (prot & VM_PROT_EXECUTE) {
 		if (mdpg != NULL && !VM_PAGEMD_EXECPAGE_P(mdpg))
 			pt_entry |= PTE_NX;
 		else
-			pt_entry |= kernel_p ? 0 : PTE_U;
+			pt_entry |= kernel_p ? PTE_G : PTE_U;
 	}
 	if (prot & VM_PROT_WRITE) {
 		if (mdpg != NULL && !VM_PAGEMD_MODIFIED_P(mdpg))
@@ -230,7 +234,7 @@ pte_prot_bits(struct vm_page_md *mdpg, vm_prot_t prot, bool kernel_p)
 			*/
 			pt_entry &= ~PTE_D;
 		else
-			pt_entry |= PTE_W | (kernel_p ? 0 : PTE_U);
+			pt_entry |= PTE_W | (kernel_p ? PTE_G : PTE_U);
 	}
 	return pt_entry;
 }
@@ -278,7 +282,7 @@ pte_make_kenter_pa(paddr_t pa, struct vm_page_md *mdpg, vm_prot_t prot,
 {
 	pt_entry_t pte = (((pt_entry_t)pa) >> PAGE_SHIFT) << PTE_PPN0_S;
 
-	pte |= PTE_WIRED | PTE_V;
+	pte |= PTE_WIRED | PTE_G | PTE_V;
 	pte |= pte_flag_bits(NULL, flags, true);
 	pte |= pte_prot_bits(NULL, prot, true); /* pretend unmanaged */
 
@@ -306,7 +310,7 @@ pte_pde_pdetab(paddr_t pa)
 static inline pd_entry_t
 pte_pde_ptpage(paddr_t pa)
 {
-	return PTE_V | PTE_G | (pa >> PAGE_SHIFT) << PTE_PPN0_S;
+	return PTE_V | PTE_G | (pa >> PAGE_SHIFT) << PTE_PPN2_S;
 }
 
 static inline bool
@@ -342,4 +346,5 @@ pte_value(pt_entry_t pte)
 {
 	return pte;
 }
+
 #endif /* _RISCV_PTE_H_ */
