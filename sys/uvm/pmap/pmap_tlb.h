@@ -143,7 +143,7 @@ struct pmap_tlb_info {
 #endif
 	struct evcnt ti_evcnt_asid_reinits;
 #ifndef PMAP_TLB_BITMAP_LENGTH
-#define	PMAP_TLB_BITMAP_LENGTH 256
+#define	PMAP_TLB_BITMAP_LENGTH 4096
 #endif
 	__BITMAP_TYPE(, u_long, PMAP_TLB_BITMAP_LENGTH) ti_asid_bitmap;
 };
