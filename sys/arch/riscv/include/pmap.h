@@ -67,7 +67,10 @@
 #define KERNEL_PID	0
 
 #define PMAP_HWPAGEWALKER		1
-#define PMAP_TLB_NUM_PIDS		256
+#define PMAP_TLB_BITMAP_LENGHTH		4096 /* This is actually
+					      * ignored in
+					      * uvm/pmap_tlb.h */
+#define PMAP_TLB_NUM_PIDS		4096
 #define PMAP_TLB_MAX			1
 #ifdef _LP64
 #define PMAP_INVALID_PDETAB_ADDRESS	((pmap_pdetab_t *)(VM_MIN_KERNEL_ADDRESS - PAGE_SIZE))
@@ -127,7 +130,9 @@ void	pmap_md_pdetab_init(struct pmap *);
 bool    pmap_md_ok_to_steal_p(const uvm_physseg_t, size_t);
 
 pt_entry_t *
-	pmap_md_pde_lookup_pte(struct pmap *pmap, vaddr_t va);
+	pmap_md_pdetab_lookup_ptep(struct pmap *pmap, vaddr_t va);
+pt_entry_t *
+	pmap_md_pdetab_lookup_create_ptep(struct pmap *pmap, vaddr_t va);
 void	pmap_bootstrap(paddr_t pstart, paddr_t pend, paddr_t kstart, paddr_t kend);
 
 #ifdef __PMAP_PRIVATE
