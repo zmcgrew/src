@@ -351,7 +351,7 @@ pt_entry_t *
 pmap_pte_lookup(pmap_t pmap, vaddr_t va)
 {
 #ifdef PMAP_HWPAGEWALKER
-	return pmap_md_pde_lookup_pte(pmap, va);
+	return pmap_md_pdetab_lookup_ptep(pmap, va);
 #else
 	pt_entry_t *pte = pmap_segmap(pmap, va);
 
