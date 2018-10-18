@@ -240,6 +240,7 @@ static inline void
 riscvreg_satp_write(register_t __satp)
 {
 	__asm("csrw\tsatp, %0" :: "r"(__satp));
+	__asm __volatile("sfence.vma" ::: "memory");
 }
 
 static inline register_t
@@ -254,8 +255,9 @@ static inline void
 riscvreg_satp_ppn_write(register_t ppn)
 {
 	register_t __satp = riscvreg_satp_read();
-	__satp &= ~SATP_PPN_MASK | (ppn & SATP_PPN_MASK);
-	__asm("csrw\tsatp, %0" :: "r"(__satp));
+	__satp = (__satp & ~SATP_PPN_MASK) | (ppn & SATP_PPN_MASK);
+	__asm __volatile("csrw\tsatp, %0" :: "r"(__satp));
+	__asm __volatile("sfence.vma" ::: "memory");
 }
 
 static inline uint32_t
