@@ -390,15 +390,15 @@ paddr_t
 init_mmu(paddr_t dtb, paddr_t end)
 {
 	extern paddr_t virt_map;
-	extern paddr_t *start;
+	virt_map = (paddr_t)virt_map - (paddr_t)&virt_map;
 	extern __uint64_t l1_pte[512];
 	extern __uint64_t l2_pte[512];
 	extern __uint64_t l2_dtb[512];
-	__uint64_t virt_delta = (__uint64_t)virt_map - (__uint64_t)&virt_map;
-	__uint64_t phys_base = VM_MIN_KERNEL_ADDRESS - virt_delta;
+	__uint64_t phys_base = VM_MIN_KERNEL_ADDRESS - virt_map;
 	__uint64_t phys_base_2mb_chunk = phys_base >> 21;
 	__uint64_t l2_perms = PTE_V | PTE_D | PTE_A | PTE_R | PTE_W | PTE_X;
 	__uint64_t i = l1pde_index(VM_MIN_KERNEL_ADDRESS);
+	
 
 	end = (end + 0x200000 - 1) & -0x200000;
 
