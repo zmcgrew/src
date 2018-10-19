@@ -46,10 +46,11 @@
 		case EM_RISCV:		\
 			break;
 
-#define	KERN_ELFSIZE		32
 #ifdef _LP64
+#define KERN_ELFSIZE		64
 #define ARCH_ELFSIZE		64	/* MD native binary size */
 #else
+#define KERN_ELFSIZE		32
 #define ARCH_ELFSIZE		32	/* MD native binary size */
 #endif
 
