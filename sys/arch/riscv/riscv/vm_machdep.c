@@ -120,7 +120,7 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 /* #ifdef _LP64 */
 /* 	KASSERT(tf->tf_sr & SR_S64); */
 /* #endif */
-	/* KASSERT(tf->tf_sr & SR_SIE); */
+	KASSERT(tf->tf_sr & SR_SIE);
 }
 
 /*
