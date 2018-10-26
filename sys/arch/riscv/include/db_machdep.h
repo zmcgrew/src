@@ -118,4 +118,6 @@ void db_resume_others(void);
 #define DB_MACHINE_COMMANDS
 #endif
 
+void dump_trapframe(const struct trapframe *tf, void (*pr)(const char *, ...));
+
 #endif	/* _RISCV_DB_MACHDEP_H_ */
