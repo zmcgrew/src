@@ -146,7 +146,7 @@ ENTRY_NP(cpu_switchto)
 .Lswitchto_newlwp:
 	csrrci	t0, sstatus, SR_SIE	// # disable interrupts
 
-	move	tp, a1			// # put the new lwp in thread pointer
+	mv	tp, a1			// # put the new lwp in thread pointer
 
 	PTR_L	t1, L_CPU(tp)		// # get curcpu
 	PTR_S	tp, CI_CURLWP(t1)	// # update curcpu with the new curlwp
@@ -180,10 +180,10 @@ ENTRY_NP(cpu_switchto)
 END(cpu_switchto)
 
 ENTRY_NP(cpu_lwp_trampoline)
-	move	a1, tp			// get new lwp
+	mv	a1, tp			// get new lwp
 	call	_C_LABEL(lwp_startup)	// call lwp startup
 
-	move	a0, s1			// get saved arg
+	mv	a0, s1			// get saved arg
 	jalr	s0			// call saved func
 
 	// If the saved func returns, we are returning to user land.
@@ -191,13 +191,12 @@ ENTRY_NP(cpu_lwp_trampoline)
 END(cpu_lwp_trampoline)
 
 ENTRY_NP(cpu_fast_switchto_cleanup)
-	INT_L	t0, CI_MTX_COUNT(a1)	// get mutex count
-	REG_L	ra, CALLFRAME_RA(sp)	// get return address
-	REG_L	a0, CALLFRAME_S0(sp)	// get pinned LWP
-	addi	t0, t0, 1		// increment mutex count
-	INT_S	t0, CI_MTX_COUNT(a1)	// save it
+//	PTR_L	t0, L_CPU(tp)		// Get curcpu()
+//	INT_L	t1, CI_MTX_COUNT(t0)	// get mutex count
+//	addi	t1, t1, 1		// increment mutex count
+//	INT_S	t1, CI_MTX_COUNT(t0)	// save it
 	PTR_S	zero, L_CTXSWTCH(a0)	// clear l_ctxswitch
-	addi	sp, sp, CALLFRAME_SIZ	// remove callframe
+        mv	ra, a1			// Restore real RA
 #if IPL_SCHED != IPL_HIGH
 	tail	_C_LABEL(splhigh)	// go back to IPL HIGH
 #else
@@ -231,36 +230,40 @@ ENTRY_NP(cpu_fast_switchto)
 	csrr	t4, sstatus		// get status register (for intr state)
 	REG_S	t4, TF_SR(sp)		// save it
 
-	move	s0, tp			// remember curlwp
-	move	s1, sp			// remember kernel stack
+	mv	s0, tp			// remember curlwp
+	mv	s1, sp			// remember kernel stack
 
-#if 0
+//#if 0
 	csrrci	t0, sstatus, SR_SIE	// disable interrupts
-#endif
+//#endif
 	PTR_L	t1, L_CPU(tp)		// get curcpu()
 
 	PTR_S	sp, L_MD_KTF(tp)	// save trapframe ptr in oldlwp
-	move	tp, a0			// set thread pointer to newlwp
+	mv	tp, a0			// set thread pointer to newlwp
 	PTR_S	tp, CI_CURLWP(t1)	// update curlwp
 	PTR_L	sp, L_MD_KTF(tp)	// switch to its stack
-#if 0
+//#if 0
 	csrw	sstatus, t0		// reenable interrupts
-#endif
+//#endif
+        mv	a0, s0                  // Pass the pinned lwp
 	call	_C_LABEL(softint_dispatch)
-#if 0
+//#if 0
 	csrrci	t0, sstatus, SR_SIE	// disable interrupts
-#endif
+//#endif
 	PTR_L	t1, L_CPU(tp)		// get curcpu() again
-	move	tp, s0			// return to pinned lwp
+	mv	tp, s0			// return to pinned lwp
 	PTR_S	tp, CI_CURLWP(t1)	// restore curlwp
-#if 0
+//#if 0
 	csrw	sstatus, t0		// reeanble interrupts
-#endif
-	move	sp, s1			// restore stack pointer
+//#endif
+	mv	sp, s1			// restore stack pointer
 
-	REG_L	ra, (TF_RA + CALLFRAME_RA)(sp)	// get return address
+	REG_L	ra, TF_RA(sp)		// get return address
 	REG_L	s0, TF_S0(sp)		// restore register we used
 	REG_L	s1, TF_S1(sp)		// restore register we used
+
+	REG_L	a0, (TF_LEN + CALLFRAME_S0)(sp)	// Pass the softlwp
+	REG_L	a1, (TF_LEN + CALLFRAME_RA)(sp)	// Pass the real RA
 
 	addi	sp, sp, TF_LEN+CALLFRAME_SIZ	// drop trapframe/callframe
 	ret				// return
@@ -325,7 +328,7 @@ ENTRY_NP(cpu_exception_handler)
 	REG_S	t6, TF_T6(sp)		// save t6
 
 	// Now we get the
-	move	a0, sp			// trapframe pointer
+	mv	a0, sp			// trapframe pointer
 	csrr	a1, sepc		// get execption pc
 	csrr	a2, sstatus		// get status
 	csrr	a3, scause		// get cause
@@ -440,7 +443,7 @@ intr_usersave:
 	REG_S	s11, TF_S11(sp)		// only save from userland
 	PTR_LA	ra, exception_userexit
 trap_doast:
-	move	a0, sp			// only argument is trapframe
+	mv	a0, sp			// only argument is trapframe
 	tail	_C_LABEL(cpu_ast)
 
 intr_user:
@@ -515,7 +518,7 @@ ENTRY(longjmp)
 	REG_L	s10, FB_S10(a0)
 	REG_L	s11, FB_S11(a0)
 	REG_L	sp, FB_SP(a0)
-	move	a0, a1
+	mv	a0, a1
 	ret
 END(longjmp)
 
