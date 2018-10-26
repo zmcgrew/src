@@ -214,9 +214,15 @@ pmap_md_pdetab_activate(struct pmap *pmap)
 void
 pmap_md_pdetab_init(struct pmap *pmap)
 {
-	pmap->pm_pdetab[NPDEPG-1] = pmap_kernel()->pm_pdetab[NPDEPG-1];
+	KASSERT(pmap != 0);
+	pmap->pm_pdetab = pmap_md_alloc_pdp(pmap, &pmap->pm_pdetab);
+
+	/* for (int i = 0; i < NPDEPG; ++i) { */
+	/* 	pmap->pm_pdetab[i] = pmap_kernel()->pm_pdetab[i]; */
+	/* } */
+
 	pmap->pm_md.md_ptbr =
-	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab);
+	    pmap_md_direct_mapped_vaddr_to_paddr((vaddr_t)pmap->pm_pdetab) >> PAGE_SHIFT;
 }
 
 pt_entry_t *
@@ -301,13 +307,19 @@ void
 pmap_bootstrap(paddr_t pstart, paddr_t pend, vaddr_t kstart, paddr_t kend)
 {
 	extern __uint64_t l1_pte[512];
+	extern __uint64_t virt_map;
 	pmap_pdetab_t * const kptb = &pmap_kern_pdetab;
 	pmap_t pm = pmap_kernel();
+	paddr_t pa;
 
 	kend = (kend + 0x200000 - 1) & -0x200000;
 
 	/* Use the tables we already built in init_mmu() */
 	pm->pm_pdetab = &l1_pte;
+
+	/* Get the PPN for l1_pte */
+	/* XXX HACK */
+	pm->pm_md.md_ptbr = (paddr_t)(((__uint64_t)&l1_pte - virt_map) >> PAGE_SHIFT);
 
 	/* Setup basic info like pagesize=PAGE_SIZE */
 	uvm_md_init();
