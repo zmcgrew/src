@@ -51,23 +51,23 @@ options 	BUFQ_PRIOCSCAN
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 				# XXX to be commented out on release branch
-#options		DEBUG		# expensive debugging checks/support
-#options	LOCKDEBUG	# expensive locking checks/support
-#options		KERNHIST
-#options		KERNHIST_PRINT
-#options		UVMHIST
-#options		UVMHIST_PRINT
-#options		PMAPHIST
-#options		PMAPHIST_PRINT
-#options		SYSCTL_DEBUG
-#options		SYSCTL_DEBUG_SETUP
-#options		SYSCTL_DEBUG_CREATE
+#options  	DEBUG		# expensive debugging checks/support
+#options  	LOCKDEBUG	# expensive locking checks/support
+#options  	KERNHIST
+#options  	KERNHIST_PRINT
+#options  	UVMHIST
+#options  	UVMHIST_PRINT
+#options  	PMAPHIST
+#options  	PMAPHIST_PRINT
+#options  	SYSCTL_DEBUG
+#options  	SYSCTL_DEBUG_SETUP
+#options  	SYSCTL_DEBUG_CREATE
 
 #
 # Because gcc omits the frame pointer for any -O level, the line below
 # is needed to make backtraces in DDB work.
 #
-#makeoptions	COPTS="-O2 -fno-omit-frame-pointer"
+makeoptions	COPTS="-O2 -fno-omit-frame-pointer"
 makeoptions	COPY_SYMTAB=1
 options 	DDB		# in-kernel debugger
 #options	DDB_COMMANDONENTER="bt"	# execute command when ddb is entered
@@ -163,8 +163,10 @@ pseudo-device 	crypto			# /dev/crypto device
 pseudo-device	swcrypto		# software crypto implementation
 
 # disk/mass storage pseudo-devices
-#pseudo-device	md			# memory disk device (ramdisk)
-#options 	MEMORY_DISK_HOOKS	# enable root ramdisk
+pseudo-device	md			# memory disk device (ramdisk)
+options 	MEMORY_DISK_HOOKS	# enable root ramdisk
+options  	MEMORY_DISK_IS_ROOT
+options  	MEMORY_DISK_SIZE=1000
 #options 	MEMORY_DISK_DYNAMIC	# loaded via kernel module(7)
 
 pseudo-device	vnd			# disk-like interface to files
