@@ -177,7 +177,7 @@ copyoutstr(const void *kaddr, void *uaddr, size_t len, size_t *done)
 	return error;
 }
 
-static void
+void
 dump_trapframe(const struct trapframe *tf, void (*pr)(const char *, ...))
 {
 	const char *causestr = "?";
@@ -241,7 +241,7 @@ get_faulttype(register_t cause)
 		return VM_PROT_READ;
 	if (cause == CAUSE_STORE_ACCESS_FAULT || cause == CAUSE_STORE_PAGE_FAULT)
 		return VM_PROT_READ | VM_PROT_WRITE;
-	KASSERT(cause == CAUSE_INST_ACCESS_FAULT);
+	KASSERT(cause == CAUSE_INST_ACCESS_FAULT || cause == CAUSE_INST_PAGE_FAULT);
 	return VM_PROT_READ | VM_PROT_EXECUTE;
 }
 
@@ -558,4 +558,5 @@ cpu_intr(struct trapframe *tf, register_t epc, register_t status,
     register_t cause)
 {
 	/* XXX */
+	printf("cpu_intr!\n");
 }
