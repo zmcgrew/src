@@ -107,4 +107,3 @@ softint_deliver(void)
 		panic("dosoftints wtf (softints=%u?, ipl=%d)", softints, opl);
 	}
 }
-
