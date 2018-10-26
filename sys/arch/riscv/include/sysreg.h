@@ -155,6 +155,29 @@ riscvreg_fcsr_write_frm(uint32_t __new)
 #define SR_SIE __BIT(1)
 #define SR_UIE __BIT(0)
 
+/* Bit (XLEN-1)-10 is WIRI */
+#define SIP_SEIP __BIT(9)_
+#define SIP_UEIP __BIT(8)_
+/* Bit 7-6 is WIRI */
+#define SIP_STIP __BIT(5)_
+#define SIP_UTIP __BIT(4)_
+/* Bit 3-2 is WIRI */
+#define SIP_SSIP __BIT(1)_
+#define SIP_USIP __BIT(0)_
+
+/* Bit (XLEN-1)-10 is WIRI */
+#define SIE_SEIE __BIT(9)_
+#define SIE_UEIE __BIT(8)_
+/* Bit 7-6 is WIRI */
+#define SIE_STIE __BIT(5)_
+#define SIE_UTIE __BIT(4)_
+/* Bit 3-2 is WIRI */
+#define SIE_SSIE __BIT(1)_
+#define SIE_USIE __BIT(0)_
+
+/* Mask for all interrupts */
+#define SIE_IM (SIE_SEI|SIE_UEIE|SIE_STIE|SIE_UTIE|SIE_SSIE|SIE_USIE)
+
 #define SR_USER SR_SIE
 
 static inline uint32_t
@@ -275,7 +298,7 @@ riscvreg_satp_asid_write(uint32_t __asid)
 	asid = __asid;
 	asid <<= SATP_ASID_SHIFT;
 	__asm __volatile("csrr\t%0, satp" : "=r"(satp));
-	satp &= ~SATP_ASID_MASK | asid;
+	satp = (satp & ~SATP_ASID_MASK) | asid;
 	riscvreg_satp_write(satp);
 }
 
