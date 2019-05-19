@@ -123,11 +123,12 @@ MULT_CTASSERT(PMAP_PDETABSIZE, NPDEPG);
 MULT_CTASSERT(sizeof(pmap_pdetab_t *), sizeof(pd_entry_t));
 MULT_CTASSERT(sizeof(pd_entry_t), sizeof(pmap_pdetab_t));
 
+/*
 #ifdef _LP64
 static const bool separate_pdetab_root_p = NPDEPG != PMAP_PDETABSIZE;
 #else
 static const bool separate_pdetab_root_p = true;
-#endif /* _LP64 */
+#endif */ /* _LP64 */
 
 typedef struct {
 	pmap_pdetab_t *free_pdetab0;	/* free list kept locally */
@@ -292,6 +293,7 @@ pmap_ptpage(struct pmap *pmap, vaddr_t va)
 }
 
 #ifdef PMAP_HWPAGEWALKER
+void pte_pde_set(pd_entry_t *oldpde, pd_entry_t newpde);
 void pte_pde_set(pd_entry_t *oldpde, pd_entry_t newpde) {
 	/* XXX: PDE Setting code here? Based on function call below,
 	 * guessing this is a wrapper for pte_pde_cas() ? */
@@ -300,6 +302,8 @@ void pte_pde_set(pd_entry_t *oldpde, pd_entry_t newpde) {
 #endif
 
 #if defined(PMAP_HWPAGEWALKER)
+bool
+pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va);
 bool
 pmap_pdetab_fixup(struct pmap *pmap, vaddr_t va)
 {

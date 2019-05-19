@@ -109,6 +109,7 @@ module_init_md(void)
 
 /*
  * Set registers on exec.
+ * XXX we are not clearing t9, this comment is outdated
  * Clear all registers except sp, pc, and t9.
  * $sp is set to the stack pointer passed in.  $pc is set to the entry
  * point given by the exec_package passed in, as is $t9 (used for PIC

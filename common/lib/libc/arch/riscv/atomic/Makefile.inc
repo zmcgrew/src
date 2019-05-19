@@ -27,7 +27,7 @@ SRCS.atomic+=	atomic_init_cas.c			\
 
 .endif #LIB
 
-.if ${LIB} == "c"
+.if defined(LIB) && ${LIB} == "c"
 SRCS.atomic+=	atomic_and_16_nv_cas.c atomic_and_8_nv_cas.c
 .endif
 

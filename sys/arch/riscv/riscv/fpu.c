@@ -58,7 +58,7 @@ const pcu_ops_t pcu_fpu_ops = {
 void
 fpu_state_save(lwp_t *l)
 {
-	struct trapframe * const tf = l->l_md.md_utf;
+	/* struct trapframe * const tf = l->l_md.md_utf; */
 	struct pcb * const pcb = lwp_getpcb(l);
 	struct fpreg * const fp = &pcb->pcb_fpregs;
 
@@ -119,7 +119,7 @@ fpu_state_save(lwp_t *l)
 void
 fpu_state_load(lwp_t *l, u_int flags)
 {
-	struct trapframe * const tf = l->l_md.md_utf;
+	/* struct trapframe * const tf = l->l_md.md_utf; */
 	struct pcb * const pcb = lwp_getpcb(l);
 	struct fpreg * const fp = &pcb->pcb_fpregs;
 

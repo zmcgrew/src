@@ -51,7 +51,7 @@ options 	BUFQ_PRIOCSCAN
 # Diagnostic/debugging support options
 options 	DIAGNOSTIC	# inexpensive kernel consistency checks
 				# XXX to be commented out on release branch
-#options  	DEBUG		# expensive debugging checks/support
+options  	DEBUG		# expensive debugging checks/support
 #options  	LOCKDEBUG	# expensive locking checks/support
 #options  	KERNHIST
 #options  	KERNHIST_PRINT
@@ -83,7 +83,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 include 	"conf/compat_netbsd70.config"
 
 options 	COMPAT_OSSAUDIO
-options 	COMPAT_NETBSD32
+#options 	COMPAT_NETBSD32
 #options 	COMPAT_LINUX
 #options 	COMPAT_LINUX32	# req. COMPAT_LINUX and COMPAT_NETBSD32
 #options 	EXEC_ELF32
@@ -166,8 +166,9 @@ pseudo-device	swcrypto		# software crypto implementation
 pseudo-device	md			# memory disk device (ramdisk)
 options 	MEMORY_DISK_HOOKS	# enable root ramdisk
 options  	MEMORY_DISK_IS_ROOT
-options  	MEMORY_DISK_SIZE=1000
+options  	MEMORY_DISK_ROOT_SIZE=8192
 #options 	MEMORY_DISK_DYNAMIC	# loaded via kernel module(7)
+makeoptions     NEED_MDSETIMAGE="yes"
 
 pseudo-device	vnd			# disk-like interface to files
 options 	VND_COMPRESSION		# compressed vnd(4)

@@ -535,6 +535,7 @@ ENTRY(mpentry)
 END(mpentry)
 
 	/* Used for finding virtual / physical offsets */
+        .align 3
 	.globl virt_map
 virt_map:
 	.quad   virt_map

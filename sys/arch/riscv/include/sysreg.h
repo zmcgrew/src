@@ -180,6 +180,8 @@ riscvreg_fcsr_write_frm(uint32_t __new)
 
 #define SR_USER SR_SIE
 
+#if defined(_KERNEL)
+		
 static inline uint32_t
 riscvreg_status_read(void)
 {
@@ -301,5 +303,7 @@ riscvreg_satp_asid_write(uint32_t __asid)
 	satp = (satp & ~SATP_ASID_MASK) | asid;
 	riscvreg_satp_write(satp);
 }
+
+#endif /* _KERNEL */
 
 #endif /* _RISCV_SYSREG_H_ */
